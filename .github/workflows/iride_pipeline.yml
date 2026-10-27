@@ -1,0 +1,38 @@
+name: I.R.I.D.E. Automated Radar Pipeline
+
+on:
+  schedule:
+    - cron: '*/30 * * * *' # Esecuzione ogni 30 minuti
+  workflow_dispatch: # Avvio manuale disponibile da GitHub
+
+jobs:
+  run-iride-engine:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run I.R.I.D.E. Raster Engine
+        run: |
+          python backend/iride_engine.py
+
+      - name: Commit and push updated radar database
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/iride_database.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update IRIDE radar matrix data [skip ci]" && git push)
+          
