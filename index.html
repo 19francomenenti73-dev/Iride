@@ -50,10 +50,37 @@
         .status-ok { display: flex; align-items: center; gap: 6px; font-weight: bold; font-size: 12px; color: #00ff66; background: #091b30; padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border-color); }
         .status-dot { width: 8px; height: 8px; background: #00ff66; border-radius: 50%; box-shadow: 0 0 8px #00ff66; }
 
-        #center-grid { display: grid; grid-template-columns: 1fr 340px; position: relative; background: #000; overflow: hidden; }
-        #map-viewport { position: relative; width: 100%; height: 100%; }
-        #map { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
-        #webgl-overlay { width: 100%; height: 100%; position: absolute; top: 0; left: 0; pointer-events: none; z-index: 10; }
+        #center-grid { 
+            display: grid; 
+            grid-template-columns: 1fr 340px; 
+            position: relative; 
+            background: #000; 
+            width: 100%;
+            height: 100%;
+            overflow: hidden; 
+        }
+        #map-viewport { 
+            position: relative; 
+            width: 100%; 
+            height: 100%; 
+        }
+        #map { 
+            width: 100% !important; 
+            height: 100% !important; 
+            position: absolute !important; 
+            top: 0; 
+            left: 0; 
+            z-index: 1;
+        }
+        #webgl-overlay { 
+            width: 100% !important; 
+            height: 100% !important; 
+            position: absolute !important; 
+            top: 0; 
+            left: 0; 
+            pointer-events: none; 
+            z-index: 10; 
+        }
 
         .dbz-scale-bar {
             position: absolute; top: 20px; left: 20px; z-index: 20; background: rgba(6, 14, 26, 0.9);
@@ -184,272 +211,193 @@
         <span>I.R.I.D.E. | Italian Radar Interactive Deep Engine</span>
         <span>Dati dal raster RainViewer | Visualizzazione 3D sperimentale</span>
     </div>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>
-    const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([41.8932, 12.4987], 8);
-    L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 }).addTo(map);
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([41.8932, 12.4987], 8);
+        L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 }).addTo(map);
+        setTimeout(() => { map.invalidateSize(); }, 200);
 
-    let activeGrid = generateFallbackMatrix();
-    let currentMasterMode = 'voxel';
+        let activeGrid = generateFallbackMatrix();
+        let currentMasterMode = 'voxel';
 
-    fetch('data/iride_database.json')
-        .then(res => res.json())
-        .then(data => {
-            if(data.cells && data.cells.length > 0) {
-                const cell = data.cells[0];
-                updateTelemetry(cell);
-                if(cell.grid_matrix) activeGrid = cell.grid_matrix;
-                renderMarkers(data.cells);
-            }
-            rebuildMainMesh();
-            renderMiniViews();
-        }).catch(() => {
-            rebuildMainMesh();
-            renderMiniViews();
-        });
-
-    function updateTelemetry(cell) {
-        document.getElementById('p-core-id').innerText = cell.id;
-        document.getElementById('p-lat').innerText = cell.lat + "°";
-        document.getElementById('p-lon').innerText = cell.lon + "°";
-        document.getElementById('p-dbz').innerText = cell.max_dbz + " dBZ";
-        document.getElementById('p-vel').innerText = (cell.kinematics?.velocity_kmh || 58) + " km/h";
-        document.getElementById('p-dir').innerText = (cell.kinematics?.direction_deg || 278) + "°";
-        document.getElementById('p-vil').innerText = (cell.severity?.vil || 32.7) + " kg/m²";
-        document.getElementById('p-top').innerText = (cell.severity?.echo_top || 16.8) + " km";
-        document.getElementById('p-rain').innerText = (cell.severity?.rain_mmh || 45) + " mm/h";
-    }
-
-    function renderMarkers(cells) {
-        cells.forEach(cell => {
-            const icon = L.divIcon({
-                className: 'custom-centroid',
-                html: `<div style="width:28px; height:28px; border:2px solid var(--pink-core); border-radius:50%; animation: pulse 1.4s infinite;"></div>`,
-                iconSize: [28, 28]
+        fetch('data/iride_database.json')
+            .then(res => res.json())
+            .then(data => {
+                if(data.cells && data.cells.length > 0) {
+                    const cell = data.cells[0];
+                    updateTelemetry(cell);
+                    if(cell.grid_matrix) activeGrid = cell.grid_matrix;
+                    renderMarkers(data.cells);
+                }
+                rebuildMainMesh();
+                renderMiniViews();
+            }).catch(() => {
+                rebuildMainMesh();
+                renderMiniViews();
             });
-            const marker = L.marker([cell.lat, cell.lon], { icon: icon }).addTo(map);
-            marker.on('click', () => {
-                updateTelemetry(cell);
-                if(cell.grid_matrix) {
-                    activeGrid = cell.grid_matrix;
-                    rebuildMainMesh();
-                    renderMiniViews();
+
+        function updateTelemetry(cell) {
+            document.getElementById('p-core-id').innerText = cell.id;
+            document.getElementById('p-lat').innerText = cell.lat + "°";
+            document.getElementById('p-lon').innerText = cell.lon + "°";
+            document.getElementById('p-dbz').innerText = cell.max_dbz + " dBZ";
+            document.getElementById('p-vel').innerText = (cell.kinematics?.velocity_kmh || 58) + " km/h";
+            document.getElementById('p-dir').innerText = (cell.kinematics?.direction_deg || 278) + "°";
+            document.getElementById('p-vil').innerText = (cell.severity?.vil || 32.7) + " kg/m²";
+            document.getElementById('p-top').innerText = (cell.severity?.echo_top || 16.8) + " km";
+            document.getElementById('p-rain').innerText = (cell.severity?.rain_mmh || 45) + " mm/h";
+        }
+
+        function renderMarkers(cells) {
+            cells.forEach(cell => {
+                const icon = L.divIcon({
+                    className: 'custom-centroid',
+                    html: `<div style="width:28px; height:28px; border:2px solid var(--pink-core); border-radius:50%; animation: pulse 1.4s infinite;"></div>`,
+                    iconSize: [28, 28]
+                });
+                const marker = L.marker([cell.lat, cell.lon], { icon: icon }).addTo(map);
+                marker.on('click', () => {
+                    updateTelemetry(cell);
+                    if(cell.grid_matrix) {
+                        activeGrid = cell.grid_matrix;
+                        rebuildMainMesh();
+                        renderMiniViews();
+                    }
+                });
+
+                if(cell.vectors) {
+                    L.polyline(cell.vectors.real, { color: '#00d2ff', weight: 2, dashArray: '4,4' }).addTo(map);
+                    L.polygon(cell.vectors.predictive_noaa, { color: '#ff0055', fillOpacity: 0.12, weight: 1 }).addTo(map);
                 }
             });
+        }
 
-            if(cell.vectors) {
-                L.polyline(cell.vectors.real, { color: '#00d2ff', weight: 2, dashArray: '4,4' }).addTo(map);
-                L.polygon(cell.vectors.predictive_noaa, { color: '#ff0055', fillOpacity: 0.12, weight: 1 }).addTo(map);
-            }
-        });
-    }
+        const mapViewport = document.getElementById('map-viewport');
+        const canvasMain = document.getElementById('webgl-overlay');
+        const rendererMain = new THREE.WebGLRenderer({ canvas: canvasMain, antialias: true, alpha: true });
+        rendererMain.setSize(mapViewport.clientWidth, mapViewport.clientHeight);
+        rendererMain.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-    const canvasMain = document.getElementById('webgl-overlay');
-    const rendererMain = new THREE.WebGLRenderer({ canvas: canvasMain, antialias: true, alpha: true });
-    rendererMain.setSize(canvasMain.clientWidth, canvasMain.clientHeight);
-    rendererMain.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        const sceneMain = new THREE.Scene();
+        const cameraMain = new THREE.PerspectiveCamera(45, mapViewport.clientWidth / mapViewport.clientHeight, 0.1, 1000);
+        cameraMain.position.set(0, 32, 52);
+        cameraMain.lookAt(0, 10, 0);
 
-    const sceneMain = new THREE.Scene();
-    const cameraMain = new THREE.PerspectiveCamera(45, canvasMain.clientWidth / canvasMain.clientHeight, 0.1, 1000);
-    cameraMain.position.set(0, 32, 52);
-    cameraMain.lookAt(0, 10, 0);
+        sceneMain.add(new THREE.AmbientLight(0xffffff, 0.9));
+        const mainLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        mainLight.position.set(25, 60, 30);
+        sceneMain.add(mainLight);
 
-    sceneMain.add(new THREE.AmbientLight(0xffffff, 0.9));
-    const mainLight = new THREE.DirectionalLight(0xffffff, 1.5);
-    mainLight.position.set(25, 60, 30);
-    sceneMain.add(mainLight);
+        const stormGroupMain = new THREE.Group();
+        sceneMain.add(stormGroupMain);
 
-    const stormGroupMain = new THREE.Group();
-    sceneMain.add(stormGroupMain);
+        function getDbzColorHex(dbz) {
+            if(dbz >= 70) return 0xff00ff;
+            if(dbz >= 62) return 0xff0055;
+            if(dbz >= 55) return 0xff3300;
+            if(dbz >= 48) return 0xff9900;
+            if(dbz >= 40) return 0xffff00;
+            if(dbz >= 35) return 0x00ff66;
+            return 0x00b4d8;
+        }
 
-    function getDbzColorHex(dbz) {
-        if(dbz >= 70) return 0xff00ff;
-        if(dbz >= 62) return 0xff0055;
-        if(dbz >= 55) return 0xff3300;
-        if(dbz >= 48) return 0xff9900;
-        if(dbz >= 40) return 0xffff00;
-        if(dbz >= 35) return 0x00ff66;
-        return 0x00b4d8;
-    }
+        function generateVoxelGrid3D(matrix, mode) {
+            const group = new THREE.Group();
+            const rows = matrix.length;
+            const cols = matrix[0].length;
+            const heightLevels = 16;
+            const boxSize = 0.95;
 
-    // VOXEL GRID 3D (InstancedMesh per Voxel e Wireframe)
-    function generateVoxelGrid3D(matrix, mode) {
-        const group = new THREE.Group();
-        const rows = matrix.length;
-        const cols = matrix[0].length;
-        const heightLevels = 16;
-        const boxSize = 0.95;
+            const voxelPositions = [];
+            const voxelColors = [];
 
-        const voxelPositions = [];
-        const voxelColors = [];
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    let dbz = matrix[r][c] || 10;
+                    if (dbz < 25) continue;
 
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-                let dbz = matrix[r][c] || 10;
-                if (dbz < 25) continue;
+                    let distFromCenter = Math.hypot(r - rows/2, c - cols/2) / (Math.max(rows, cols)/2);
+                    let maxH = Math.floor((dbz / 75.0) * heightLevels);
 
-                let distFromCenter = Math.hypot(r - rows/2, c - cols/2) / (Math.max(rows, cols)/2);
-                let maxH = Math.floor((dbz / 75.0) * heightLevels);
+                    for (let h = 0; h <= maxH; h++) {
+                        let hRatio = h / heightLevels;
+                        let isAnvilLevel = hRatio > 0.6;
 
-                for (let h = 0; h <= maxH; h++) {
-                    let hRatio = h / heightLevels;
-                    let isAnvilLevel = hRatio > 0.6;
+                        if (!isAnvilLevel && distFromCenter > 0.45) continue;
+                        if (isAnvilLevel && distFromCenter > (0.45 + (hRatio - 0.6) * 1.5)) continue;
 
-                    if (!isAnvilLevel && distFromCenter > 0.45) continue;
-                    if (isAnvilLevel && distFromCenter > (0.45 + (hRatio - 0.6) * 1.5)) continue;
+                        let px = (c - cols / 2) * boxSize;
+                        let py = h * boxSize;
+                        let pz = (r - rows / 2) * boxSize;
 
-                    let px = (c - cols / 2) * boxSize;
-                    let py = h * boxSize;
-                    let pz = (r - rows / 2) * boxSize;
+                        let currentDbz = Math.max(10, dbz - (hRatio * 20));
+                        let color = new THREE.Color(getDbzColorHex(currentDbz));
 
-                    let currentDbz = Math.max(10, dbz - (hRatio * 20));
-                    let color = new THREE.Color(getDbzColorHex(currentDbz));
-
-                    voxelPositions.push(px, py, pz);
-                    voxelColors.push(color.r, color.g, color.b);
+                        voxelPositions.push(px, py, pz);
+                        voxelColors.push(color.r, color.g, color.b);
+                    }
                 }
             }
-        }
 
-        const count = voxelPositions.length / 3;
-        const geometry = new THREE.BoxGeometry(boxSize * 0.9, boxSize * 0.9, boxSize * 0.9);
+            const count = voxelPositions.length / 3;
+            const geometry = new THREE.BoxGeometry(boxSize * 0.9, boxSize * 0.9, boxSize * 0.9);
 
-        if (mode === 'holo') {
-            const edgesGeom = new THREE.EdgesGeometry(geometry);
-            const lineMat = new THREE.LineBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0.4 });
-            for (let i = 0; i < count; i++) {
-                const line = new THREE.LineSegments(edgesGeom, lineMat);
-                line.position.set(voxelPositions[i*3], voxelPositions[i*3+1], voxelPositions[i*3+2]);
-                group.add(line);
+            if (mode === 'holo') {
+                const edgesGeom = new THREE.EdgesGeometry(geometry);
+                const lineMat = new THREE.LineBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0.4 });
+                for (let i = 0; i < count; i++) {
+                    const line = new THREE.LineSegments(edgesGeom, lineMat);
+                    line.position.set(voxelPositions[i*3], voxelPositions[i*3+1], voxelPositions[i*3+2]);
+                    group.add(line);
+                }
+            } else {
+                const material = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.45, roughness: 0.2 });
+                const instancedMesh = new THREE.InstancedMesh(geometry, material, count);
+                const dummy = new THREE.Object3D();
+
+                for (let i = 0; i < count; i++) {
+                    dummy.position.set(voxelPositions[i*3], voxelPositions[i*3+1], voxelPositions[i*3+2]);
+                    dummy.updateMatrix();
+                    instancedMesh.setMatrixAt(i, dummy.matrix);
+                    instancedMesh.setColorAt(i, new THREE.Color(voxelColors[i*3], voxelColors[i*3+1], voxelColors[i*3+2]));
+                }
+                instancedMesh.instanceMatrix.needsUpdate = true;
+                if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
+                group.add(instancedMesh);
             }
-        } else {
-            const material = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.45, roughness: 0.2 });
-            const instancedMesh = new THREE.InstancedMesh(geometry, material, count);
-            const dummy = new THREE.Object3D();
 
-            for (let i = 0; i < count; i++) {
-                dummy.position.set(voxelPositions[i*3], voxelPositions[i*3+1], voxelPositions[i*3+2]);
-                dummy.updateMatrix();
-                instancedMesh.setMatrixAt(i, dummy.matrix);
-                instancedMesh.setColorAt(i, new THREE.Color(voxelColors[i*3], voxelColors[i*3+1], voxelColors[i*3+2]));
+            return group;
+        }
+
+        function generateIsoSurfaceMesh3D(matrix) {
+            const group = new THREE.Group();
+            const rows = matrix.length;
+            const cols = matrix[0].length;
+            const heightLevels = 14;
+
+            for (let l = 1; l < heightLevels; l++) {
+                let hRatio = l / heightLevels;
+                let radiusScale = hRatio > 0.55 ? 1.0 + (hRatio - 0.55) * 2.2 : 0.4 + hRatio * 0.4;
+                let geom = new THREE.CylinderGeometry(cols * 0.4 * radiusScale, cols * 0.35 * radiusScale, 1.2, 32, 1, true);
+                geom.translate(0, l * 1.1, 0);
+
+                const pos = geom.attributes.position;
+                const colors = [];
+                for (let i = 0; i < pos.count; i++) {
+                    let dbzVal = 70 - (hRatio * 45);
+                    let c = new THREE.Color(getDbzColorHex(dbzVal));
+                    colors.push(c.r, c.g, c.b);
+                }
+                geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+                geom.computeVertexNormals();
+
+                let mat = new THREE.MeshPhysicalMaterial({
+                    vertexColors: true, roughness: 0.1, transmission: 0.65,
+                    thickness: 1.2, transparent: true, opacity: 0.85, side: THREE.DoubleSide
+                });
+
+                group.add(new THREE.Mesh(geom, mat));
             }
-            instancedMesh.instanceMatrix.needsUpdate = true;
-            if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
-            group.add(instancedMesh);
-        }
-
-        return group;
-    }
-  <script>
-    // ISO SUPERFICIE LISCIA 3D
-    function generateIsoSurfaceMesh3D(matrix) {
-        const group = new THREE.Group();
-        const rows = matrix.length;
-        const cols = matrix[0].length;
-        const heightLevels = 14;
-
-        for (let l = 1; l < heightLevels; l++) {
-            let hRatio = l / heightLevels;
-            let radiusScale = hRatio > 0.55 ? 1.0 + (hRatio - 0.55) * 2.2 : 0.4 + hRatio * 0.4;
-            let geom = new THREE.CylinderGeometry(cols * 0.4 * radiusScale, cols * 0.35 * radiusScale, 1.2, 32, 1, true);
-            geom.translate(0, l * 1.1, 0);
-
-            const pos = geom.attributes.position;
-            const colors = [];
-            for (let i = 0; i < pos.count; i++) {
-                let dbzVal = 70 - (hRatio * 45);
-                let c = new THREE.Color(getDbzColorHex(dbzVal));
-                colors.push(c.r, c.g, c.b);
-            }
-            geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-            geom.computeVertexNormals();
-
-            let mat = new THREE.MeshPhysicalMaterial({
-                vertexColors: true, roughness: 0.1, transmission: 0.65,
-                thickness: 1.2, transparent: true, opacity: 0.85, side: THREE.DoubleSide
-            });
-
-            group.add(new THREE.Mesh(geom, mat));
-        }
-        return group;
-    }
-
-    function rebuildMainMesh() {
-        while(stormGroupMain.children.length > 0) { stormGroupMain.remove(stormGroupMain.children[0]); }
-        let obj3D;
-        if (currentMasterMode === 'iso') {
-            obj3D = generateIsoSurfaceMesh3D(activeGrid);
-        } else {
-            obj3D = generateVoxelGrid3D(activeGrid, currentMasterMode);
-        }
-        stormGroupMain.add(obj3D);
-    }
-
-    function setupMiniView(canvasId, mode) {
-        const c = document.getElementById(canvasId);
-        if(!c) return;
-        const r = new THREE.WebGLRenderer({ canvas: c, antialias: true, alpha: true });
-        r.setSize(c.clientWidth, c.clientHeight);
-        r.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-        const s = new THREE.Scene();
-        const cam = new THREE.PerspectiveCamera(45, c.clientWidth / c.clientHeight, 0.1, 1000);
-        cam.position.set(0, 22, 36);
-        cam.lookAt(0, 8, 0);
-
-        s.add(new THREE.AmbientLight(0xffffff, 0.9));
-        const l = new THREE.DirectionalLight(0xffffff, 1.2);
-        l.position.set(15, 40, 20);
-        s.add(l);
-
-        let miniObj = (mode === 'iso') ? generateIsoSurfaceMesh3D(activeGrid) : generateVoxelGrid3D(activeGrid, mode);
-        s.add(miniObj);
-
-        function renderMini() {
-            requestAnimationFrame(renderMini);
-            miniObj.rotation.y += 0.005;
-            r.render(s, cam);
-        }
-        renderMini();
-    }
-
-    function renderMiniViews() {
-        setupMiniView('mini-canvas-voxel', 'voxel');
-        setupMiniView('mini-canvas-iso', 'iso');
-        setupMiniView('mini-canvas-holo', 'holo');
-    }
-
-    function setMasterMode(mode, btn) {
-        document.querySelectorAll('.btn-top-mode').forEach(b => b.classList.add('inactive'));
-        if(btn) btn.classList.remove('inactive');
-        currentMasterMode = mode;
-        rebuildMainMesh();
-    }
-
-    function generateFallbackMatrix() {
-        let m = Array(24).fill().map(() => Array(24).fill(12));
-        for(let r = 4; r < 20; r++) {
-            for(let c = 4; c < 20; c++) {
-                let d = Math.hypot(r - 12, c - 12);
-                m[r][c] = Math.max(12, 74 - (d * 3.8));
-            }
-        }
-        return m;
-    }
-
-    function animate() {
-        requestAnimationFrame(animate);
-        stormGroupMain.rotation.y += 0.002;
-        rendererMain.render(sceneMain, cameraMain);
-    }
-    animate();
-
-    window.addEventListener('resize', () => {
-        rendererMain.setSize(canvasMain.clientWidth, canvasMain.clientHeight);
-        cameraMain.aspect = canvasMain.clientWidth / canvasMain.clientHeight;
-        cameraMain.updateProjectionMatrix();
-    });
-</script>
-</body>
-</html>
+     
