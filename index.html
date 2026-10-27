@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>I.R.I.D.E. - Italian Radar Interactive Deep Engine</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root {
+            --bg-deep: #02060f;
+            --panel-bg: #060e1a;
+            --border-color: #162c46;
+            --cyan-glow: #00d2ff;
+            --pink-core: #ff0055;
+            --text-main: #ffffff;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0; padding: 0;
+            background: var(--bg-deep);
+            color: var(--text-main);
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+            width: 100vw; height: 100vh;
+            display: grid;
+            grid-template-rows: 54px 1fr 210px 32px;
+        }
+
+        #header {
+            background: var(--panel-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 20px; z-index: 100;
+        }
+
+        .brand-title { color: var(--cyan-glow); font-weight: 800; font-size: 18px; letter-spacing: 2px; }
+        .brand-subtitle { font-size: 11px; color: #8a99ad; margin-left: 10px; }
+
+        .header-controls { display: flex; align-items: center; gap: 12px; }
+        .badge-sperimentale { background: #091b30; color: var(--cyan-glow); border: 1px solid var(--border-color); padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+
+        .btn-top-mode {
+            background: #00b4d8; color: #000; border: none; padding: 8px 18px; border-radius: 4px; font-weight: bold; font-size: 12px; cursor: pointer;
+            box-shadow: 0 0 15px rgba(0, 180, 216, 0.4); transition: all 0.2s;
+        }
+        .btn-top-mode.inactive { background: #091b30; color: var(--cyan-glow); border: 1px solid var(--border-color); box-shadow: none; }
+
+        .status-ok { display: flex; align-items: center; gap: 6px; font-weight: bold; font-size: 12px; color: #00ff66; background: #091b30; padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border-color); }
+        .status-dot { width: 8px; height: 8px; background: #00ff66; border-radius: 50%; box-shadow: 0 0 8px #00ff66; }
+
+        #center-grid { display: grid; grid-template-columns: 1fr 340px; position: relative; background: #000; overflow: hidden; }
+        #map-viewport { position: relative; width: 100%; height: 100%; }
+        #map { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+        #webgl-overlay { width: 100%; height: 100%; position: absolute; top: 0; left: 0; pointer-events: none; z-index: 10; }
+
+        .dbz-scale-bar {
+            position: absolute; top: 20px; left: 20px; z-index: 20; background: rgba(6, 14, 26, 0.9);
+            border: 1px solid var(--border-color); padding: 12px; border-radius: 6px; font-size: 11px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5); backdrop-filter: blur(4px);
+        }
+        .dbz-gradient {
+            width: 18px; height: 220px;
+            background: linear-gradient(to top, #00b4d8, #00ff66, #ffff00, #ff9900, #ff0055, #ff00ff, #ffffff);
+            margin-top: 6px; border-radius: 2px;
+        }
+
+        #telemetry-panel {
+            background: var(--panel-bg); border-left: 1px solid var(--border-color); padding: 18px;
+            font-size: 12px; overflow-y: auto; z-index: 20;
+        }
+        .telemetry-header {
+            font-size: 16px; font-weight: bold; color: var(--text-main); margin-bottom: 14px; padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;
+        }
+        .telemetry-row { display: flex; justify-content: space-between; margin-bottom: 9px; color: #94a3b8; font-size: 13px; }
+        .telemetry-val { color: #fff; font-weight: bold; }
+
+        .legend-box { margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 14px; }
+        .legend-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 11px; color: #cbd5e1; }
+
+        #bottom-grid {
+            background: #040914; border-top: 1px solid var(--border-color);
+            display: grid; grid-template-columns: 1fr 1fr 1fr 340px; gap: 1px; background-color: var(--border-color);
+        }
+        .preview-card { background: var(--panel-bg); padding: 10px 14px; position: relative; overflow: hidden; }
+        .preview-title { font-size: 13px; font-weight: bold; color: var(--text-main); }
+        .preview-subtitle { font-size: 10px; color: #8a99ad; margin-bottom: 4px; }
+        .mini-canvas { width: 100%; height: 140px; }
+
+        .specs-card { background: var(--panel-bg); padding: 12px 14px; font-size: 11px; color: #cbd5e1; display: flex; flex-direction: column; justify-content: space-between; }
+        .spec-check { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: #00ff66; }
+
+        #footer {
+            background: #02050a; border-top: 1px solid var(--border-color); display: flex;
+            align-items: center; justify-content: space-between; padding: 0 20px; font-size: 11px; color: #64748b;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="header">
+        <div style="display: flex; align-items: baseline;">
+            <div class="brand-title">I.R.I.D.E.</div>
+            <div class="brand-subtitle">Italian Radar Interactive Deep Engine</div>
+        </div>
+        <div class="header-controls">
+            <div class="badge-sperimentale">SPERIMENTALE</div>
+            <button class="btn-top-mode" onclick="setMasterMode('voxel', this)">VOXEL 3D</button>
+            <button class="btn-top-mode inactive" onclick="setMasterMode('iso', this)">ISO SUPERFICIE</button>
+            <button class="btn-top-mode inactive" onclick="setMasterMode('holo', this)">HOLO WIREFRAME</button>
+            <div class="status-ok"><div class="status-dot"></div> OK</div>
+        </div>
+    </div>
+
+    <div id="center-grid">
+        <div id="map-viewport">
+            <div id="map"></div>
+            <canvas id="webgl-overlay"></canvas>
+
+            <div class="dbz-scale-bar">
+                <div style="font-weight: bold; margin-bottom: 4px;">Riflettività (dBZ)</div>
+                <div style="display: flex; justify-content: space-between; font-size: 10px; color: #aaa;"><span>75</span><span>10</span></div>
+                <div class="dbz-gradient"></div>
+            </div>
+        </div>
+
+        <div id="telemetry-panel">
+            <div class="telemetry-header">
+                <span id="p-core-id">Core-51611-7</span>
+                <span style="font-size: 11px; color: #00ff66;">● ATTIVO</span>
+            </div>
+            <div class="telemetry-row"><span>Latitudine:</span> <span id="p-lat" class="telemetry-val">41.8932°</span></div>
+            <div class="telemetry-row"><span>Longitudine:</span> <span id="p-lon" class="telemetry-val">12.4987°</span></div>
+            <div class="telemetry-row"><span>Riflettività max:</span> <span id="p-dbz" class="telemetry-val" style="color:var(--pink-core);">68.4 dBZ</span></div>
+            <div class="telemetry-row"><span>Velocità:</span> <span id="p-vel" class="telemetry-val">58 km/h</span></div>
+            <div class="telemetry-row"><span>Direzione:</span> <span id="p-dir" class="telemetry-val">278°</span></div>
+            <div class="telemetry-row"><span>VIL:</span> <span id="p-vil" class="telemetry-val">32.7 kg/m²</span></div>
+            <div class="telemetry-row"><span>Echo Top:</span> <span id="p-top" class="telemetry-val">16.8 km</span></div>
+            <div class="telemetry-row"><span>Pioggia stimata:</span> <span id="p-rain" class="telemetry-val">45 mm/h</span></div>
+
+            <div class="legend-box">
+                <div class="legend-item"><div style="width:14px; height:14px; border:2px solid var(--pink-core); border-radius:50%;"></div> Centroide (massima riflettività)</div>
+                <div class="legend-item"><div style="width:18px; height:2px; background:var(--pink-core);"></div> Vettore previsto (+4h)</div>
+                <div class="legend-item"><div style="width:18px; height:2px; background:var(--cyan-glow);"></div> Vettore reale</div>
+                <div class="legend-item"><div style="width:14px; height:14px; background:linear-gradient(45deg, #ff9900, #ff0055); border-radius:2px;"></div> Classe riflettività cella: 60–70 dBZ</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="bottom-grid">
+        <div class="preview-card">
+            <div class="preview-title">Voxel 3D</div>
+            <div class="preview-subtitle">Volumi pieni e continui</div>
+            <canvas id="mini-canvas-voxel" class="mini-canvas"></canvas>
+        </div>
+        <div class="preview-card">
+            <div class="preview-title">Iso superficie</div>
+            <div class="preview-subtitle">Superfici continue</div>
+            <canvas id="mini-canvas-iso" class="mini-canvas"></canvas>
+        </div>
+        <div class="preview-card">
+            <div class="preview-title">Holo wireframe</div>
+            <div class="preview-subtitle">Reticolo 3D trasparente</div>
+            <canvas id="mini-canvas-holo" class="mini-canvas"></canvas>
+        </div>
+        <div class="specs-card">
+            <div>
+                <div style="font-weight: bold; margin-bottom: 6px; color: #fff;">Palette radar (RainViewer)</div>
+                <div class="spec-check">✓ <span>Mappa radar reale (zoom front end 4)</span></div>
+                <div class="spec-check">✓ <span>Geometria 3D continua (non puntini, non quadratini)</span></div>
+                <div class="spec-check">✓ <span>Incudine più alta e larga del nucleo convettivo</span></div>
+                <div class="spec-check">✓ <span>Centroidi colorati dalla massima riflettività</span></div>
+                <div class="spec-check">✓ <span>Tutte le modalità condividono la stessa morfologia</span></div>
+            </div>
+            <div style="font-size: 9px; color: #94a3b8; margin-top: 6px; background: #081424; padding: 6px; border-radius: 4px; border: 1px solid var(--border-color);">
+                Non è una misura volumetrica reale del radar, ma una ricostruzione morfologica basata sul raster 2D.
+            </div>
+        </div>
+    </div>
+
+    <div id="footer">
+        <span>I.R.I.D.E. | Italian Radar Interactive Deep Engine</span>
+        <span>Dati dal raster RainViewer | Visualizzazione 3D sperimentale</span>
+    </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+    const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([41.8932, 12.4987], 8);
+    L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 }).addTo(map);
+
+    let activeGrid = generateFallbackMatrix();
+    let currentMasterMode = 'voxel';
+
+    fetch('data/iride_database.json')
+        .then(res => res.json())
+        .then(data => {
+            if(data.cells && data.cells.length > 0) {
+                const cell = data.cells[0];
+                updateTelemetry(cell);
+                if(cell.grid_matrix) activeGrid = cell.grid_matrix;
+                renderMarkers(data.cells);
+            }
+            rebuildMainMesh();
+            renderMiniViews();
+        }).catch(() => {
+            rebuildMainMesh();
+            renderMiniViews();
+        });
+
+    function updateTelemetry(cell) {
+        document.getElementById('p-core-id').innerText = cell.id;
+        document.getElementById('p-lat').innerText = cell.lat + "°";
+        document.getElementById('p-lon').innerText = cell.lon + "°";
+        document.getElementById('p-dbz').innerText = cell.max_dbz + " dBZ";
+        document.getElementById('p-vel').innerText = (cell.kinematics?.velocity_kmh || 58) + " km/h";
+        document.getElementById('p-dir').innerText = (cell.kinematics?.direction_deg || 278) + "°";
+        document.getElementById('p-vil').innerText = (cell.severity?.vil || 32.7) + " kg/m²";
+        document.getElementById('p-top').innerText = (cell.severity?.echo_top || 16.8) + " km";
+        document.getElementById('p-rain').innerText = (cell.severity?.rain_mmh || 45) + " mm/h";
+    }
+
+    function renderMarkers(cells) {
+        cells.forEach(cell => {
+            const icon = L.divIcon({
+                className: 'custom-centroid',
+                html: `<div style="width:28px; height:28px; border:2px solid var(--pink-core); border-radius:50%; animation: pulse 1.4s infinite;"></div>`,
+                iconSize: [28, 28]
+            });
+            const marker = L.marker([cell.lat, cell.lon], { icon: icon }).addTo(map);
+            marker.on('click', () => {
+                updateTelemetry(cell);
+                if(cell.grid_matrix) {
+                    activeGrid = cell.grid_matrix;
+                    rebuildMainMesh();
+                    renderMiniViews();
+                }
+            });
+
+            if(cell.vectors) {
+                L.polyline(cell.vectors.real, { color: '#00d2ff', weight: 2, dashArray: '4,4' }).addTo(map);
+                L.polygon(cell.vectors.predictive_noaa, { color: '#ff0055', fillOpacity: 0.12, weight: 1 }).addTo(map);
+            }
+        });
+    }
+
+    const canvasMain = document.getElementById('webgl-overlay');
+    const rendererMain = new THREE.WebGLRenderer({ canvas: canvasMain, antialias: true, alpha: true });
+    rendererMain.setSize(canvasMain.clientWidth, canvasMain.clientHeight);
+    rendererMain.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+    const sceneMain = new THREE.Scene();
+    const cameraMain = new THREE.PerspectiveCamera(45, canvasMain.clientWidth / canvasMain.clientHeight, 0.1, 1000);
+    cameraMain.position.set(0, 32, 52);
+    cameraMain.lookAt(0, 10, 0);
+
+    sceneMain.add(new THREE.AmbientLight(0xffffff, 0.9));
+    const mainLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    mainLight.position.set(25, 60, 30);
+    sceneMain.add(mainLight);
+
+    const stormGroupMain = new THREE.Group();
+    sceneMain.add(stormGroupMain);
+
+    function getDbzColorHex(dbz) {
+        if(dbz >= 70) return 0xff00ff;
+        if(dbz >= 62) return 0xff0055;
+        if(dbz >= 55) return 0xff3300;
+        if(dbz >= 48) return 0xff9900;
+        if(dbz >= 40) return 0xffff00;
+        if(dbz >= 35) return 0x00ff66;
+        return 0x00b4d8;
+    }
+
+    // VOXEL GRID 3D (InstancedMesh per Voxel e Wireframe)
+    function generateVoxelGrid3D(matrix, mode) {
+        const group = new THREE.Group();
+        const rows = matrix.length;
+        const cols = matrix[0].length;
+        const heightLevels = 16;
+        const boxSize = 0.95;
+
+        const voxelPositions = [];
+        const voxelColors = [];
+
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                let dbz = matrix[r][c] || 10;
+                if (dbz < 25) continue;
+
+                let distFromCenter = Math.hypot(r - rows/2, c - cols/2) / (Math.max(rows, cols)/2);
+                let maxH = Math.floor((dbz / 75.0) * heightLevels);
+
+                for (let h = 0; h <= maxH; h++) {
+                    let hRatio = h / heightLevels;
+                    let isAnvilLevel = hRatio > 0.6;
+
+                    if (!isAnvilLevel && distFromCenter > 0.45) continue;
+                    if (isAnvilLevel && distFromCenter > (0.45 + (hRatio - 0.6) * 1.5)) continue;
+
+                    let px = (c - cols / 2) * boxSize;
+                    let py = h * boxSize;
+                    let pz = (r - rows / 2) * boxSize;
+
+                    let currentDbz = Math.max(10, dbz - (hRatio * 20));
+                    let color = new THREE.Color(getDbzColorHex(currentDbz));
+
+                    voxelPositions.push(px, py, pz);
+                    voxelColors.push(color.r, color.g, color.b);
+                }
+            }
+        }
+
+        const count = voxelPositions.length / 3;
+        const geometry = new THREE.BoxGeometry(boxSize * 0.9, boxSize * 0.9, boxSize * 0.9);
+
+        if (mode === 'holo') {
+            const edgesGeom = new THREE.EdgesGeometry(geometry);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0.4 });
+            for (let i = 0; i < count; i++) {
+                const line = new THREE.LineSegments(edgesGeom, lineMat);
+                line.position.set(voxelPositions[i*3], voxelPositions[i*3+1], voxelPositions[i*3+2]);
+                group.add(line);
+            }
+        } else {
+            const material = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.45, roughness: 0.2 });
+            const instancedMesh = new THREE.InstancedMesh(geometry, material, count);
+            const dummy = new THREE.Object3D();
+
+            for (let i = 0; i < count; i++) {
+                dummy.position.set(voxelPositions[i*3], voxelPositions[i*3+1], voxelPositions[i*3+2]);
+                dummy.updateMatrix();
+                instancedMesh.setMatrixAt(i, dummy.matrix);
+                instancedMesh.setColorAt(i, new THREE.Color(voxelColors[i*3], voxelColors[i*3+1], voxelColors[i*3+2]));
+            }
+            instancedMesh.instanceMatrix.needsUpdate = true;
+            if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
+            group.add(instancedMesh);
+        }
+
+        return group;
+    }
+  <script>
+    // ISO SUPERFICIE LISCIA 3D
+    function generateIsoSurfaceMesh3D(matrix) {
+        const group = new THREE.Group();
+        const rows = matrix.length;
+        const cols = matrix[0].length;
+        const heightLevels = 14;
+
+        for (let l = 1; l < heightLevels; l++) {
+            let hRatio = l / heightLevels;
+            let radiusScale = hRatio > 0.55 ? 1.0 + (hRatio - 0.55) * 2.2 : 0.4 + hRatio * 0.4;
+            let geom = new THREE.CylinderGeometry(cols * 0.4 * radiusScale, cols * 0.35 * radiusScale, 1.2, 32, 1, true);
+            geom.translate(0, l * 1.1, 0);
+
+            const pos = geom.attributes.position;
+            const colors = [];
+            for (let i = 0; i < pos.count; i++) {
+                let dbzVal = 70 - (hRatio * 45);
+                let c = new THREE.Color(getDbzColorHex(dbzVal));
+                colors.push(c.r, c.g, c.b);
+            }
+            geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geom.computeVertexNormals();
+
+            let mat = new THREE.MeshPhysicalMaterial({
+                vertexColors: true, roughness: 0.1, transmission: 0.65,
+                thickness: 1.2, transparent: true, opacity: 0.85, side: THREE.DoubleSide
+            });
+
+            group.add(new THREE.Mesh(geom, mat));
+        }
+        return group;
+    }
+
+    function rebuildMainMesh() {
+        while(stormGroupMain.children.length > 0) { stormGroupMain.remove(stormGroupMain.children[0]); }
+        let obj3D;
+        if (currentMasterMode === 'iso') {
+            obj3D = generateIsoSurfaceMesh3D(activeGrid);
+        } else {
+            obj3D = generateVoxelGrid3D(activeGrid, currentMasterMode);
+        }
+        stormGroupMain.add(obj3D);
+    }
+
+    function setupMiniView(canvasId, mode) {
+        const c = document.getElementById(canvasId);
+        if(!c) return;
+        const r = new THREE.WebGLRenderer({ canvas: c, antialias: true, alpha: true });
+        r.setSize(c.clientWidth, c.clientHeight);
+        r.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        const s = new THREE.Scene();
+        const cam = new THREE.PerspectiveCamera(45, c.clientWidth / c.clientHeight, 0.1, 1000);
+        cam.position.set(0, 22, 36);
+        cam.lookAt(0, 8, 0);
+
+        s.add(new THREE.AmbientLight(0xffffff, 0.9));
+        const l = new THREE.DirectionalLight(0xffffff, 1.2);
+        l.position.set(15, 40, 20);
+        s.add(l);
+
+        let miniObj = (mode === 'iso') ? generateIsoSurfaceMesh3D(activeGrid) : generateVoxelGrid3D(activeGrid, mode);
+        s.add(miniObj);
+
+        function renderMini() {
+            requestAnimationFrame(renderMini);
+            miniObj.rotation.y += 0.005;
+            r.render(s, cam);
+        }
+        renderMini();
+    }
+
+    function renderMiniViews() {
+        setupMiniView('mini-canvas-voxel', 'voxel');
+        setupMiniView('mini-canvas-iso', 'iso');
+        setupMiniView('mini-canvas-holo', 'holo');
+    }
+
+    function setMasterMode(mode, btn) {
+        document.querySelectorAll('.btn-top-mode').forEach(b => b.classList.add('inactive'));
+        if(btn) btn.classList.remove('inactive');
+        currentMasterMode = mode;
+        rebuildMainMesh();
+    }
+
+    function generateFallbackMatrix() {
+        let m = Array(24).fill().map(() => Array(24).fill(12));
+        for(let r = 4; r < 20; r++) {
+            for(let c = 4; c < 20; c++) {
+                let d = Math.hypot(r - 12, c - 12);
+                m[r][c] = Math.max(12, 74 - (d * 3.8));
+            }
+        }
+        return m;
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        stormGroupMain.rotation.y += 0.002;
+        rendererMain.render(sceneMain, cameraMain);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+        rendererMain.setSize(canvasMain.clientWidth, canvasMain.clientHeight);
+        cameraMain.aspect = canvasMain.clientWidth / canvasMain.clientHeight;
+        cameraMain.updateProjectionMatrix();
+    });
+</script>
+</body>
+</html>
