@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>I.R.I.D.E. - Italian Radar Interactive Deep Engine</title>
+    <title>I.R.I.D.E. - Ground-Anchored Radar Engine</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root {
@@ -23,24 +23,19 @@
         .brand-subtitle { font-size: 11px; color: #8a99ad; margin-left: 10px; }
         #map { flex-grow: 1; width: 100%; height: 100%; z-index: 1; }
 
-        .dbz-scale-bar { position: absolute; bottom: 20px; left: 20px; z-index: 1000; background: var(--panel-bg); border: 1px solid var(--border-color); padding: 8px 10px; border-radius: 6px; font-size: 10px; backdrop-filter: blur(4px); }
-        .dbz-gradient { width: 14px; height: 140px; background: linear-gradient(to top, #00b4d8, #00ff66, #ffff00, #ff9900, #ff0055, #ff00ff, #ffffff); margin-top: 4px; border-radius: 2px; }
-
         #view-3d { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2000; background: radial-gradient(circle at center, #071325 0%, #020408 100%); display: none; flex-direction: column; }
         #view-3d.active { display: flex; }
 
-        #header-3d { height: 60px; background: var(--panel-bg); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; z-index: 10; }
-        .controls-3d { display: flex; gap: 6px; align-items: center; }
-        .btn-mode { background: #091b30; color: var(--cyan-glow); border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 10px; cursor: pointer; }
-        .btn-mode.active { background: #00b4d8; color: #000; border-color: #00b4d8; box-shadow: 0 0 10px rgba(0,180,216,0.5); }
-        .btn-back { background: #ff0055; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer; }
+        #header-3d { background: var(--panel-bg); border-bottom: 1px solid var(--border-color); padding: 12px 16px; z-index: 10; }
+        .telemetry-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+        .tele-title { font-size: 15px; font-weight: bold; color: var(--cyan-glow); }
+        .btn-close-3d { background: #ff0055; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer; }
+        .tele-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; font-size: 11px; color: #94a3b8; border-top: 1px solid var(--border-color); padding-top: 6px; }
+        .tele-item span { color: #fff; font-weight: bold; }
 
         #canvas-container-3d { flex-grow: 1; position: relative; width: 100%; height: 100%; overflow: hidden; }
         #canvas-cell-3d { width: 100% !important; height: 100% !important; display: block; }
-
-        .telemetry-overlay { position: absolute; bottom: 20px; right: 20px; background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 16px; font-size: 11px; backdrop-filter: blur(8px); min-width: 250px; pointer-events: none; }
-        .tele-row { display: flex; justify-content: space-between; margin-bottom: 4px; color: #94a3b8; }
-        .tele-val { color: #fff; font-weight: bold; }
+        .footer-hint { position: absolute; bottom: 12px; width: 100%; text-align: center; font-size: 10px; color: #64748b; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -48,42 +43,35 @@
         <div id="header-tracker">
             <div style="display: flex; align-items: baseline;">
                 <div class="brand-title">I.R.I.D.E.</div>
-                <div class="brand-subtitle">Real-Time Convective Tracker</div>
+                <div class="brand-subtitle">Ground-Anchored Engine</div>
             </div>
             <div style="font-size: 11px; color: #00ff66; font-weight: bold; background: #091b30; padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border-color);">● TRACKER ATTIVO</div>
         </div>
         <div style="position: relative; flex-grow: 1; width: 100%; height: 100%;">
             <div id="map"></div>
-            <div class="dbz-scale-bar">
-                <div style="font-weight: bold; margin-bottom: 2px;">Riflettività (dBZ)</div>
-                <div style="display: flex; justify-content: space-between; font-size: 9px; color: #aaa;"><span>75</span><span>10</span></div>
-                <div class="dbz-gradient"></div>
-            </div>
         </div>
     </div>
 
     <div id="view-3d">
         <div id="header-3d">
-            <div style="display: flex; align-items: center; gap: 12px;">
-                <button class="btn-back" onclick="closeCell3DView()">← INDIETRO MAPPA</button>
+            <div class="telemetry-top">
                 <div>
-                    <div id="h-core-id" style="font-weight: bold; font-size: 14px; color: var(--cyan-glow);">Core-Cell</div>
-                    <div style="font-size: 9px; color: #8a99ad;">Radar Palette Isosurface Engine</div>
+                    <div id="h-core-id" class="tele-title">Core-Cell</div>
+                    <div style="font-size: 11px; color: var(--pink-core);" id="t-dbz-main">Riflettività: --</div>
                 </div>
+                <button class="btn-close-3d" onclick="closeCell3DView()">CHIUDI ✕</button>
             </div>
-            <div class="controls-3d">
-                <button class="btn-mode active" id="bm-solid" onclick="switchCellMode('solid')">SOLIDO 3D</button>
-                <button class="btn-mode" id="bm-iso" onclick="switchCellMode('iso')">ISOVOLUMETRICO</button>
-                <button class="btn-mode" id="bm-holo" onclick="switchCellMode('holo')">HOLO</button>
+            <div class="tele-grid">
+                <div class="tele-item">VIL: <span id="t-vil">--</span></div>
+                <div class="tele-item">Echo top: <span id="t-top">--</span></div>
+                <div class="tele-item">Velocità: <span id="t-vel">--</span></div>
+                <div class="tele-item">Direzione: <span id="t-dir">--</span></div>
             </div>
         </div>
+
         <div id="canvas-container-3d">
             <canvas id="canvas-cell-3d"></canvas>
-            <div class="telemetry-overlay">
-                <div class="tele-row"><span>Riflettività Max:</span> <span id="t-dbz" class="tele-val" style="color:var(--pink-core);">--</span></div>
-                <div class="tele-row"><span>Velocità / Dir:</span> <span id="t-vel" class="tele-val">--</span></div>
-                <div class="tele-row"><span>VIL / Echo Top:</span> <span id="t-vil" class="tele-val">--</span></div>
-            </div>
+            <div class="footer-hint">Trascina per ruotare la struttura · Dati nativi grid_matrix</div>
         </div>
     </div>
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -93,7 +81,6 @@
         L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 }).addTo(map);
 
         let activeCellData = null;
-        let currentCellMode = 'solid';
 
         const pathSegments = window.location.pathname.split('/').filter(Boolean);
         const jsonUrl = window.location.hostname.includes('github.io') && pathSegments.length > 0 
@@ -134,9 +121,12 @@
         function openCell3DView(cell) {
             activeCellData = cell;
             document.getElementById('h-core-id').innerText = cell.id || "Core-Cell";
-            document.getElementById('t-dbz').innerText = (cell.max_dbz || 0) + " dBZ";
-            document.getElementById('t-vel').innerText = `${cell.kinematics?.velocity_kmh || 0} km/h (${cell.kinematics?.direction_deg || 0}°)`;
-            document.getElementById('t-vil').innerText = `${cell.severity?.vil || 0} kg/m² | ${cell.severity?.echo_top || 0} km`;
+            document.getElementById('t-dbz-main').innerText = `Riflettività: ${cell.max_dbz || 0} dBZ`;
+            document.getElementById('t-vil').innerText = `${cell.severity?.vil || 0} kg/m²`;
+            document.getElementById('t-top').innerText = `${cell.severity?.echo_top || 0} km`;
+            document.getElementById('t-vel').innerText = `${cell.kinematics?.velocity_kmh || 0} km/h`;
+            document.getElementById('t-dir').innerText = `${cell.kinematics?.direction_deg || 0}°`;
+            
             document.getElementById('view-3d').classList.add('active');
             setTimeout(initCell3DEngine, 50);
         }
@@ -145,23 +135,9 @@
             document.getElementById('view-3d').classList.remove('active');
         }
 
-        function switchCellMode(mode) {
-            currentCellMode = mode;
-            document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
-            if (mode === 'solid') document.getElementById('bm-solid').classList.add('active');
-            if (mode === 'iso') document.getElementById('bm-iso').classList.add('active');
-            if (mode === 'holo') document.getElementById('bm-holo').classList.add('active');
-
-            if (cellScene && cellRootGroup) {
-                cellScene.remove(cellRootGroup);
-                cellRootGroup = buildRadarPaletteVolume(activeCellData?.grid_matrix, currentCellMode);
-                cellScene.add(cellRootGroup);
-            }
-        }
-
         let cellRenderer = null, cellScene = null, cellCamera = null, cellRootGroup = null;
         let isDragging = false, prevMouse = { x: 0, y: 0 };
-        let rotY = 0, tiltX = 0.35;
+        let rotY = 0.5, tiltX = 0.45;
 
         function initCell3DEngine() {
             const canvas = document.getElementById('canvas-cell-3d');
@@ -182,15 +158,15 @@
 
             cellScene = new THREE.Scene();
             cellCamera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1000);
-            cellCamera.position.set(0, 15, 34);
-            cellCamera.lookAt(0, 1.2, 0);
+            cellCamera.position.set(0, 16, 30);
+            cellCamera.lookAt(0, 0, 0);
 
-            cellScene.add(new THREE.AmbientLight(0xffffff, 1.6));
-            const light = new THREE.DirectionalLight(0xffffff, 1.9);
-            light.position.set(25, 50, 25);
+            cellScene.add(new THREE.AmbientLight(0xffffff, 1.8));
+            const light = new THREE.DirectionalLight(0xffffff, 2.0);
+            light.position.set(20, 40, 20);
             cellScene.add(light);
 
-            cellRootGroup = buildRadarPaletteVolume(activeCellData?.grid_matrix, currentCellMode);
+            cellRootGroup = buildSolidGroundEngine(activeCellData?.grid_matrix);
             cellScene.add(cellRootGroup);
 
             container.addEventListener('pointerdown', (e) => {
@@ -204,7 +180,7 @@
                 const dy = e.clientY - prevMouse.y;
 
                 rotY += dx * 0.008;
-                tiltX = Math.max(0.1, Math.min(0.65, tiltX + dy * 0.008));
+                tiltX = Math.max(0.1, Math.min(0.7, tiltX + dy * 0.008));
 
                 if (cellRootGroup) {
                     cellRootGroup.rotation.y = rotY;
@@ -226,7 +202,6 @@
             animateCell3D();
         }
 
-        // Scala dBZ Ufficiale Radar
         function getDbzColorHex(dbz) {
             if (dbz >= 68) return 0xff00ff; // Magenta
             if (dbz >= 58) return 0xff0044; // Rosso
@@ -237,143 +212,86 @@
             return 0x0055ff; // Blu
         }
 
-        // MOTORE CON PALETTE RADAR TERMODINAMICA SU ISOVOLUMI
-        function buildRadarPaletteVolume(matrix, mode) {
+        // MOTORE SOLIDO ANCORATO DIRETTAMENTE ALLA GRID_MATRIX 2D
+        function buildSolidGroundEngine(matrix) {
             const masterGroup = new THREE.Group();
             masterGroup.rotation.x = tiltX;
             masterGroup.rotation.y = rotY;
 
-            // Base 2D
-            const baseGroup = new THREE.Group();
-            baseGroup.position.y = -3.5;
-
-            let rows = 24, cols = 24;
+            let rows = 16, cols = 16;
             if (matrix && Array.isArray(matrix)) {
                 rows = matrix.length;
                 cols = matrix[0].length;
-                const pSize = 0.5;
-                for (let r = 0; r < rows; r++) {
-                    for (let c = 0; c < cols; c++) {
-                        let dbz = matrix[r][c] || 10;
-                        if (dbz < 20) continue;
-                        const geom = new THREE.PlaneGeometry(pSize, pSize);
-                        geom.rotateX(-Math.PI / 2);
-                        const mat = new THREE.MeshBasicMaterial({ 
-                            color: getDbzColorHex(dbz), 
-                            transparent: true, 
-                            opacity: 0.85, 
-                            side: THREE.DoubleSide 
-                        });
-                        const mesh = new THREE.Mesh(geom, mat);
-                        mesh.position.set((c - cols/2) * pSize, 0, (r - rows/2) * pSize);
-                        baseGroup.add(mesh);
-                    }
+            }
+
+            const pSize = 0.8;
+            const originX = (cols * pSize) / 2;
+            const originZ = (rows * pSize) / 2;
+
+            // 1. Piattaforma di Base Radar 2D al suolo
+            const groundGroup = new THREE.Group();
+            groundGroup.position.y = -3.0;
+
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const geom = new THREE.BoxGeometry(pSize * 0.95, 0.15, pSize * 0.95);
+                    const mat = new THREE.MeshBasicMaterial({ 
+                        color: 0x00d2ff, 
+                        wireframe: true, 
+                        transparent: true, 
+                        opacity: 0.3 
+                    });
+                    const box = new THREE.Mesh(geom, mat);
+                    box.position.set(c * pSize - originX, 0, r * pSize - originZ);
+                    groundGroup.add(box);
                 }
             }
-            masterGroup.add(baseGroup);
+            masterGroup.add(groundGroup);
 
-            const cell3DGroup = new THREE.Group();
-            const heightLevels = 22;
-            const pSize = 0.5;
+            // 2. Colonne Verticali Pene e Solide Ancorate alla Base
+            const stackGroup = new THREE.Group();
+            const maxLevels = 14;
 
             if (matrix && Array.isArray(matrix)) {
-                let sumR = 0, sumC = 0, count = 0;
-                for (let r = 0; r < rows; r++) {
-                    for (let c = 0; c < cols; c++) {
-                        if (matrix[r][c] >= 40) { sumR += r; sumC += c; count++; }
-                    }
-                }
-                let coreR = count > 0 ? sumR / count : rows / 2;
-                let coreC = count > 0 ? sumC / count : cols / 2;
-
-                const pos = [], colsArr = [], scaleArr = [];
-
                 for (let r = 0; r < rows; r++) {
                     for (let c = 0; c < cols; c++) {
                         let baseDbz = matrix[r][c] || 10;
-                        if (baseDbz < 18) continue;
+                        if (baseDbz < 20) continue;
 
-                        let maxH = Math.floor((baseDbz / 68.0) * heightLevels) + 5;
+                        let levelsCount = Math.min(maxLevels, Math.max(2, Math.floor((baseDbz / 70.0) * maxLevels)));
 
-                        for (let h = 0; h <= maxH; h++) {
-                            let hR = h / heightLevels; 
+                        for (let h = 0; h < levelsCount; h++) {
+                            let currentDbz = baseDbz - (h * 2.0);
+                            let colorHex = getDbzColorHex(currentDbz);
 
-                            let spreadFactor = hR > 0.28 
-                                ? 1.0 + Math.pow((hR - 0.28) / 0.72, 1.2) * 3.5 
-                                : 1.0 + (hR * 0.2);
+                            let boxGeom = new THREE.BoxGeometry(pSize * 0.92, 0.36, pSize * 0.92);
+                            let boxMat = new THREE.MeshStandardMaterial({ 
+                                color: colorHex, 
+                                transparent: true, 
+                                opacity: 0.9, 
+                                roughness: 0.25 
+                            });
 
-                            let curR = coreR + (r - coreR) * spreadFactor;
-                            let curC = coreC + (c - coreC) * spreadFactor;
+                            let mesh = new THREE.Mesh(boxGeom, boxMat);
+                            let x = c * pSize - originX;
+                            let z = r * pSize - originZ;
+                            let y = (h * 0.38) - 2.5;
 
-                            let xPos = (curC - cols/2) * pSize;
-                            let zPos = (curR - rows/2) * pSize;
-                            let yPos = (h - heightLevels/2) * 0.38;
-
-                            let distFromCore = Math.hypot(r - coreR, c - coreC);
-                            let currentDbz;
-
-                            if (hR > 0.78 && distFromCore <= 2.5) {
-                                currentDbz = 72; // Magenta
-                            } else if (distFromCore <= 2.8 && hR < 0.65) {
-                                currentDbz = Math.max(baseDbz, 60); // Rosso
-                            } else {
-                                currentDbz = baseDbz - (hR * 22); // Verde -> Azzurro -> Blu
-                            }
-
-                            let col = new THREE.Color(getDbzColorHex(currentDbz));
-                            pos.push(xPos, yPos, zPos);
-                            colsArr.push(col.r, col.g, col.b);
-                            scaleArr.push(hR > 0.28 ? 1.42 + (hR - 0.28) * 1.8 : 1.32);
+                            mesh.position.set(x, y, z);
+                            stackGroup.add(mesh);
                         }
                     }
                 }
-
-                const totalPoints = pos.length / 3;
-                if (totalPoints > 0) {
-                    let geom, mat;
-                    if (mode === 'iso') {
-                        // ISOVOLUMETRICO CON TRASPARENZA E COLORAZIONE PALETTE RADAR
-                        geom = new THREE.BoxGeometry(pSize * 1.15, 0.44, pSize * 1.15);
-                        mat = new THREE.MeshPhysicalMaterial({ 
-                            transparent: true, 
-                            opacity: 0.38, 
-                            roughness: 0.1, 
-                            transmission: 0.8, 
-                            thickness: 1.2,
-                            side: THREE.DoubleSide
-                        });
-                    } else if (mode === 'solid') {
-                        geom = new THREE.BoxGeometry(pSize * 1.05, 0.42, pSize * 1.05);
-                        mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.93, roughness: 0.2 });
-                    } else {
-                        geom = new THREE.BoxGeometry(pSize * 1.08, 0.42, pSize * 1.08);
-                        mat = new THREE.MeshBasicMaterial({ wireframe: true, transparent: true, opacity: 0.65 });
-                    }
-
-                    const instMesh = new THREE.InstancedMesh(geom, mat, totalPoints);
-                    const dummy = new THREE.Object3D();
-                    for (let i = 0; i < totalPoints; i++) {
-                        let s = scaleArr[i];
-                        dummy.position.set(pos[i*3], pos[i*3+1], pos[i*3+2]);
-                        dummy.scale.set(s, 1.0, s);
-                        dummy.updateMatrix();
-                        instMesh.setMatrixAt(i, dummy.matrix);
-                        instMesh.setColorAt(i, new THREE.Color(colsArr[i*3], colsArr[i*3+1], colsArr[i*3+2]));
-                    }
-                    instMesh.instanceMatrix.needsUpdate = true;
-                    if (instMesh.instanceColor) instMesh.instanceColor.needsUpdate = true;
-                    cell3DGroup.add(instMesh);
-                }
             }
 
-            masterGroup.add(cell3DGroup);
+            masterGroup.add(stackGroup);
             return masterGroup;
         }
 
         function animateCell3D() {
             requestAnimationFrame(animateCell3D);
             if (!isDragging && document.getElementById('view-3d').classList.contains('active')) {
-                rotY += 0.0003;
+                rotY += 0.0004;
                 if (cellRootGroup) cellRootGroup.rotation.y = rotY;
             }
             if (cellRenderer && cellScene && cellCamera) {
