@@ -1,6 +1,7 @@
 {
-  "timestamp": "2026-10-28T09:36:08.178788Z",
+  "timestamp": "2026-10-28T09:54:20.592824Z",
   "source": "RainViewer Live Multi-Frame API Real-Time",
+  "radar_tile_path": "/v2/radar/0ef7f8e08147",
   "cells": [
     {
       "id": "Core-51611-7",
