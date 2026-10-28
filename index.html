@@ -236,7 +236,6 @@
             return 0x0066ff; // Blu
         }
 
-        // MOTORE 3D PROFESSIONALE: Volume continuo, fluido e denso (senza voxel separati)
         function buildProfessionalStormVolume(matrix, mode) {
             const masterGroup = new THREE.Group();
             masterGroup.rotation.x = tiltX;
@@ -271,7 +270,7 @@
             }
             masterGroup.add(baseGroup);
 
-            // 2. Struttura 3D Continua e Fusa (Uso di cilindri smussati e sovrapposti per un effetto solido)
+            // 2. Struttura 3D Continua e Fusa
             const cell3DGroup = new THREE.Group();
             const heightLevels = 18;
             const pSize = 0.5;
@@ -291,14 +290,13 @@
                 for (let r = 0; r < rows; r++) {
                     for (let c = 0; c < cols; c++) {
                         let baseDbz = matrix[r][c] || 10;
-                        if (baseDbz < 22) continue; // Includiamo anche i bordi dell'incudine
+                        if (baseDbz < 22) continue;
 
                         let maxH = Math.floor((baseDbz / 70.0) * heightLevels) + 3;
 
                         for (let h = 0; h <= maxH; h++) {
                             let hR = h / heightLevels; 
 
-                            // Espansione fluida dell'incudine in quota
                             let spreadFactor = hR > 0.3 
                                 ? 1.0 + Math.pow((hR - 0.3) / 0.7, 1.3) * 3.4 
                                 : 1.0 + (hR * 0.25);
@@ -310,21 +308,19 @@
                             let zPos = (curR - rows/2) * pSize;
                             let yPos = (h - heightLevels/2) * 0.42;
 
-                            // Distribuzione fisica riflettività: core rosso/magenta al centro e in basso, azzurro/blu in quota
                             let distFromCore = Math.hypot(r - coreR, c - coreC);
                             let currentDbz;
                             
                             if (distFromCore <= 2.2 && hR < 0.6) {
-                                currentDbz = Math.max(baseDbz, 62); // Core rosso/magenta verticale garantito
+                                currentDbz = Math.max(baseDbz, 62);
                             } else {
-                                currentDbz = baseDbz - (hR * 26); // Sfumatura termodinamica verso l'incudine fredda
+                                currentDbz = baseDbz - (hR * 26);
                             }
 
                             let col = new THREE.Color(getDbzColorHex(currentDbz));
 
                             pos.push(xPos, yPos, zPos);
                             colsArr.push(col.r, col.g, col.b);
-                            // Sovrapposizione geometrica maggiorata in quota per eliminare ogni spazio vuoto
                             scaleArr.push(hR > 0.3 ? 1.35 + (hR - 0.3) * 1.8 : 1.25);
                         }
                     }
@@ -366,7 +362,8 @@
 
         function animateCell3D() {
             requestAnimationFrame(animateCell3D);
-            if (!isDragging && document.getElementById('view-3d'].classList.contains('active')) {
+            // CORRETTO: parentesi tonde ripristinate correttamente
+            if (!isDragging && document.getElementById('view-3d').classList.contains('active')) {
                 rotY += 0.003;
                 if (cellRootGroup) cellRootGroup.rotation.y = rotY;
             }
