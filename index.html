@@ -27,6 +27,12 @@
         }
         button:hover { background: #38bdf8; color: #0f172a; }
         input[type=range] { width: 100%; accent-color: #38bdf8; }
+        .legend {
+            display: flex; justify-content: space-between; margin-top: 12px;
+            padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 0.65rem;
+        }
+        .legend-item { display: flex; align-items: center; gap: 4px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -36,7 +42,7 @@
     <div id="canvas-container"></div>
 
     <div class="hud-panel">
-        <h2>I.R.I.D.E. RADAR 3D <span style="font-size: 0.65rem; color: #4ade80;">1000 VOXELS</span></h2>
+        <h2>I.R.I.D.E. RADAR 3D <span style="font-size: 0.65rem; color: #4ade80;">BALANCED 1000</span></h2>
         
         <div class="stat-grid">
             <div class="stat-card">
@@ -65,6 +71,12 @@
         <div class="control-group">
             <button onclick="regenerateCell()" style="width: 100%;">Rigenera Cella Radar</button>
         </div>
+
+        <div class="legend">
+            <div class="legend-item"><div class="dot" style="background:#0055ff"></div> Blu (Top 9km)</div>
+            <div class="legend-item"><div class="dot" style="background:#00ff44"></div> Verde (-30%)</div>
+            <div class="legend-item"><div class="dot" style="background:#ff2200"></div> Core dBZ</div>
+        </div>
     </div>
 
     <script>
@@ -74,8 +86,8 @@
         let currentOpacity = 0.70;
         const BOX_SIZE = 50;
 
-        // PARALLELEPIPEDO: Dimensioni fisse del singolo mattoncino (dX, dY, dZ)
-        const BRICK = { x: 1.2, y: 0.6, z: 1.2 }; 
+        // PARALLELEPIPEDO: Aumentato dY per consentire uno sviluppo verticale fino alla cima
+        const BRICK = { x: 1.4, y: 1.2, z: 1.4 }; 
 
         // Matrice 2D Radar (30x30)
         const GRID_SIZE = 30;
@@ -90,7 +102,7 @@
                     let dist = Math.hypot(r - center, c - center);
                     let dbz = 0;
                     if (dist < 12) {
-                        dbz = Math.max(0, 65 - (dist * 4.5) + (Math.random() * 5));
+                        dbz = Math.max(0, 65 - (dist * 4.2) + (Math.random() * 6));
                     }
                     row.push(Math.round(dbz));
                 }
@@ -156,57 +168,67 @@
 
             const brickGeometry = new THREE.BoxGeometry(BRICK.x, BRICK.y, BRICK.z);
             let totalBricks = 0;
-            const maxTargetBricks = 1050; // Tetto ~1000 parallelepipedi
+            const maxTargetBricks = 1000;
 
             const halfGrid = GRID_SIZE / 2;
             const startY = -BOX_SIZE / 2 + BRICK.y;
 
+            // 1. Estrazione celle valide (dBZ >= 15)
+            let validCells = [];
             for (let r = 0; r < GRID_SIZE; r++) {
                 for (let c = 0; c < GRID_SIZE; c++) {
-                    const dbz = radarMatrix[r][c];
-                    if (dbz < 15) continue; // Filtro rumore radar (<15 dBZ)
-
-                    const posX = (c - halfGrid) * BRICK.x;
-                    const posZ = (r - halfGrid) * BRICK.z;
-
-                    // Altezza della colonna proporzionale all'intensità radar
-                    const maxLayers = Math.floor((dbz / 65) * 22);
-
-                    for (let l = 0; l < maxLayers; l++) {
-                        if (totalBricks >= maxTargetBricks) break;
-
-                        const normH = l / 22; // Quota relativa (0.0 suolo -> 1.0 top 9km)
-                        const posY = startY + (l * (BRICK.y + 0.05));
-
-                        // Inclinazione dell'updraft (Wind Shear / Tilt)
-                        const tiltX = posX + (normH * 4.5); 
-
-                        let matType = 'blue';
-
-                        // STRATIFICAZIONE CORRETTA:
-                        if (normH > 0.65) {
-                            matType = 'blue'; // Incudine in alto
-                        } else if (normH > 0.35) {
-                            matType = (dbz > 40) ? 'yellow' : 'green';
-                        } else {
-                            matType = (dbz > 50) ? 'red' : ((dbz > 30) ? 'yellow' : 'green');
-                        }
-
-                        const brickMesh = new THREE.Mesh(brickGeometry, materials[matType]);
-                        brickMesh.position.set(tiltX, posY, posZ);
-                        brickMesh.userData = { origX: tiltX, origY: posY, origZ: posZ };
-
-                        stormContainer.add(brickMesh);
-                        totalBricks++;
+                    if (radarMatrix[r][c] >= 15) {
+                        validCells.push({ r, c, dbz: radarMatrix[r][c] });
                     }
                 }
             }
+
+            if (validCells.length === 0) return;
+
+            // 2. Budget di strati verticali per cella
+            const layersPerCell = Math.min(18, Math.floor(maxTargetBricks / validCells.length));
+
+            // 3. Costruzione proporzionale dal suolo al top dell'incudine
+            validCells.forEach(cell => {
+                const posX = (cell.c - halfGrid) * BRICK.x;
+                const posZ = (cell.r - halfGrid) * BRICK.z;
+
+                const cellMaxLayers = Math.max(3, Math.floor((cell.dbz / 65) * layersPerCell));
+
+                for (let l = 0; l < cellMaxLayers; l++) {
+                    if (totalBricks >= maxTargetBricks) break;
+
+                    const normH = l / cellMaxLayers; // Quota relativa (0.0 suolo -> 1.0 top)
+                    const posY = startY + (l * (BRICK.y + 0.1));
+
+                    // Wind Shear / Tilt dell'updraft
+                    const tiltX = posX + (normH * 3.5);
+
+                    let matType = 'blue';
+
+                    // STRATIFICAZIONE MATRIOSKA CORRETTA:
+                    if (normH > 0.6) {
+                        matType = 'blue';   // Cupola / Incudine in alto
+                    } else if (normH > 0.3) {
+                        matType = (cell.dbz > 40) ? 'yellow' : 'green';
+                    } else {
+                        matType = (cell.dbz > 50) ? 'red' : ((cell.dbz > 30) ? 'yellow' : 'green');
+                    }
+
+                    const brickMesh = new THREE.Mesh(brickGeometry, materials[matType]);
+                    brickMesh.position.set(tiltX, posY, posZ);
+                    brickMesh.userData = { origX: tiltX, origY: posY, origZ: posZ };
+
+                    stormContainer.add(brickMesh);
+                    totalBricks++;
+                }
+            });
 
             scene.add(stormContainer);
             document.getElementById('voxel-count').innerText = totalBricks;
         }
 
-        // AGGIORNAMENTO DIRETTO MATERIALI (Zero Lag su Mobile)
+        // AGGIORNAMENTO DIRETTO MATERIALI (Zero Lag)
         function adjustOpacity(delta) {
             currentOpacity = Math.max(0.1, Math.min(1.0, currentOpacity + delta));
             document.getElementById('opacity-val').innerText = Math.round(currentOpacity * 100) + '%';
@@ -224,7 +246,6 @@
             });
         }
 
-        // METODO DI RIGENERAZIONE RIPRISTINATO
         function regenerateCell() {
             generateSyntheticRadarMatrix();
             build3DCellFromRaster();
