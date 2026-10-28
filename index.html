@@ -3,120 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>I.R.I.D.E. - 3D Storm Cell Engine</title>
+    <title>I.R.I.D.E. 3D - Real Radar Matrix Engine</title>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            user-select: none;
-        }
-        body {
-            background-color: #050811;
-            color: #e2e8f0;
-            font-family: 'Segoe UI', Roboto, monospace;
-            overflow: hidden;
-            height: 100vh;
-        }
-        #canvas-container {
-            width: 100vw;
-            height: 100vh;
-            display: block;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        body { background-color: #050811; color: #e2e8f0; font-family: monospace; overflow: hidden; height: 100vh; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
         .hud-panel {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(10, 15, 30, 0.85);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(59, 130, 246, 0.3);
-            border-radius: 12px;
-            padding: 18px;
-            width: 320px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-            z-index: 10;
+            position: absolute; top: 15px; left: 15px;
+            background: rgba(10, 15, 30, 0.88); backdrop-filter: blur(10px);
+            border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 10px;
+            padding: 15px; width: 310px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); z-index: 10;
         }
-        h2 {
-            font-size: 1.1rem;
-            color: #60a5fa;
-            letter-spacing: 1px;
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .stat-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            margin-bottom: 15px;
-            font-size: 0.8rem;
-        }
-        .stat-card {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 8px;
-            border-radius: 6px;
-            border-left: 3px solid #3b82f6;
-        }
-        .stat-value {
-            font-size: 1.1rem;
-            font-weight: bold;
-            color: #fff;
-        }
-        .control-group {
-            margin-bottom: 12px;
-        }
-        label {
-            display: block;
-            font-size: 0.75rem;
-            color: #94a3b8;
-            margin-bottom: 4px;
-        }
-        .btn-group {
-            display: flex;
-            gap: 8px;
-        }
+        h2 { font-size: 1rem; color: #60a5fa; margin-bottom: 10px; display: flex; justify-content: space-between; }
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; font-size: 0.75rem; }
+        .stat-card { background: rgba(255,255,255,0.05); padding: 6px 8px; border-radius: 4px; border-left: 3px solid #3b82f6; }
+        .stat-value { font-size: 1rem; font-weight: bold; color: #fff; }
+        .control-group { margin-bottom: 10px; }
+        label { display: block; font-size: 0.7rem; color: #94a3b8; margin-bottom: 3px; }
+        .btn-group { display: flex; gap: 6px; }
         button {
-            flex: 1;
-            background: #1e293b;
-            color: #38bdf8;
-            border: 1px solid #38bdf8;
-            padding: 8px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 0.8rem;
-            transition: all 0.2s ease;
+            flex: 1; background: #1e293b; color: #38bdf8; border: 1px solid #38bdf8;
+            padding: 6px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.75rem;
         }
-        button:hover {
-            background: #38bdf8;
-            color: #0f172a;
-            box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
-        }
-        input[type=range] {
-            width: 100%;
-            accent-color: #38bdf8;
-        }
-        .legend {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 15px;
-            padding-top: 10px;
-            border-top: 1px solid rgba(255,255,255,0.1);
-            font-size: 0.7rem;
-        }
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-        .dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-        }
+        button:hover { background: #38bdf8; color: #0f172a; }
+        input[type=range] { width: 100%; accent-color: #38bdf8; }
     </style>
-    <!-- Three.js + OrbitControls -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
@@ -125,11 +36,11 @@
     <div id="canvas-container"></div>
 
     <div class="hud-panel">
-        <h2>I.R.I.D.E. 3D <span style="font-size: 0.7rem; color: #4ade80;">READY</span></h2>
+        <h2>I.R.I.D.E. RADAR 3D <span style="font-size: 0.65rem; color: #4ade80;">1000 VOXELS</span></h2>
         
         <div class="stat-grid">
             <div class="stat-card">
-                <div>VOXEL TOT.</div>
+                <div>PARALLELEPIPEDI</div>
                 <div class="stat-value" id="voxel-count">0</div>
             </div>
             <div class="stat-card">
@@ -148,66 +59,72 @@
 
         <div class="control-group">
             <label>Sezione Tomografica RHI (Taglio XZ)</label>
-            <input type="range" id="slice-slider" min="-20" max="20" value="20" step="0.5">
+            <input type="range" id="slice-slider" min="-25" max="25" value="25" step="0.5">
         </div>
 
         <div class="control-group">
             <button onclick="regenerateCell()" style="width: 100%;">Rigenera Cella Radar</button>
         </div>
-
-        <div class="legend">
-            <div class="legend-item"><div class="dot" style="background:#0055ff"></div> Blu (Top 9km)</div>
-            <div class="legend-item"><div class="dot" style="background:#00ff44"></div> Verde (-30%)</div>
-            <div class="legend-item"><div class="dot" style="background:#ff2200"></div> Core dBZ</div>
-        </div>
     </div>
 
     <script>
         let scene, camera, renderer, controls;
-        let stormGroup;
+        let stormContainer;
         let materials = {};
-        let currentBaseOpacity = 0.70;
-        const BOX_SIZE = 40; // Dimensione bounding box
-        const TARGET_MAX_VOXELS = 650; // Limite di sicurezza browser
+        let currentOpacity = 0.70;
+        const BOX_SIZE = 50;
+
+        // PARALLELEPIPEDO: Dimensioni fisse del singolo mattoncino (dX, dY, dZ)
+        const BRICK = { x: 1.2, y: 0.6, z: 1.2 }; 
+
+        // Matrice 2D Radar (30x30)
+        const GRID_SIZE = 30;
+        let radarMatrix = [];
+
+        function generateSyntheticRadarMatrix() {
+            radarMatrix = [];
+            const center = GRID_SIZE / 2;
+            for (let r = 0; r < GRID_SIZE; r++) {
+                let row = [];
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    let dist = Math.hypot(r - center, c - center);
+                    let dbz = 0;
+                    if (dist < 12) {
+                        dbz = Math.max(0, 65 - (dist * 4.5) + (Math.random() * 5));
+                    }
+                    row.push(Math.round(dbz));
+                }
+                radarMatrix.push(row);
+            }
+        }
 
         function init() {
             const container = document.getElementById('canvas-container');
 
-            // 1. Scena
             scene = new THREE.Scene();
-            scene.fog = new THREE.FogExp2(0x050811, 0.015);
+            scene.fog = new THREE.FogExp2(0x050811, 0.012);
 
-            // 2. Camera
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(45, 30, 55);
+            camera.position.set(50, 35, 60);
 
-            // 3. Renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            renderer.shadowMap.enabled = true;
             container.appendChild(renderer.domElement);
 
-            // 4. Controls
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
-            controls.maxPolarAngle = Math.PI / 2 + 0.1; // Non scendere troppo sotto il suolo
 
-            // 5. Luci
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-            scene.add(ambientLight);
-
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            dirLight.position.set(20, 40, 20);
+            scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+            let dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(30, 50, 30);
             scene.add(dirLight);
 
-            // 6. Inizializzazione Bounding Box & Cella
-            createMirrorBoundingBox();
+            createBoundingBox();
             setupMaterials();
-            generateStormCell();
+            generateSyntheticRadarMatrix();
+            build3DCellFromRaster();
 
-            // Event Listeners
             window.addEventListener('resize', onWindowResize);
             document.getElementById('slice-slider').addEventListener('input', (e) => {
                 applyRHISlice(parseFloat(e.target.value));
@@ -216,187 +133,103 @@
             animate();
         }
 
-        // --- SCATOLA DI CONTENIMENTO: FACCE LATERALI APERTE, SOPRA E SOTTO A SPECCHIO ---
-        function createMirrorBoundingBox() {
-            const boxGroup = new THREE.Group();
-
-            // Gabbia Laterale Wireframe (Trasparente/Leggera)
+        function createBoundingBox() {
             const wireGeo = new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE);
-            const wireMat = new THREE.MeshBasicMaterial({
-                color: 0x1e3a5f,
-                wireframe: true,
-                transparent: true,
-                opacity: 0.2
-            });
-            const wireCube = new THREE.Mesh(wireGeo, wireMat);
-            boxGroup.add(wireCube);
+            const wireMat = new THREE.MeshBasicMaterial({ color: 0x1e3a5f, wireframe: true, transparent: true, opacity: 0.15 });
+            scene.add(new THREE.Mesh(wireGeo, wireMat));
 
-            // Piano Inferiore A Specchio (Suolo - Riflesso 2D)
-            const planeGeo = new THREE.PlaneGeometry(BOX_SIZE, BOX_SIZE);
-            const mirrorBottomMat = new THREE.MeshStandardMaterial({
-                color: 0x0a1128,
-                roughness: 0.1,
-                metalness: 0.9,
-                transparent: true,
-                opacity: 0.8
-            });
-            const bottomMirror = new THREE.Mesh(planeGeo, mirrorBottomMat);
-            bottomMirror.rotation.x = -Math.PI / 2;
-            bottomMirror.position.y = -BOX_SIZE / 2;
-            boxGroup.add(bottomMirror);
-
-            // Piano Superiore A Specchio (Quota Tropopausa / Top 12km)
-            const mirrorTopMat = new THREE.MeshStandardMaterial({
-                color: 0x051026,
-                roughness: 0.2,
-                metalness: 0.8,
-                transparent: true,
-                opacity: 0.4
-            });
-            const topMirror = new THREE.Mesh(planeGeo, mirrorTopMat);
-            topMirror.rotation.x = Math.PI / 2;
-            topMirror.position.y = BOX_SIZE / 2;
-            boxGroup.add(topMirror);
-
-            // Griglia di riferimento al suolo
             const grid = new THREE.GridHelper(BOX_SIZE, 10, 0x38bdf8, 0x1e293b);
-            grid.position.y = -BOX_SIZE / 2 + 0.1;
-            boxGroup.add(grid);
-
-            scene.add(boxGroup);
+            grid.position.y = -BOX_SIZE / 2;
+            scene.add(grid);
         }
 
-        // --- MATERIALI A STRATI CON GRADIENTE TRASPARENTE MODULABILE ---
         function setupMaterials() {
-            materials.blue = new THREE.MeshStandardMaterial({
-                color: 0x0066ff,
-                transparent: true,
-                opacity: currentBaseOpacity * 0.6, // Più soffice in quota
-                roughness: 0.9,
-                depthWrite: false
-            });
-
-            materials.green = new THREE.MeshStandardMaterial({
-                color: 0x00ff44,
-                transparent: true,
-                opacity: currentBaseOpacity * 0.8,
-                roughness: 0.7,
-                depthWrite: false
-            });
-
-            materials.yellow = new THREE.MeshStandardMaterial({
-                color: 0xffcc00,
-                transparent: true,
-                opacity: currentBaseOpacity,
-                roughness: 0.5,
-                depthWrite: false
-            });
-
-            materials.red = new THREE.MeshStandardMaterial({
-                color: 0xff2200,
-                transparent: true,
-                opacity: Math.min(1.0, currentBaseOpacity * 1.2),
-                roughness: 0.3,
-                depthWrite: false
-            });
+            materials.blue = new THREE.MeshStandardMaterial({ color: 0x0055ff, transparent: true, opacity: currentOpacity * 0.5, depthWrite: false });
+            materials.green = new THREE.MeshStandardMaterial({ color: 0x00ff44, transparent: true, opacity: currentOpacity * 0.75, depthWrite: false });
+            materials.yellow = new THREE.MeshStandardMaterial({ color: 0xffcc00, transparent: true, opacity: currentOpacity * 0.9, depthWrite: false });
+            materials.red = new THREE.MeshStandardMaterial({ color: 0xff2200, transparent: true, opacity: Math.min(1.0, currentOpacity * 1.15), depthWrite: false });
         }
 
-        // --- GENERAZIONE CELLA MATRIOSKA CORRETTA (BLU IN ALTO, CORE IN BASSO) ---
-        function generateStormCell() {
-            if (stormGroup) scene.remove(stormGroup);
-            stormGroup = new THREE.Group();
+        function build3DCellFromRaster() {
+            if (stormContainer) scene.remove(stormContainer);
+            stormContainer = new THREE.Group();
 
-            let totalVoxels = 0;
-            const cubeSize = 1.4; // Blocchi ingranditi per mantenere le prestazioni
-            const geo = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+            const brickGeometry = new THREE.BoxGeometry(BRICK.x, BRICK.y, BRICK.z);
+            let totalBricks = 0;
+            const maxTargetBricks = 1050; // Tetto ~1000 parallelepipedi
 
-            // Parametri della cella
-            const levels = 18; // Risoluzione verticale
-            const heightStep = BOX_SIZE / levels;
-            const startY = -BOX_SIZE / 2 + heightStep / 2;
+            const halfGrid = GRID_SIZE / 2;
+            const startY = -BOX_SIZE / 2 + BRICK.y;
 
-            for (let l = 0; l < levels; l++) {
-                const currentY = startY + (l * heightStep);
-                const normalizedHeight = l / levels; // da 0.0 (suolo) a 1.0 (top 9km)
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    const dbz = radarMatrix[r][c];
+                    if (dbz < 15) continue; // Filtro rumore radar (<15 dBZ)
 
-                // LOGICA MATRIOSKA INVERTITA:
-                // - In basso (0.0 - 0.4): Core Rosso/Giallo compatto
-                // - A metà (0.3 - 0.7): Livello Verde ridotto (-30%)
-                // - In alto (0.6 - 1.0): Ampia volta Blu (Incudine dilatata dal wind shear)
-                
-                let radius = 0;
-                let layerType = 'blue';
+                    const posX = (c - halfGrid) * BRICK.x;
+                    const posZ = (r - halfGrid) * BRICK.z;
 
-                if (normalizedHeight > 0.6) {
-                    // VOLTA BLU (Top 8-9000m): Espansione dell'incudine
-                    radius = 12 * (0.8 + Math.sin(normalizedHeight * Math.PI) * 0.5);
-                    layerType = 'blue';
-                } else if (normalizedHeight > 0.3) {
-                    // LIVELLO VERDE: ~30% in meno rispetto alla cupola
-                    radius = 8 * (1 - normalizedHeight * 0.3);
-                    layerType = 'green';
-                } else {
-                    // CORE NUCLEO (Rosso/Giallo): Stretto, denso, colonna d'aria
-                    radius = 5 * (1 - normalizedHeight * 0.2);
-                    layerType = (Math.random() > 0.4) ? 'red' : 'yellow';
-                }
+                    // Altezza della colonna proporzionale all'intensità radar
+                    const maxLayers = Math.floor((dbz / 65) * 22);
 
-                // Generazione voxel perimetro/volume
-                const density = Math.floor(radius * 2.2);
-                for (let i = 0; i < density; i++) {
-                    if (totalVoxels >= TARGET_MAX_VOXELS) break;
+                    for (let l = 0; l < maxLayers; l++) {
+                        if (totalBricks >= maxTargetBricks) break;
 
-                    const angle = (i / density) * Math.PI * 2;
-                    // Dispersione controllata per simulare la massa nuvolosa
-                    const r = radius * (0.3 + Math.random() * 0.7); 
-                    
-                    // Inclinazione dell'updraft (Tilt) lungo l'asse X
-                    const tiltX = normalizedHeight * 6; 
-                    const x = Math.cos(angle) * r + tiltX;
-                    const z = Math.sin(angle) * r;
+                        const normH = l / 22; // Quota relativa (0.0 suolo -> 1.0 top 9km)
+                        const posY = startY + (l * (BRICK.y + 0.05));
 
-                    const mesh = new THREE.Mesh(geo, materials[layerType]);
-                    mesh.position.set(x, currentY, z);
+                        // Inclinazione dell'updraft (Wind Shear / Tilt)
+                        const tiltX = posX + (normH * 4.5); 
 
-                    // Salviamo le coordinate originali per il taglio tomografico RHI
-                    mesh.userData = { origX: x, origY: currentY, origZ: z };
+                        let matType = 'blue';
 
-                    stormGroup.add(mesh);
-                    totalVoxels++;
+                        // STRATIFICAZIONE CORRETTA:
+                        if (normH > 0.65) {
+                            matType = 'blue'; // Incudine in alto
+                        } else if (normH > 0.35) {
+                            matType = (dbz > 40) ? 'yellow' : 'green';
+                        } else {
+                            matType = (dbz > 50) ? 'red' : ((dbz > 30) ? 'yellow' : 'green');
+                        }
+
+                        const brickMesh = new THREE.Mesh(brickGeometry, materials[matType]);
+                        brickMesh.position.set(tiltX, posY, posZ);
+                        brickMesh.userData = { origX: tiltX, origY: posY, origZ: posZ };
+
+                        stormContainer.add(brickMesh);
+                        totalBricks++;
+                    }
                 }
             }
 
-            scene.add(stormGroup);
-            document.getElementById('voxel-count').innerText = totalVoxels;
+            scene.add(stormContainer);
+            document.getElementById('voxel-count').innerText = totalBricks;
         }
 
-        // --- SFUMATURA MODULABILE (FINE TUNING ±10%) ---
+        // AGGIORNAMENTO DIRETTO MATERIALI (Zero Lag su Mobile)
         function adjustOpacity(delta) {
-            currentBaseOpacity = Math.max(0.1, Math.min(1.0, currentBaseOpacity + delta));
-            document.getElementById('opacity-val').innerText = Math.round(currentBaseOpacity * 100) + '%';
+            currentOpacity = Math.max(0.1, Math.min(1.0, currentOpacity + delta));
+            document.getElementById('opacity-val').innerText = Math.round(currentOpacity * 100) + '%';
 
-            materials.blue.opacity = currentBaseOpacity * 0.6;
-            materials.green.opacity = currentBaseOpacity * 0.8;
-            materials.yellow.opacity = currentBaseOpacity;
-            materials.red.opacity = Math.min(1.0, currentBaseOpacity * 1.2);
+            materials.blue.opacity = currentOpacity * 0.5;
+            materials.green.opacity = currentOpacity * 0.75;
+            materials.yellow.opacity = currentOpacity * 0.9;
+            materials.red.opacity = Math.min(1.0, currentOpacity * 1.15);
         }
 
-        // --- TAGLIO TOMOGRAFICO SEZIONE VERTICALE (RHI) ---
         function applyRHISlice(limitX) {
-            if (!stormGroup) return;
-
-            stormGroup.children.forEach(child => {
-                if (child.userData.origX > limitX) {
-                    child.visible = false;
-                } else {
-                    child.visible = true;
-                }
+            if (!stormContainer) return;
+            stormContainer.children.forEach(child => {
+                child.visible = (child.userData.origX <= limitX);
             });
         }
 
+        // METODO DI RIGENERAZIONE RIPRISTINATO
         function regenerateCell() {
-            generateStormCell();
-            document.getElementById('slice-slider').value = 20;
+            generateSyntheticRadarMatrix();
+            build3DCellFromRaster();
+            document.getElementById('slice-slider').value = 25;
+            applyRHISlice(25);
         }
 
         function onWindowResize() {
@@ -408,12 +241,7 @@
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
-
-            // Lenta rotazione d'insieme per apprezzare la tridimensionalità
-            if (stormGroup) {
-                stormGroup.rotation.y += 0.002;
-            }
-
+            if (stormContainer) stormContainer.rotation.y += 0.0015;
             renderer.render(scene, camera);
         }
 
