@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>I.R.I.D.E. - Radar Convective Continuous Engine</title>
+    <title>I.R.I.D.E. - Radar Convective Engine</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root {
@@ -22,6 +22,9 @@
         .brand-title { color: var(--cyan-glow); font-weight: 800; font-size: 18px; letter-spacing: 2px; }
         .brand-subtitle { font-size: 11px; color: #8a99ad; margin-left: 10px; }
         #map { flex-grow: 1; width: 100%; height: 100%; z-index: 1; }
+
+        .dbz-scale-bar { position: absolute; bottom: 20px; left: 20px; z-index: 1000; background: var(--panel-bg); border: 1px solid var(--border-color); padding: 8px 10px; border-radius: 6px; font-size: 10px; backdrop-filter: blur(4px); }
+        .dbz-gradient { width: 14px; height: 140px; background: linear-gradient(to top, #00b4d8, #00ff66, #ffff00, #ff9900, #ff0055, #ff00ff, #ffffff); margin-top: 4px; border-radius: 2px; }
 
         #view-3d { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2000; background: radial-gradient(circle at center, #071325 0%, #020408 100%); display: none; flex-direction: column; }
         #view-3d.active { display: flex; }
@@ -49,7 +52,14 @@
             </div>
             <div style="font-size: 11px; color: #00ff66; font-weight: bold; background: #091b30; padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border-color);">● TRACKER ATTIVO</div>
         </div>
-        <div style="position: relative; flex-grow: 1; width: 100%; height: 100%;"><div id="map"></div></div>
+        <div style="position: relative; flex-grow: 1; width: 100%; height: 100%;">
+            <div id="map"></div>
+            <div class="dbz-scale-bar">
+                <div style="font-weight: bold; margin-bottom: 2px;">Riflettività (dBZ)</div>
+                <div style="display: flex; justify-content: space-between; font-size: 9px; color: #aaa;"><span>75</span><span>10</span></div>
+                <div class="dbz-gradient"></div>
+            </div>
+        </div>
     </div>
 
     <div id="view-3d">
@@ -58,11 +68,11 @@
                 <button class="btn-back" onclick="closeCell3DView()">← INDIETRO MAPPA</button>
                 <div>
                     <div id="h-core-id" style="font-weight: bold; font-size: 14px; color: var(--cyan-glow);">Core-Cell</div>
-                    <div style="font-size: 9px; color: #8a99ad;">Continuous Volumetric Supercell Engine</div>
+                    <div style="font-size: 9px; color: #8a99ad;">Real Radar Raster Base & Unique 3D Cell</div>
                 </div>
             </div>
             <div class="controls-3d">
-                <button class="btn-mode active" id="bm-solid" onclick="switchCellMode('solid')">SOLIDO 3D</button>
+                <button class="btn-mode active" id="bm-voxel" onclick="switchCellMode('voxel')">VOXEL 3D</button>
                 <button class="btn-mode" id="bm-iso" onclick="switchCellMode('iso')">ISOVOLUMETRICO</button>
                 <button class="btn-mode" id="bm-holo" onclick="switchCellMode('holo')">HOLO</button>
             </div>
@@ -83,31 +93,49 @@
         L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 }).addTo(map);
 
         let activeCellData = null;
-        let currentCellMode = 'solid';
+        let currentCellMode = 'voxel';
 
-        const jsonUrl = window.location.hostname.includes('github.io') ? '/Nowcasting_Italia/data/iride_database.json' : 'data/iride_database.json';
+        const pathSegments = window.location.pathname.split('/').filter(Boolean);
+        const jsonUrl = window.location.hostname.includes('github.io') && pathSegments.length > 0 
+            ? `/${pathSegments[0]}/data/iride_database.json` 
+            : 'data/iride_database.json';
 
         fetch(jsonUrl)
-            .then(res => res.ok ? res.json() : Promise.reject())
+            .then(res => res.ok ? res.json() : Promise.reject('JSON non trovato'))
             .then(data => {
-                if (data?.radar_tile_path) L.tileLayer(`https://tilecache.rainviewer.com${data.radar_tile_path}/256/{z}/{x}/{y}/2/1_1.png`, { opacity: 0.75 }).addTo(map);
-                if (data?.cells?.length > 0) renderCentroids(data.cells);
+                if (data?.radar_tile_path) {
+                    L.tileLayer(`https://tilecache.rainviewer.com${data.radar_tile_path}/256/{z}/{x}/{y}/2/1_1.png`, {
+                        opacity: 0.75, maxZoom: 18
+                    }).addTo(map);
+                }
+                if (data?.cells && data.cells.length > 0) {
+                    renderCentroids(data.cells);
+                } else {
+                    console.warn("[I.R.I.D.E.] Nessun nucleo attivo nel database JSON.");
+                }
             })
-            .catch(() => {
-                renderCentroids([{ id: "Core-51611", lat: 41.89, lon: 12.50, max_dbz: 68.4, kinematics: { velocity_kmh: 58, direction_deg: 278 }, severity: { vil: 32.7, echo_top: 16.8 } }]);
+            .catch(err => {
+                console.warn("[I.R.I.D.E.] Errore caricamento database:", err);
             });
 
         function renderCentroids(cells) {
             cells.forEach(cell => {
-                const icon = L.divIcon({ html: `<div style="width:28px; height:28px; border:2px solid #ff0055; border-radius:50%; background:rgba(255,0,85,0.3); display:flex; align-items:center; justify-content:center;"><div style="width:8px; height:8px; background:#ff0055; border-radius:50%;"></div></div>`, iconSize: [28, 28] });
+                const icon = L.divIcon({
+                    className: 'custom-centroid',
+                    html: `<div style="width:28px; height:28px; border:2px solid #ff0055; border-radius:50%; animation: pulse 1.4s infinite; background: rgba(255,0,85,0.3); display:flex; align-items:center; justify-content:center;"><div style="width:8px; height:8px; background:#ff0055; border-radius:50%;"></div></div>`,
+                    iconSize: [28, 28]
+                });
                 const marker = L.marker([cell.lat, cell.lon], { icon }).addTo(map);
                 marker.on('click', () => openCell3DView(cell));
+
+                if (cell.vectors?.real) L.polyline(cell.vectors.real, { color: '#00d2ff', weight: 2, dashArray: '4,4' }).addTo(map);
+                if (cell.vectors?.predictive_noaa) L.polyline(cell.vectors.predictive_noaa, { color: '#ff0055', weight: 1.5 }).addTo(map);
             });
         }
 
         function openCell3DView(cell) {
             activeCellData = cell;
-            document.getElementById('h-core-id').innerText = cell.id;
+            document.getElementById('h-core-id').innerText = cell.id || "Core-Cell";
             document.getElementById('t-dbz').innerText = (cell.max_dbz || 0) + " dBZ";
             document.getElementById('t-vel').innerText = `${cell.kinematics?.velocity_kmh || 0} km/h (${cell.kinematics?.direction_deg || 0}°)`;
             document.getElementById('t-vil').innerText = `${cell.severity?.vil || 0} kg/m² | ${cell.severity?.echo_top || 0} km`;
@@ -115,132 +143,209 @@
             setTimeout(initCell3DEngine, 50);
         }
 
-        function closeCell3DView() { document.getElementById('view-3d').classList.remove('active'); }
+        function closeCell3DView() {
+            document.getElementById('view-3d').classList.remove('active');
+        }
 
         function switchCellMode(mode) {
             currentCellMode = mode;
             document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
-            document.getElementById(`bm-${mode}`).classList.add('active');
+            if (mode === 'voxel') document.getElementById('bm-voxel').classList.add('active');
+            if (mode === 'iso') document.getElementById('bm-iso').classList.add('active');
+            if (mode === 'holo') document.getElementById('bm-holo').classList.add('active');
+
             if (cellScene && cellRootGroup) {
                 cellScene.remove(cellRootGroup);
-                cellRootGroup = buildContinuousSupercell(currentCellMode);
+                cellRootGroup = buildRealCellStructure(activeCellData?.grid_matrix, currentCellMode);
                 cellScene.add(cellRootGroup);
             }
         }
 
-        let cellRenderer, cellScene, cellCamera, cellRootGroup;
+        let cellRenderer = null, cellScene = null, cellCamera = null, cellRootGroup = null;
         let isDragging = false, prevMouse = { x: 0, y: 0 };
-        let rotY = 0, tiltX = 0.35;
+        let rotY = 0, tiltX = 0.38;
 
         function initCell3DEngine() {
             const canvas = document.getElementById('canvas-cell-3d');
             const container = document.getElementById('canvas-container-3d');
-            if (cellRenderer) return;
+            const width = container.clientWidth;
+            const height = container.clientHeight;
 
-            cellRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-            cellRenderer.setSize(container.clientWidth, container.clientHeight);
+            if (cellRenderer) {
+                cellRenderer.setSize(width, height);
+                cellCamera.aspect = width / height;
+                cellCamera.updateProjectionMatrix();
+                return;
+            }
+
+            cellRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+            cellRenderer.setSize(width, height);
             cellRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
             cellScene = new THREE.Scene();
-            cellCamera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
-            cellCamera.position.set(0, 16, 40);
-            cellCamera.lookAt(0, 3, 0);
+            cellCamera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+            cellCamera.position.set(0, 22, 44);
+            cellCamera.lookAt(0, 2, 0);
 
             cellScene.add(new THREE.AmbientLight(0xffffff, 1.4));
             const light = new THREE.DirectionalLight(0xffffff, 1.6);
             light.position.set(20, 40, 20);
             cellScene.add(light);
 
-            cellRootGroup = buildContinuousSupercell(currentCellMode);
+            cellRootGroup = buildRealCellStructure(activeCellData?.grid_matrix, currentCellMode);
             cellScene.add(cellRootGroup);
 
-            container.addEventListener('pointerdown', e => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; });
-            window.addEventListener('pointermove', e => {
-                if (!isDragging) return;
-                rotY += (e.clientX - prevMouse.x) * 0.008;
-                tiltX = Math.max(0.1, Math.min(0.65, tiltX + (e.clientY - prevMouse.y) * 0.008));
-                if (cellRootGroup) { cellRootGroup.rotation.y = rotY; cellRootGroup.rotation.x = tiltX; }
+            container.addEventListener('pointerdown', (e) => {
+                isDragging = true;
                 prevMouse = { x: e.clientX, y: e.clientY };
             });
+
+            window.addEventListener('pointermove', (e) => {
+                if (!isDragging || !document.getElementById('view-3d').classList.contains('active')) return;
+                const dx = e.clientX - prevMouse.x;
+                const dy = e.clientY - prevMouse.y;
+
+                rotY += dx * 0.008;
+                tiltX = Math.max(0.1, Math.min(0.7, tiltX + dy * 0.008));
+
+                if (cellRootGroup) {
+                    cellRootGroup.rotation.y = rotY;
+                    cellRootGroup.rotation.x = tiltX;
+                }
+                prevMouse = { x: e.clientX, y: e.clientY };
+            });
+
             window.addEventListener('pointerup', () => { isDragging = false; });
+            window.addEventListener('resize', () => {
+                if (!container || !cellRenderer) return;
+                const w = container.clientWidth;
+                const h = container.clientHeight;
+                cellRenderer.setSize(w, h);
+                cellCamera.aspect = w / h;
+                cellCamera.updateProjectionMatrix();
+            });
+
             animateCell3D();
         }
 
-        function getDbzColor(dbz) {
-            if (dbz >= 65) return 0xff00ff; // Magenta
-            if (dbz >= 58) return 0xff0055; // Rosso
-            if (dbz >= 50) return 0xff3300; // Arancione scuro
-            if (dbz >= 42) return 0xff9900; // Arancione
-            if (dbz >= 35) return 0xffff00; // Giallo
-            if (dbz >= 28) return 0x00ff66; // Verde
+        function getDbzColorHex(dbz) {
+            if (dbz >= 70) return 0xff00ff; // Magenta
+            if (dbz >= 62) return 0xff0055; // Rosso
+            if (dbz >= 55) return 0xff3300; // Arancione scuro
+            if (dbz >= 48) return 0xff9900; // Arancione
+            if (dbz >= 40) return 0xffff00; // Giallo
+            if (dbz >= 35) return 0x00ff66; // Verde
             return 0x00b4d8; // Azzurro
         }
 
-        // COSTRUZIONE SUPERCELLA CONTINUA (Forma organica a fungo senza mattoncini staccati)
-        function buildContinuousSupercell(mode) {
-            const master = new THREE.Group();
-            master.rotation.x = tiltX;
-            master.rotation.y = rotY;
+        // COSTRUZIONE STRUTTURA: Raster Radar 2D sotto + 3D Unico basato su grid_matrix sopra
+        function buildRealCellStructure(matrix, mode) {
+            const masterGroup = new THREE.Group();
+            masterGroup.rotation.x = tiltX;
+            masterGroup.rotation.y = rotY;
 
-            // Base Radar 2D piatta in basso
-            const ring = new THREE.RingGeometry(1, 15, 32);
-            ring.rotateX(-Math.PI / 2);
-            const baseMesh = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({ color: 0x00d2ff, wireframe: true, transparent: true, opacity: 0.3 }));
-            baseMesh.position.y = -2.5;
-            master.add(baseMesh);
+            // --- 1. BASE RASTER 2D (Il vero radar piatto estratto dalla grid_matrix della cella) ---
+            const baseGroup = new THREE.Group();
+            baseGroup.position.y = -3.5;
 
-            const steps = 30; // Numero di strati verticali per una transizione fluida
-            const totalHeight = 11;
-
-            for (let i = 0; i <= steps; i++) {
-                let hRatio = i / steps; // da 0 (base) a 1 (cima)
-                let yPos = (hRatio * totalHeight) - 2;
-
-                // Profilo morfologico a fungo: raggio stretto in basso (gambo), largo in alto (incudine)
-                let radius = hRatio < 0.35 
-                    ? 1.2 + (hRatio * 2.0)                          // Gambo stretto
-                    : 1.9 + Math.pow((hRatio - 0.35) / 0.65, 1.4) * 9.5; // Incudine che esplode in ampiezza
-
-                // Riflettività decrescente salendo verso l'incudine
-                let simulatedDbz = 72 - (hRatio * 38);
-                let layerColor = getDbzColor(simulatedDbz);
-
-                let geom = new THREE.CylinderGeometry(radius * 0.92, radius, totalHeight / steps + 0.02, 32, 1, false);
-                
-                let mat;
-                if (mode === 'solid') {
-                    mat = new THREE.MeshStandardMaterial({
-                        color: layerColor,
-                        roughness: 0.25,
-                        metalness: 0.1,
-                        transparent: true,
-                        opacity: 0.78,
-                        side: THREE.DoubleSide
-                    });
-                } else if (mode === 'iso') {
-                    mat = new THREE.MeshPhysicalMaterial({
-                        color: layerColor,
-                        roughness: 0.2,
-                        transmission: 0.65,
-                        transparent: true,
-                        opacity: 0.6,
-                        side: THREE.DoubleSide
-                    });
-                } else {
-                    mat = new THREE.MeshBasicMaterial({
-                        color: layerColor,
-                        wireframe: true,
-                        transparent: true,
-                        opacity: 0.55
-                    });
+            if (matrix && Array.isArray(matrix)) {
+                const rows = matrix.length;
+                const cols = matrix[0].length;
+                const pSize = 0.5;
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        let dbz = matrix[r][c] || 10;
+                        if (dbz < 20) continue;
+                        const geom = new THREE.PlaneGeometry(pSize, pSize);
+                        geom.rotateX(-Math.PI / 2);
+                        const mat = new THREE.MeshBasicMaterial({ 
+                            color: getDbzColorHex(dbz), 
+                            transparent: true, 
+                            opacity: 0.8, 
+                            side: THREE.DoubleSide 
+                        });
+                        const mesh = new THREE.Mesh(geom, mat);
+                        mesh.position.set((c - cols/2) * pSize, 0, (r - rows/2) * pSize);
+                        baseGroup.add(mesh);
+                    }
                 }
-
-                let layerMesh = new THREE.Mesh(geom, mat);
-                layerMesh.position.y = yPos;
-                master.add(layerMesh);
             }
+            masterGroup.add(baseGroup);
 
-            return master;
+            // --- 2. VOLUME 3D SOPRA (Unico, organico, derivato strettamente dalla cella) ---
+            const cell3DGroup = new THREE.Group();
+            const heightLevels = 20;
+            const boxSize = 0.55;
+
+            if (matrix && Array.isArray(matrix)) {
+                const rows = matrix.length;
+                const cols = matrix[0].length;
+
+                if (mode === 'voxel') {
+                    const pos = [], colsArr = [];
+                    for (let r = 0; r < rows; r++) {
+                        for (let c = 0; c < cols; c++) {
+                            let baseDbz = matrix[r][c] || 10;
+                            if (baseDbz < 35) continue;
+
+                            let maxH = Math.floor((baseDbz / 75.0) * heightLevels);
+                            for (let h = 0; h <= maxH; h++) {
+                                let hR = h / heightLevels;
+                                // Espansione a fungo (incudine in alto)
+                                let distCenter = Math.hypot(r - rows/2, c - cols/2) / (rows/2);
+                                if (hR > 0.4 && distCenter > (0.4 + (hR - 0.4)*1.8)) continue;
+
+                                pos.push((c - cols/2) * boxSize, (h - heightLevels/2 + 1) * boxSize, (r - rows/2) * boxSize);
+                                let col = new THREE.Color(getDbzColorHex(Math.max(10, baseDbz - hR * 14)));
+                                colsArr.push(col.r, col.g, col.b);
+                            }
+                        }
+                    }
+                    const count = pos.length / 3;
+                    if (count > 0) {
+                        const geom = new THREE.BoxGeometry(boxSize*0.9, boxSize*0.9, boxSize*0.9);
+                        const mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.78, roughness: 0.2 });
+                        const mesh = new THREE.InstancedMesh(geom, mat, count);
+                        const dummy = new THREE.Object3D();
+                        for (let i = 0; i < count; i++) {
+                            dummy.position.set(pos[i*3], pos[i*3+1], pos[i*3+2]);
+                            dummy.updateMatrix();
+                            mesh.setMatrixAt(i, dummy.matrix);
+                            mesh.setColorAt(i, new THREE.Color(colsArr[i*3], colsArr[i*3+1], colsArr[i*3+2]));
+                        }
+                        mesh.instanceMatrix.needsUpdate = true;
+                        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+                        cell3DGroup.add(mesh);
+                    }
+                } else if (mode === 'iso') {
+                    for (let l = 1; l < heightLevels; l++) {
+                        let hR = l / heightLevels;
+                        let rScale = hR > 0.4 ? 0.7 + Math.pow(hR - 0.4, 1.2) * 3.2 : 0.35 + hR * 0.8;
+                        let geom = new THREE.CylinderGeometry(5 * rScale, 5 * (rScale * 0.85), 0.8, 32, 1, true);
+                        geom.translate(0, (l - heightLevels/2 + 1) * boxSize, 0);
+                        let mat = new THREE.MeshPhysicalMaterial({ 
+                            color: hR > 0.55 ? 0x00d2ff : (hR > 0.25 ? 0xffff00 : 0xff0055), 
+                            roughness: 0.25, transmission: 0.65, transparent: true, opacity: 0.65, side: THREE.DoubleSide 
+                        });
+                        cell3DGroup.add(new THREE.Mesh(geom, mat));
+                    }
+                } else if (mode === 'holo') {
+                    for (let h = 0; h <= heightLevels; h += 2) {
+                        let hR = h / heightLevels;
+                        let rScale = hR > 0.4 ? 0.8 + (hR - 0.4) * 2.8 : 0.4 + hR * 1.0;
+                        let geom = new THREE.BoxGeometry(4.2 * rScale, 1.0, 4.2 * rScale);
+                        let mat = new THREE.MeshBasicMaterial({ 
+                            color: hR > 0.55 ? 0x00d2ff : (hR > 0.25 ? 0x00ff66 : 0xff0055), 
+                            wireframe: true, transparent: true, opacity: 0.7 
+                        });
+                        let mesh = new THREE.Mesh(geom, mat);
+                        mesh.position.set(0, (h - heightLevels/2 + 1) * boxSize, 0);
+                        cell3DGroup.add(mesh);
+                    }
+                }
+            }
+            masterGroup.add(cell3DGroup);
+            return masterGroup;
         }
 
         function animateCell3D() {
@@ -249,7 +354,9 @@
                 rotY += 0.003;
                 if (cellRootGroup) cellRootGroup.rotation.y = rotY;
             }
-            if (cellRenderer && cellScene && cellCamera) cellRenderer.render(cellScene, cellCamera);
+            if (cellRenderer && cellScene && cellCamera) {
+                cellRenderer.render(cellScene, cellCamera);
+            }
         }
     </script>
 </body>
