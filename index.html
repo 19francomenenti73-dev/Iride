@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>I.R.I.D.E. - Ground-Anchored Radar Engine</title>
+    <title>I.R.I.D.E. - Professional Radar 3D Engine</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root {
@@ -43,7 +43,7 @@
         <div id="header-tracker">
             <div style="display: flex; align-items: baseline;">
                 <div class="brand-title">I.R.I.D.E.</div>
-                <div class="brand-subtitle">Ground-Anchored Engine</div>
+                <div class="brand-subtitle">Professional Radar Engine</div>
             </div>
             <div style="font-size: 11px; color: #00ff66; font-weight: bold; background: #091b30; padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border-color);">● TRACKER ATTIVO</div>
         </div>
@@ -71,7 +71,7 @@
 
         <div id="canvas-container-3d">
             <canvas id="canvas-cell-3d"></canvas>
-            <div class="footer-hint">Trascina per ruotare la struttura · Dati nativi grid_matrix</div>
+            <div class="footer-hint">Trascina per ruotare la struttura · Dati grid_matrix 2D</div>
         </div>
     </div>
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -97,11 +97,34 @@
                 }
                 if (data?.cells && data.cells.length > 0) {
                     renderCentroids(data.cells);
+                } else {
+                    loadFallbackCell();
                 }
             })
             .catch(err => {
-                console.warn("[I.R.I.D.E.] In attesa dati JSON reali:", err);
+                console.warn("[I.R.I.D.E.] JSON non trovato, carico cella di test dimostrativa:", err);
+                loadFallbackCell();
             });
+
+        function loadFallbackCell() {
+            // Matrice di test mock rigorosa per testare subito la struttura 3D perfetta
+            const mockMatrix = Array(16).fill(0).map(() => Array(16).fill(10));
+            for(let r=5; r<11; r++) {
+                for(let c=5; c<11; c++) {
+                    let dist = Math.hypot(r-8, c-8);
+                    mockMatrix[r][c] = Math.max(20, 70 - (dist * 7));
+                }
+            }
+            const fallbackCell = {
+                id: "Core-51712-MOCK",
+                lat: 41.89, lon: 12.49,
+                max_dbz: 58.4,
+                severity: { vil: 69.6, echo_top: 12.7 },
+                kinematics: { velocity_kmh: 47, direction_deg: 321 },
+                grid_matrix: mockMatrix
+            };
+            renderCentroids([fallbackCell]);
+        }
 
         function renderCentroids(cells) {
             cells.forEach(cell => {
@@ -137,7 +160,7 @@
 
         let cellRenderer = null, cellScene = null, cellCamera = null, cellRootGroup = null;
         let isDragging = false, prevMouse = { x: 0, y: 0 };
-        let rotY = 0.5, tiltX = 0.45;
+        let rotY = 0.6, tiltX = 0.45;
 
         function initCell3DEngine() {
             const canvas = document.getElementById('canvas-cell-3d');
@@ -158,15 +181,15 @@
 
             cellScene = new THREE.Scene();
             cellCamera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1000);
-            cellCamera.position.set(0, 16, 30);
+            cellCamera.position.set(0, 16, 28);
             cellCamera.lookAt(0, 0, 0);
 
             cellScene.add(new THREE.AmbientLight(0xffffff, 1.8));
-            const light = new THREE.DirectionalLight(0xffffff, 2.0);
-            light.position.set(20, 40, 20);
+            const light = new THREE.DirectionalLight(0xffffff, 2.2);
+            light.position.set(15, 35, 20);
             cellScene.add(light);
 
-            cellRootGroup = buildSolidGroundEngine(activeCellData?.grid_matrix);
+            cellRootGroup = buildProfessionalRadarEngine(activeCellData?.grid_matrix);
             cellScene.add(cellRootGroup);
 
             container.addEventListener('pointerdown', (e) => {
@@ -202,6 +225,7 @@
             animateCell3D();
         }
 
+        // Scala colori dBZ radar standard ufficiale
         function getDbzColorHex(dbz) {
             if (dbz >= 68) return 0xff00ff; // Magenta
             if (dbz >= 58) return 0xff0044; // Rosso
@@ -212,8 +236,8 @@
             return 0x0055ff; // Blu
         }
 
-        // MOTORE SOLIDO ANCORATO DIRETTAMENTE ALLA GRID_MATRIX 2D
-        function buildSolidGroundEngine(matrix) {
+        // MOTORE PROFESSIONALE STRUTTURATO CON BORDI NETTI E ANCORAGGIO 2D
+        function buildProfessionalRadarEngine(matrix) {
             const masterGroup = new THREE.Group();
             masterGroup.rotation.x = tiltX;
             masterGroup.rotation.y = rotY;
@@ -224,31 +248,33 @@
                 cols = matrix[0].length;
             }
 
-            const pSize = 0.8;
+            const pSize = 0.85;
             const originX = (cols * pSize) / 2;
             const originZ = (rows * pSize) / 2;
 
-            // 1. Piattaforma di Base Radar 2D al suolo
+            // 1. Piattaforma di Base Radar 2D al suolo (Doppio layer wireframe pulito)
             const groundGroup = new THREE.Group();
-            groundGroup.position.y = -3.0;
+            groundGroup.position.y = -2.6;
 
-            for (let r = 0; r < rows; r++) {
-                for (let c = 0; c < cols; c++) {
-                    const geom = new THREE.BoxGeometry(pSize * 0.95, 0.15, pSize * 0.95);
-                    const mat = new THREE.MeshBasicMaterial({ 
-                        color: 0x00d2ff, 
-                        wireframe: true, 
-                        transparent: true, 
-                        opacity: 0.3 
-                    });
-                    const box = new THREE.Mesh(geom, mat);
-                    box.position.set(c * pSize - originX, 0, r * pSize - originZ);
-                    groundGroup.add(box);
+            for (let layer = 0; layer < 2; layer++) {
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        const geom = new THREE.BoxGeometry(pSize * 0.96, 0.12, pSize * 0.96);
+                        const mat = new THREE.MeshBasicMaterial({ 
+                            color: 0x00d2ff, 
+                            wireframe: true, 
+                            transparent: true, 
+                            opacity: layer === 0 ? 0.35 : 0.15 
+                        });
+                        const box = new THREE.Mesh(geom, mat);
+                        box.position.set(c * pSize - originX, -layer * 0.15, r * pSize - originZ);
+                        groundGroup.add(box);
+                    }
                 }
             }
             masterGroup.add(groundGroup);
 
-            // 2. Colonne Verticali Pene e Solide Ancorate alla Base
+            // 2. Colonne Verticali Strutturate con Spigoli Vivi (EdgesGeometry)
             const stackGroup = new THREE.Group();
             const maxLevels = 14;
 
@@ -256,26 +282,33 @@
                 for (let r = 0; r < rows; r++) {
                     for (let c = 0; c < cols; c++) {
                         let baseDbz = matrix[r][c] || 10;
-                        if (baseDbz < 20) continue;
+                        if (baseDbz < 18) continue;
 
                         let levelsCount = Math.min(maxLevels, Math.max(2, Math.floor((baseDbz / 70.0) * maxLevels)));
 
                         for (let h = 0; h < levelsCount; h++) {
-                            let currentDbz = baseDbz - (h * 2.0);
+                            let currentDbz = baseDbz + (h * 1.6);
                             let colorHex = getDbzColorHex(currentDbz);
 
-                            let boxGeom = new THREE.BoxGeometry(pSize * 0.92, 0.36, pSize * 0.92);
+                            let boxGeom = new THREE.BoxGeometry(pSize * 0.92, 0.38, pSize * 0.92);
                             let boxMat = new THREE.MeshStandardMaterial({ 
                                 color: colorHex, 
                                 transparent: true, 
                                 opacity: 0.9, 
-                                roughness: 0.25 
+                                roughness: 0.2 
                             });
 
                             let mesh = new THREE.Mesh(boxGeom, boxMat);
+
+                            // Bordi netti e scuri per separare nettamente i blocchi (stile CAD/Radar Pro)
+                            let edges = new THREE.EdgesGeometry(boxGeom);
+                            let lineMat = new THREE.LineBasicMaterial({ color: 0x010409, linewidth: 2 });
+                            let wireframeLines = new THREE.LineSegments(edges, lineMat);
+                            mesh.add(wireframeLines);
+
                             let x = c * pSize - originX;
                             let z = r * pSize - originZ;
-                            let y = (h * 0.38) - 2.5;
+                            let y = (h * 0.4) - 2.2;
 
                             mesh.position.set(x, y, z);
                             stackGroup.add(mesh);
@@ -290,7 +323,7 @@
 
         function animateCell3D() {
             requestAnimationFrame(animateCell3D);
-            if (!isDragging && document.getElementById('view-3d').classList.contains('active')) {
+            if (!isDragging && document.getElementById('view-3d'].classList.contains('active')) {
                 rotY += 0.0004;
                 if (cellRootGroup) cellRootGroup.rotation.y = rotY;
             }
