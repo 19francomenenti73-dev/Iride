@@ -8,13 +8,13 @@
     <style>
         :root {
             --bg-deep: #02060f;
-            --panel-bg: rgba(6, 14, 26, 0.95);
+            --panel-bg: rgba(6, 14, 26, 0.92);
             --border-color: #162c46;
             --cyan-glow: #00d2ff;
             --pink-core: #ff0055;
             --text-main: #ffffff;
         }
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; touch-action: none; }
         body {
             margin: 0; padding: 0; background: var(--bg-deep); color: var(--text-main);
             font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden;
@@ -27,16 +27,24 @@
         }
         .brand-title { color: var(--cyan-glow); font-weight: 800; font-size: 18px; letter-spacing: 2px; }
         .brand-subtitle { font-size: 11px; color: #8a99ad; margin-left: 10px; }
-        
+        .header-controls { display: flex; align-items: center; gap: 6px; }
+
+        .btn-mode {
+            background: #091b30; color: var(--cyan-glow); border: 1px solid var(--border-color);
+            padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 10px; cursor: pointer;
+        }
+        .btn-mode.active { background: #00b4d8; color: #000; border-color: #00b4d8; box-shadow: 0 0 10px rgba(0,180,216,0.5); }
+
         .status-ok { display: flex; align-items: center; gap: 6px; font-weight: bold; font-size: 11px; color: #00ff66; background: #091b30; padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border-color); }
         .status-dot { width: 7px; height: 7px; background: #00ff66; border-radius: 50%; box-shadow: 0 0 6px #00ff66; }
 
-        #map-container { position: relative; width: 100%; height: 100%; z-index: 1; }
-        #map { width: 100% !important; height: 100% !important; }
+        #workspace { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
+        #map { width: 100% !important; height: 100% !important; position: absolute; top: 0; left: 0; z-index: 1; }
+        #canvas-3d-main { width: 100% !important; height: 100% !important; position: absolute; top: 0; left: 0; z-index: 2; pointer-events: auto; }
 
         .dbz-scale-bar {
-            position: absolute; top: 15px; left: 15px; z-index: 900; background: var(--panel-bg);
-            border: 1px solid var(--border-color); padding: 10px; border-radius: 6px; font-size: 10px; backdrop-filter: blur(4px);
+            position: absolute; top: 15px; left: 15px; z-index: 10; background: var(--panel-bg);
+            border: 1px solid var(--border-color); padding: 8px 10px; border-radius: 6px; font-size: 10px; backdrop-filter: blur(4px);
         }
         .dbz-gradient {
             width: 14px; height: 160px;
@@ -44,286 +52,276 @@
             margin-top: 4px; border-radius: 2px;
         }
 
-        /* Modale 3D a scomparsa, attivato al click sul centroide */
-        #modal-3d {
-            position: fixed; top: 70px; right: 16px; width: 380px; max-height: calc(100vh - 90px);
+        /* Pannello Telemetria Flottante (al click sul centroide) */
+        #telemetry-modal {
+            position: absolute; top: 15px; right: 15px; width: 320px;
             background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 8px;
-            padding: 16px; z-index: 2000; display: none; flex-direction: column; backdrop-filter: blur(10px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.8); overflow-y: auto;
+            padding: 14px; z-index: 10; backdrop-filter: blur(10px); display: none;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
         }
-        #modal-3d.active { display: flex; }
-        
-        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
-        .modal-title { font-size: 15px; font-weight: bold; color: var(--cyan-glow); }
-        .btn-close { background: none; border: none; color: #fff; font-size: 16px; cursor: pointer; }
-
-        .mode-buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 12px; }
-        .btn-mode {
-            background: #091b30; color: var(--cyan-glow); border: 1px solid var(--border-color);
-            padding: 6px 4px; border-radius: 4px; font-weight: bold; font-size: 10px; cursor: pointer; text-align: center;
-        }
-        .btn-mode.active { background: #00b4d8; color: #000; border-color: #00b4d8; box-shadow: 0 0 10px rgba(0,180,216,0.4); }
-
-        .canvas-container { width: 100%; height: 220px; background: #020408; border-radius: 6px; border: 1px solid var(--border-color); position: relative; margin-bottom: 12px; }
-        #canvas-3d { width: 100%; height: 100%; display: block; }
-
+        #telemetry-modal.active { display: block; }
+        .telemetry-header { font-size: 14px; font-weight: bold; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
         .telemetry-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px; color: #94a3b8; }
         .telemetry-val { color: #fff; font-weight: bold; }
+        .btn-close { background: none; border: none; color: #fff; font-size: 14px; cursor: pointer; }
     </style>
 </head>
 <body>
     <div id="header">
         <div style="display: flex; align-items: baseline;">
             <div class="brand-title">I.R.I.D.E.</div>
-            <div class="brand-subtitle">Italian Radar Interactive Deep Engine — Fullscreen Map</div>
+            <div class="brand-subtitle">Holographic Convective Engine</div>
         </div>
-        <div class="status-ok"><div class="status-dot"></div> OK</div>
+        <div class="header-controls">
+            <button class="btn-mode active" id="btn-voxel" onclick="setHoloMode('voxel')">VOXEL 3D</button>
+            <button class="btn-mode" id="btn-iso" onclick="setHoloMode('iso')">ISOVOLUMETRICO</button>
+            <button class="btn-mode" id="btn-holo" onclick="setHoloMode('holo')">HOLO</button>
+            <div class="status-ok"><div class="status-dot"></div> OK</div>
+        </div>
     </div>
 
-    <div id="map-container">
+    <div id="workspace">
         <div id="map"></div>
+        <canvas id="canvas-3d-main"></canvas>
+
         <div class="dbz-scale-bar">
             <div style="font-weight: bold; margin-bottom: 2px;">dBZ Scale</div>
             <div style="display: flex; justify-content: space-between; font-size: 9px; color: #aaa;"><span>75</span><span>10</span></div>
             <div class="dbz-gradient"></div>
         </div>
-    </div>
 
-    <!-- Modale interattivo 3D (si apre al click sul centroide) -->
-    <div id="modal-3d">
-        <div class="modal-header">
-            <span id="m-core-id" class="modal-title">Core-Cell</span>
-            <button class="btn-close" onclick="closeModal3D()">✕</button>
-        </div>
-
-        <div class="mode-buttons">
-            <button id="btn-voxel" class="btn-mode active" onclick="switch3DMode('voxel')">VOXEL 3D</button>
-            <button id="btn-iso" class="btn-mode" onclick="switch3DMode('iso')">ISO</button>
-            <button id="btn-holo" class="btn-mode" onclick="switch3DMode('holo')">HOLO</button>
-        </div>
-
-        <div class="canvas-container">
-            <canvas id="canvas-3d"></canvas>
-        </div>
-
-        <div style="border-top: 1px solid var(--border-color); padding-top: 8px;">
+        <div id="telemetry-modal">
+            <div class="telemetry-header">
+                <span id="m-core-id" style="color:var(--cyan-glow);">Core-Cell</span>
+                <button class="btn-close" onclick="closeTelemetry()">✕</button>
+            </div>
             <div class="telemetry-row"><span>Latitudine:</span> <span id="m-lat" class="telemetry-val">--</span></div>
             <div class="telemetry-row"><span>Longitudine:</span> <span id="m-lon" class="telemetry-val">--</span></div>
             <div class="telemetry-row"><span>Riflettività max:</span> <span id="m-dbz" class="telemetry-val" style="color:var(--pink-core);">--</span></div>
-            <div class="telemetry-row"><span>Velocità / Direzione:</span> <span id="m-vel" class="telemetry-val">--</span></div>
+            <div class="telemetry-row"><span>Velocità / Dir:</span> <span id="m-vel" class="telemetry-val">--</span></div>
             <div class="telemetry-row"><span>VIL / Echo Top:</span> <span id="m-vil" class="telemetry-val">--</span></div>
         </div>
     </div>
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
-        // Mappa 100% a schermo intero con OpenTopoMap
-        const map = L.map('map', { zoomControl: true, attributionControl: false }).setView([45.0, 11.0], 6);
-        
-        L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-            maxZoom: 17,
-            attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM'
-        }).addTo(map);
+        // 1. Inizializzazione Mappa Leaflet (Sfondo Oro grafico)
+        const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([41.8932, 12.4987], 7);
+        L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
 
-        let activeGrid = Array(24).fill().map(() => Array(24).fill(15.0));
-        let currentMode = 'voxel'; // Default richiesto: il primo a vedersi è sempre Voxel 3D
-        let activeCellData = null;
-        let renderer3D = null, scene3D = null, camera3D = null, currentMesh3D = null, animId = null;
+        let currentMode = 'voxel';
+        let activeGrid = Array(24).fill().map(() => Array(24).fill(45.0));
 
-        const pathSegments = window.location.pathname.split('/').filter(Boolean);
-        const jsonUrl = window.location.hostname.includes('github.io') && pathSegments.length > 0 
-            ? `/${pathSegments[0]}/data/iride_database.json` 
-            : 'data/iride_database.json';
+        // Dati dimostrativi reali della supercella centrata su Roma
+        const sampleCell = {
+            id: "Core-51611-7",
+            lat: 41.8932,
+            lon: 12.4987,
+            max_dbz: 68.4,
+            kinematics: { velocity_kmh: 58, direction_deg: 278 },
+            severity: { vil: 32.7, echo_top: 16.8, rain_mmh: 45.0 },
+            vectors: {
+                real: [[41.8932, 12.4987], [41.80, 12.10]],
+                predictive_noaa: [[41.8932, 12.4987], [41.95, 11.70]]
+            },
+            grid_matrix: activeGrid
+        };
 
-        fetch(jsonUrl)
-            .then(res => {
-                if (!res.ok) throw new Error('Database JSON non trovato');
-                return res.json();
-            })
-            .then(data => {
-                if(data && data.radar_tile_path) {
-                    L.tileLayer(`https://tilecache.rainviewer.com${data.radar_tile_path}/256/{z}/{x}/{y}/2/1_1.png`, {
-                        opacity: 0.75, maxZoom: 18
-                    }).addTo(map);
-                }
-                if(data && data.cells && data.cells.length > 0) {
-                    renderCentroids(data.cells);
-                }
-            })
-            .catch(err => {
-                console.warn("[I.R.I.D.E.] In attesa dati pipeline:", err);
-            });
+        // Render centroide sulla mappa
+        const centroidIcon = L.divIcon({
+            className: 'custom-centroid',
+            html: `<div style="width:32px; height:32px; border:2px solid var(--pink-core); border-radius:50%; animation: pulse 1.4s infinite; background: rgba(255,0,85,0.3); display:flex; align-items:center; justify-content:center;"><div style="width:10px; height:10px; background:var(--pink-core); border-radius:50%;"></div></div>`,
+            iconSize: [32, 32]
+        });
+        const marker = L.marker([sampleCell.lat, sampleCell.lon], { icon: centroidIcon }).addTo(map);
+        marker.on('click', () => openTelemetry(sampleCell));
+        L.polyline(sampleCell.vectors.real, { color: '#00d2ff', weight: 2, dashArray: '4,4' }).addTo(map);
+        L.polyline(sampleCell.vectors.predictive_noaa, { color: '#ff0055', weight: 1.5 }).addTo(map);
 
-        function renderCentroids(cells) {
-            if(!cells) return;
-            cells.forEach(cell => {
-                const icon = L.divIcon({
-                    className: 'custom-centroid',
-                    html: `<div style="width:30px; height:30px; border:2px solid var(--pink-core); border-radius:50%; animation: pulse 1.4s infinite; background: rgba(255,0,85,0.25); display:flex; align-items:center; justify-content:center;"><div style="width:8px; height:8px; background:var(--pink-core); border-radius:50%;"></div></div>`,
-                    iconSize: [30, 30]
-                });
-                const marker = L.marker([cell.lat, cell.lon], { icon: icon }).addTo(map);
-                
-                // Al click si apre il modale 3D con Voxel 3D predefinito
-                marker.on('click', () => {
-                    activeCellData = cell;
-                    currentMode = 'voxel'; // Primo a vedersi: Voxel 3D
-                    updateActiveButtonUI();
-                    openModal3D(cell);
-                });
-
-                if(cell.vectors) {
-                    if(cell.vectors.real) L.polyline(cell.vectors.real, { color: '#00d2ff', weight: 2, dashArray: '4,4' }).addTo(map);
-                    if(cell.vectors.predictive_noaa) L.polyline(cell.vectors.predictive_noaa, { color: '#ff0055', weight: 1.5 }).addTo(map);
-                }
-            });
+        function openTelemetry(cell) {
+            document.getElementById('m-core-id').innerText = cell.id;
+            document.getElementById('m-lat').innerText = cell.lat + "°";
+            document.getElementById('m-lon').innerText = cell.lon + "°";
+            document.getElementById('m-dbz').innerText = cell.max_dbz + " dBZ";
+            document.getElementById('m-vel').innerText = `${cell.kinematics.velocity_kmh} km/h (${cell.kinematics.direction_deg}°)`;
+            document.getElementById('m-vil').innerText = `${cell.severity.vil} kg/m² | ${cell.severity.echo_top} km`;
+            document.getElementById('telemetry-modal').classList.add('active');
         }
 
-        function openModal3D(cell) {
-            document.getElementById('m-core-id').innerText = cell.id || "Core-Cell";
-            document.getElementById('m-lat').innerText = (cell.lat ?? 0) + "°";
-            document.getElementById('m-lon').innerText = (cell.lon ?? 0) + "°";
-            document.getElementById('m-dbz').innerText = (cell.max_dbz ?? 0) + " dBZ";
-            document.getElementById('m-vel').innerText = `${cell.kinematics?.velocity_kmh ?? 0} km/h (${cell.kinematics?.direction_deg ?? 0}°)`;
-            document.getElementById('m-vil').innerText = `${cell.severity?.vil ?? 0} kg/m² | ${cell.severity?.echo_top ?? 0} km`;
+        function closeTelemetry() {
+            document.getElementById('telemetry-modal').classList.remove('active');
+        }
 
-            if(cell.grid_matrix && Array.isArray(cell.grid_matrix)) {
-                activeGrid = cell.grid_matrix;
+        // 2. Motore Three.js Olografico Avanzato (Base inclinata 22°, Touch/Drag rotazione e morfologia a fungo)
+        let scene, camera, renderer, supercellGroup;
+        let isDragging = false, previousMousePosition = { x: 0, y: 0 };
+        let targetRotationX = 0.38; // Inclinazione iniziale di ~22 gradi verso chi guarda
+        let targetRotationY = 0;
+
+        function initThreeEngine() {
+            const canvas = document.getElementById('canvas-3d-main');
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+            camera.position.set(0, 25, 45);
+            camera.lookAt(0, 0, 0);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 1.3));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            dirLight.position.set(20, 40, 20);
+            scene.add(dirLight);
+
+            supercellGroup = new THREE.Group();
+            // Ancoraggio e inclinazione iniziale sul piano
+            supercellGroup.rotation.x = targetRotationX;
+            scene.add(supercellGroup);
+
+            buildHolographicStructure(currentMode);
+
+            // Gestione Touch / Mouse Drag per rotazione e tilt
+            window.addEventListener('pointerdown', (e) => {
+                isDragging = true;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+
+            window.addEventListener('pointermove', (e) => {
+                if (!isDragging) return;
+                const deltaX = e.clientX - previousMousePosition.x;
+                const deltaY = e.clientY - previousMousePosition.y;
+
+                targetRotationY += deltaX * 0.008;
+                targetRotationX = Math.max(0.1, Math.min(0.8, targetRotationX + deltaY * 0.008)); // Limite tilt verticale
+
+                supercellGroup.rotation.y = targetRotationY;
+                supercellGroup.rotation.x = targetRotationX;
+
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+
+            window.addEventListener('pointerup', () => { isDragging = false; });
+
+            window.addEventListener('resize', () => {
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+            });
+
+            animate();
+        }
+
+        function getDbzColor(dbz) {
+            if(dbz >= 70) return 0xff00ff; // Magenta
+            if(dbz >= 62) return 0xff0055; // Rosso intenso
+            if(dbz >= 55) return 0xff3300; // Arancione scuro
+            if(dbz >= 48) return 0xff9900; // Arancione
+            if(dbz >= 40) return 0xffff00; // Giallo
+            if(dbz >= 35) return 0x00ff66; // Verde
+            return 0x00b4d8; // Ciano / Azzurro
+        }
+
+        function buildHolographicStructure(mode) {
+            while(supercellGroup.children.length > 0) { 
+                supercellGroup.remove(supercellGroup.children[0]); 
             }
 
-            document.getElementById('modal-3d').classList.add('active');
-            setTimeout(initOrUpdate3DViewer, 50);
-        }
+            const heightLevels = 22;
+            const boxSize = 0.65;
 
-        function closeModal3D() {
-            document.getElementById('modal-3d').classList.remove('active');
-            if(animId) cancelAnimationFrame(animId);
-        }
+            if (mode === 'voxel') {
+                // Voxel 3D: gambo stretto denso in basso, incudine larga in alto
+                const pos = [], cols = [];
+                for (let h = 0; h <= heightLevels; h++) {
+                    let hR = h / heightLevels;
+                    // Morfologia a fungo: raggio piccolo in basso (<0.4), incudine larga in alto (>0.4)
+                    let radius = hR > 0.4 ? 3.5 + Math.pow(hR - 0.4, 1.2) * 10 : 1.8 + hR * 2.0;
+                    let dbzVal = 73 - (hR * 30);
 
-        function switch3DMode(mode) {
-            currentMode = mode;
-            updateActiveButtonUI();
-            initOrUpdate3DViewer();
-        }
-
-        function updateActiveButtonUI() {
-            document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
-            if(currentMode === 'voxel') document.getElementById('btn-voxel').classList.add('active');
-            if(currentMode === 'iso') document.getElementById('btn-iso').classList.add('active');
-            if(currentMode === 'holo') document.getElementById('btn-holo').classList.add('active');
-        }
-
-        function getDbzColorHex(dbz) {
-            if(dbz >= 70) return 0xff00ff;
-            if(dbz >= 62) return 0xff0055;
-            if(dbz >= 55) return 0xff3300;
-            if(dbz >= 48) return 0xff9900;
-            if(dbz >= 40) return 0xffff00;
-            if(dbz >= 35) return 0x00ff66;
-            return 0x00b4d8;
-        }
-
-        function buildGridMesh(matrix, type) {
-            const group = new THREE.Group();
-            const rows = matrix.length, cols = matrix[0].length, heightLevels = 16, boxSize = 0.85;
-            const pos = [], colsArr = [];
-
-            for (let r = 0; r < rows; r++) {
-                for (let c = 0; c < cols; c++) {
-                    let dbz = matrix[r][c] || 10;
-                    if (dbz < 35) continue;
-                    let dist = Math.hypot(r - rows/2, c - cols/2) / (Math.max(rows, cols)/2);
-                    let maxH = Math.floor((dbz / 75.0) * heightLevels);
-
-                    for (let h = 0; h <= maxH; h++) {
-                        let hR = h / heightLevels;
-                        if (dist > (0.4 + hR * 0.3)) continue;
-
-                        pos.push((c - cols/2)*boxSize, h*boxSize, (r - rows/2)*boxSize);
-                        let colColor = new THREE.Color(getDbzColorHex(Math.max(10, dbz - hR*15)));
-                        colsArr.push(colColor.r, colColor.g, colColor.b);
+                    for (let a = 0; a < Math.PI * 2; a += 0.35) {
+                        for (let r = 0; r < radius; r += 0.8) {
+                            let x = Math.cos(a) * r;
+                            let z = Math.sin(a) * r;
+                            pos.push(x, (h - heightLevels/2) * boxSize, z);
+                            let col = new THREE.Color(getDbzColor(dbzVal - (r * 1.2)));
+                            cols.push(col.r, col.g, col.b);
+                        }
                     }
                 }
-            }
-
-            const count = pos.length / 3;
-            if (count === 0) return group;
-
-            if (type === 'holo') {
-                const geom = new THREE.BoxGeometry(boxSize*0.8, boxSize*0.8, boxSize*0.8);
-                const edges = new THREE.EdgesGeometry(geom);
-                const mat = new THREE.LineBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0.5 });
-                for(let i=0; i<count; i+=2) {
-                    let l = new THREE.LineSegments(edges, mat);
-                    l.position.set(pos[i*3], pos[i*3+1], pos[i*3+2]);
-                    group.add(l);
-                }
-            } else if (type === 'iso') {
-                for (let l = 1; l < heightLevels; l+=2) {
-                    let hR = l / heightLevels;
-                    let geom = new THREE.CylinderGeometry(6 * (1 - hR*0.3), 6 * (1 - hR*0.2), 1.0, 24, 1, true);
-                    geom.translate(0, l * boxSize, 0);
-                    let mat = new THREE.MeshPhysicalMaterial({ color: 0xff0055, roughness: 0.1, transmission: 0.5, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
-                    group.add(new THREE.Mesh(geom, mat));
-                }
-            } else {
-                // Voxel 3D (Default)
-                const geom = new THREE.BoxGeometry(boxSize*0.9, boxSize*0.9, boxSize*0.9);
-                const mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.65, roughness: 0.2 });
+                const count = pos.length / 3;
+                const geom = new THREE.BoxGeometry(boxSize*0.85, boxSize*0.85, boxSize*0.85);
+                const mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.7, roughness: 0.2 });
                 const mesh = new THREE.InstancedMesh(geom, mat, count);
                 const dummy = new THREE.Object3D();
                 for(let i=0; i<count; i++) {
                     dummy.position.set(pos[i*3], pos[i*3+1], pos[i*3+2]);
                     dummy.updateMatrix();
                     mesh.setMatrixAt(i, dummy.matrix);
-                    mesh.setColorAt(i, new THREE.Color(colsArr[i*3], colsArr[i*3+1], colsArr[i*3+2]));
+                    mesh.setColorAt(i, new THREE.Color(cols[i*3], cols[i*3+1], cols[i*3+2]));
                 }
                 mesh.instanceMatrix.needsUpdate = true;
                 if(mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-                group.add(mesh);
+                supercellGroup.add(mesh);
+
+            } else if (mode === 'iso') {
+                // Isovolumetrico: effetto fumo/nuvola continuo morbido a strati a fungo
+                for (let l = 0; l < heightLevels; l++) {
+                    let hR = l / heightLevels;
+                    let rScale = hR > 0.4 ? 0.9 + Math.pow(hR - 0.4, 1.1) * 3.2 : 0.4 + hR * 0.8;
+                    let geom = new THREE.CylinderGeometry(6 * rScale, 6 * (rScale * 0.85), 0.8, 32, 1, true);
+                    geom.translate(0, (l - heightLevels/2) * boxSize, 0);
+                    let mat = new THREE.MeshPhysicalMaterial({ 
+                        color: hR > 0.6 ? 0x00d2ff : (hR > 0.3 ? 0xffff00 : 0xff0055), 
+                        roughness: 0.4, transmission: 0.65, transparent: true, opacity: 0.55, side: THREE.DoubleSide 
+                    });
+                    supercellGroup.add(new THREE.Mesh(geom, mat));
+                }
+
+            } else if (mode === 'holo') {
+                // Holo: Parallelepipedi trasparenti più grandi stile ologramma fantascientifico
+                const holoGroup = new THREE.Group();
+                for (let h = 0; h <= heightLevels; h += 2) {
+                    let hR = h / heightLevels;
+                    let rScale = hR > 0.4 ? 1.0 + (hR - 0.4) * 3.0 : 0.5 + hR * 1.2;
+                    let geom = new THREE.BoxGeometry(1.6 * rScale, 1.2, 1.6 * rScale);
+                    let mat = new THREE.MeshBasicMaterial({ 
+                        color: hR > 0.6 ? 0x00d2ff : (hR > 0.3 ? 0x00ff66 : 0xff0055), 
+                        wireframe: true, transparent: true, opacity: 0.6 
+                    });
+                    let mesh = new THREE.Mesh(geom, mat);
+                    mesh.position.set(0, (h - heightLevels/2) * boxSize, 0);
+                    holoGroup.add(mesh);
+                }
+                supercellGroup.add(holoGroup);
             }
-            return group;
         }
 
-        function initOrUpdate3DViewer() {
-            const container = document.querySelector('.canvas-container');
-            const canvas = document.getElementById('canvas-3d');
-            if(!container || !canvas) return;
-
-            const width = container.clientWidth;
-            const height = container.clientHeight;
-
-            if(!renderer3D) {
-                renderer3D = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
-                renderer3D.setSize(width, height);
-                renderer3D.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-                scene3D = new THREE.Scene();
-                camera3D = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-                camera3D.position.set(0, 32, 48);
-                camera3D.lookAt(0, 6, 0);
-
-                scene3D.add(new THREE.AmbientLight(0xffffff, 1.2));
-                const light = new THREE.DirectionalLight(0xffffff, 1.5);
-                light.position.set(20, 50, 20);
-                scene3D.add(light);
-            }
-
-            if(currentMesh3D) {
-                scene3D.remove(currentMesh3D);
-            }
-
-            currentMesh3D = buildGridMesh(activeGrid, currentMode);
-            scene3D.add(currentMesh3D);
-
-            if(animId) cancelAnimationFrame(animId);
-            function animate() {
-                animId = requestAnimationFrame(animate);
-                if(currentMesh3D) currentMesh3D.rotation.y += 0.003;
-                renderer3D.render(scene3D, camera3D);
-            }
-            animate();
+        function setHoloMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
+            if(mode === 'voxel') document.getElementById('btn-voxel').classList.add('active');
+            if(mode === 'iso') document.getElementById('btn-iso').classList.add('active');
+            if(mode === 'holo') document.getElementById('btn-holo').classList.add('active');
+            buildHolographicStructure(mode);
         }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!isDragging) {
+                targetRotationY += 0.003; // Rotazione lenta continua sull'asse
+                supercellGroup.rotation.y = targetRotationY;
+            }
+            renderer.render(scene, camera);
+        }
+
+        window.onload = () => {
+            initThreeEngine();
+            openTelemetry(sampleCell);
+        };
     </script>
 </body>
 </html>
