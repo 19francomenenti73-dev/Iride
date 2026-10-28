@@ -68,7 +68,7 @@
                 <button class="btn-back" onclick="closeCell3DView()">← INDIETRO MAPPA</button>
                 <div>
                     <div id="h-core-id" style="font-weight: bold; font-size: 14px; color: var(--cyan-glow);">Core-Cell</div>
-                    <div style="font-size: 9px; color: #8a99ad;">True Isosurface & Columnar Engine</div>
+                    <div style="font-size: 9px; color: #8a99ad;">Radar Palette Isosurface Engine</div>
                 </div>
             </div>
             <div class="controls-3d">
@@ -154,7 +154,7 @@
 
             if (cellScene && cellRootGroup) {
                 cellScene.remove(cellRootGroup);
-                cellRootGroup = buildAdaptiveStormEngine(activeCellData?.grid_matrix, currentCellMode);
+                cellRootGroup = buildRadarPaletteVolume(activeCellData?.grid_matrix, currentCellMode);
                 cellScene.add(cellRootGroup);
             }
         }
@@ -182,15 +182,15 @@
 
             cellScene = new THREE.Scene();
             cellCamera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1000);
-            cellCamera.position.set(0, 14, 32);
-            cellCamera.lookAt(0, 1.5, 0);
+            cellCamera.position.set(0, 15, 34);
+            cellCamera.lookAt(0, 1.2, 0);
 
-            cellScene.add(new THREE.AmbientLight(0xffffff, 1.7));
-            const light = new THREE.DirectionalLight(0xffffff, 2.0);
+            cellScene.add(new THREE.AmbientLight(0xffffff, 1.6));
+            const light = new THREE.DirectionalLight(0xffffff, 1.9);
             light.position.set(25, 50, 25);
             cellScene.add(light);
 
-            cellRootGroup = buildAdaptiveStormEngine(activeCellData?.grid_matrix, currentCellMode);
+            cellRootGroup = buildRadarPaletteVolume(activeCellData?.grid_matrix, currentCellMode);
             cellScene.add(cellRootGroup);
 
             container.addEventListener('pointerdown', (e) => {
@@ -226,6 +226,7 @@
             animateCell3D();
         }
 
+        // Scala dBZ Ufficiale Radar
         function getDbzColorHex(dbz) {
             if (dbz >= 68) return 0xff00ff; // Magenta
             if (dbz >= 58) return 0xff0044; // Rosso
@@ -236,13 +237,13 @@
             return 0x0055ff; // Blu
         }
 
-        // MOTORE ADATTIVO: Se ISO è attivo, genera gusci continui lisci (stile GR2Analyst); se SOLIDO, genera colonne piene.
-        function buildAdaptiveStormEngine(matrix, mode) {
+        // MOTORE CON PALETTE RADAR TERMODINAMICA SU ISOVOLUMI
+        function buildRadarPaletteVolume(matrix, mode) {
             const masterGroup = new THREE.Group();
             masterGroup.rotation.x = tiltX;
             masterGroup.rotation.y = rotY;
 
-            // 1. Base Raster 2D al suolo
+            // Base 2D
             const baseGroup = new THREE.Group();
             baseGroup.position.y = -3.5;
 
@@ -272,6 +273,8 @@
             masterGroup.add(baseGroup);
 
             const cell3DGroup = new THREE.Group();
+            const heightLevels = 22;
+            const pSize = 0.5;
 
             if (matrix && Array.isArray(matrix)) {
                 let sumR = 0, sumC = 0, count = 0;
@@ -283,112 +286,83 @@
                 let coreR = count > 0 ? sumR / count : rows / 2;
                 let coreC = count > 0 ? sumC / count : cols / 2;
 
-                if (mode === 'iso') {
-                    // MODO ISOVOLUMETRICO: Gusci continui, lisci e trasparenti concentrici (Stile GR2Analyst)
-                    const numShells = 4; // Gusci concentrici (es. Esterno rosso/arancione, Interno magenta)
-                    const heightLevels = 18;
+                const pos = [], colsArr = [], scaleArr = [];
 
-                    for (let s = numShells; s >= 1; s--) {
-                        let thresholdDbz = 30 + (s * 10); // 40, 50, 60, 70 dBZ
-                        let shellColor = getDbzColorHex(thresholdDbz + 5);
-                        let shellOpacity = 0.25 + (s * 0.12); // Più interno = più denso
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        let baseDbz = matrix[r][c] || 10;
+                        if (baseDbz < 18) continue;
 
-                        const shellGroup = new THREE.Group();
+                        let maxH = Math.floor((baseDbz / 68.0) * heightLevels) + 5;
 
-                        for (let h = 0; h < heightLevels; h++) {
-                            let hR = h / heightLevels;
-                            let yPos = (h - heightLevels/2) * 0.42;
+                        for (let h = 0; h <= maxH; h++) {
+                            let hR = h / heightLevels; 
 
-                            // Calcoliamo l'estensione media della cella a questa altezza
-                            let spreadFactor = hR > 0.3 ? 1.0 + Math.pow((hR - 0.3) / 0.7, 1.2) * 3.2 : 1.0 + (hR * 0.2);
-                            let radius = (3.5 + (hR * 5.0)) * (s === 4 ? 0.6 : (s === 3 ? 0.8 : 1.0));
+                            let spreadFactor = hR > 0.28 
+                                ? 1.0 + Math.pow((hR - 0.28) / 0.72, 1.2) * 3.5 
+                                : 1.0 + (hR * 0.2);
 
-                            // Creiamo un disco/cilindro liscio per questo livello dello strato isovolumetrico
-                            const geom = new THREE.CylinderGeometry(radius, radius * 0.9, 0.44, 24);
-                            const mat = new THREE.MeshPhysicalMaterial({
-                                color: shellColor,
-                                transparent: true,
-                                opacity: shellOpacity,
-                                roughness: 0.15,
-                                transmission: 0.65, // Effetto vetro/liquido trasparente
-                                thickness: 1.2,
-                                side: THREE.DoubleSide
-                            });
+                            let curR = coreR + (r - coreR) * spreadFactor;
+                            let curC = coreC + (c - coreC) * spreadFactor;
 
-                            const mesh = new THREE.Mesh(geom, mat);
-                            mesh.position.set(0, yPos, 0);
-                            shellGroup.add(mesh);
-                        }
-                        cell3DGroup.add(shellGroup);
-                    }
-                } else {
-                    // MODO SOLIDO 3D / HOLO: Colonne verticali piene e dettagliate
-                    const heightLevels = 22;
-                    const pSize = 0.5;
-                    const pos = [], colsArr = [], scaleArr = [];
+                            let xPos = (curC - cols/2) * pSize;
+                            let zPos = (curR - rows/2) * pSize;
+                            let yPos = (h - heightLevels/2) * 0.38;
 
-                    for (let r = 0; r < rows; r++) {
-                        for (let c = 0; c < cols; c++) {
-                            let baseDbz = matrix[r][c] || 10;
-                            if (baseDbz < 18) continue;
+                            let distFromCore = Math.hypot(r - coreR, c - coreC);
+                            let currentDbz;
 
-                            let maxH = Math.floor((baseDbz / 68.0) * heightLevels) + 5;
-
-                            for (let h = 0; h <= maxH; h++) {
-                                let hR = h / heightLevels;
-                                let spreadFactor = hR > 0.28 ? 1.0 + Math.pow((hR - 0.28) / 0.72, 1.2) * 3.5 : 1.0 + (hR * 0.2);
-
-                                let curR = coreR + (r - coreR) * spreadFactor;
-                                let curC = coreC + (c - coreC) * spreadFactor;
-
-                                let xPos = (curC - cols/2) * pSize;
-                                let zPos = (curR - rows/2) * pSize;
-                                let yPos = (h - heightLevels/2) * 0.38;
-
-                                let distFromCore = Math.hypot(r - coreR, c - coreC);
-                                let currentDbz;
-
-                                if (hR > 0.78 && distFromCore <= 2.5) {
-                                    currentDbz = 72; // Overshooting top magenta
-                                } else if (distFromCore <= 2.8 && hR < 0.65) {
-                                    currentDbz = Math.max(baseDbz, 60); // Gambo verticale
-                                } else {
-                                    currentDbz = baseDbz - (hR * 22);
-                                }
-
-                                let col = new THREE.Color(getDbzColorHex(currentDbz));
-                                pos.push(xPos, yPos, zPos);
-                                colsArr.push(col.r, col.g, col.b);
-                                scaleArr.push(hR > 0.28 ? 1.42 + (hR - 0.28) * 1.8 : 1.32);
+                            if (hR > 0.78 && distFromCore <= 2.5) {
+                                currentDbz = 72; // Magenta
+                            } else if (distFromCore <= 2.8 && hR < 0.65) {
+                                currentDbz = Math.max(baseDbz, 60); // Rosso
+                            } else {
+                                currentDbz = baseDbz - (hR * 22); // Verde -> Azzurro -> Blu
                             }
+
+                            let col = new THREE.Color(getDbzColorHex(currentDbz));
+                            pos.push(xPos, yPos, zPos);
+                            colsArr.push(col.r, col.g, col.b);
+                            scaleArr.push(hR > 0.28 ? 1.42 + (hR - 0.28) * 1.8 : 1.32);
                         }
                     }
+                }
 
-                    const totalPoints = pos.length / 3;
-                    if (totalPoints > 0) {
-                        let geom, mat;
-                        if (mode === 'solid') {
-                            geom = new THREE.BoxGeometry(pSize * 1.05, 0.42, pSize * 1.05);
-                            mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.93, roughness: 0.2 });
-                        } else {
-                            geom = new THREE.BoxGeometry(pSize * 1.08, 0.42, pSize * 1.08);
-                            mat = new THREE.MeshBasicMaterial({ wireframe: true, transparent: true, opacity: 0.65 });
-                        }
-
-                        const instMesh = new THREE.InstancedMesh(geom, mat, totalPoints);
-                        const dummy = new THREE.Object3D();
-                        for (let i = 0; i < totalPoints; i++) {
-                            let s = scaleArr[i];
-                            dummy.position.set(pos[i*3], pos[i*3+1], pos[i*3+2]);
-                            dummy.scale.set(s, 1.0, s);
-                            dummy.updateMatrix();
-                            instMesh.setMatrixAt(i, dummy.matrix);
-                            instMesh.setColorAt(i, new THREE.Color(colsArr[i*3], colsArr[i*3+1], colsArr[i*3+2]));
-                        }
-                        instMesh.instanceMatrix.needsUpdate = true;
-                        if (instMesh.instanceColor) instMesh.instanceColor.needsUpdate = true;
-                        cell3DGroup.add(instMesh);
+                const totalPoints = pos.length / 3;
+                if (totalPoints > 0) {
+                    let geom, mat;
+                    if (mode === 'iso') {
+                        // ISOVOLUMETRICO CON TRASPARENZA E COLORAZIONE PALETTE RADAR
+                        geom = new THREE.BoxGeometry(pSize * 1.15, 0.44, pSize * 1.15);
+                        mat = new THREE.MeshPhysicalMaterial({ 
+                            transparent: true, 
+                            opacity: 0.38, 
+                            roughness: 0.1, 
+                            transmission: 0.8, 
+                            thickness: 1.2,
+                            side: THREE.DoubleSide
+                        });
+                    } else if (mode === 'solid') {
+                        geom = new THREE.BoxGeometry(pSize * 1.05, 0.42, pSize * 1.05);
+                        mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.93, roughness: 0.2 });
+                    } else {
+                        geom = new THREE.BoxGeometry(pSize * 1.08, 0.42, pSize * 1.08);
+                        mat = new THREE.MeshBasicMaterial({ wireframe: true, transparent: true, opacity: 0.65 });
                     }
+
+                    const instMesh = new THREE.InstancedMesh(geom, mat, totalPoints);
+                    const dummy = new THREE.Object3D();
+                    for (let i = 0; i < totalPoints; i++) {
+                        let s = scaleArr[i];
+                        dummy.position.set(pos[i*3], pos[i*3+1], pos[i*3+2]);
+                        dummy.scale.set(s, 1.0, s);
+                        dummy.updateMatrix();
+                        instMesh.setMatrixAt(i, dummy.matrix);
+                        instMesh.setColorAt(i, new THREE.Color(colsArr[i*3], colsArr[i*3+1], colsArr[i*3+2]));
+                    }
+                    instMesh.instanceMatrix.needsUpdate = true;
+                    if (instMesh.instanceColor) instMesh.instanceColor.needsUpdate = true;
+                    cell3DGroup.add(instMesh);
                 }
             }
 
@@ -399,7 +373,7 @@
         function animateCell3D() {
             requestAnimationFrame(animateCell3D);
             if (!isDragging && document.getElementById('view-3d').classList.contains('active')) {
-                rotY += 0.003;
+                rotY += 0.0003;
                 if (cellRootGroup) cellRootGroup.rotation.y = rotY;
             }
             if (cellRenderer && cellScene && cellCamera) {
@@ -409,4 +383,3 @@
     </script>
 </body>
 </html>
-
