@@ -22,121 +22,119 @@
             background: var(--bg-deep);
             color: var(--text-main);
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            overflow: hidden;
+            overflow-x: hidden;
             width: 100vw; height: 100vh;
             display: grid;
-            grid-template-rows: 54px 1fr 210px 32px;
+            grid-template-rows: auto 1fr auto auto;
         }
 
+        /* FIX MOBILE HEADER OVERLAP */
         #header {
             background: var(--panel-bg);
             border-bottom: 1px solid var(--border-color);
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 0 20px; z-index: 100;
+            display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+            padding: 10px 15px; z-index: 100; gap: 8px;
         }
 
-        .brand-title { color: var(--cyan-glow); font-weight: 800; font-size: 18px; letter-spacing: 2px; }
-        .brand-subtitle { font-size: 11px; color: #8a99ad; margin-left: 10px; }
+        .brand-group { display: flex; align-items: baseline; gap: 8px; }
+        .brand-title { color: var(--cyan-glow); font-weight: 800; font-size: 16px; letter-spacing: 2px; }
+        .brand-subtitle { font-size: 10px; color: #8a99ad; display: none; }
+        @media (min-width: 600px) { .brand-subtitle { display: inline; } }
 
-        .header-controls { display: flex; align-items: center; gap: 12px; }
-        .badge-sperimentale { background: #091b30; color: var(--cyan-glow); border: 1px solid var(--border-color); padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+        .header-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .badge-sperimentale { background: #091b30; color: var(--cyan-glow); border: 1px solid var(--border-color); padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; }
 
         .btn-top-mode {
-            background: #00b4d8; color: #000; border: none; padding: 8px 18px; border-radius: 4px; font-weight: bold; font-size: 12px; cursor: pointer;
-            box-shadow: 0 0 15px rgba(0, 180, 216, 0.4); transition: all 0.2s;
+            background: #00b4d8; color: #000; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 180, 216, 0.4); transition: all 0.2s;
         }
         .btn-top-mode.inactive { background: #091b30; color: var(--cyan-glow); border: 1px solid var(--border-color); box-shadow: none; }
 
-        .status-ok { display: flex; align-items: center; gap: 6px; font-weight: bold; font-size: 12px; color: #00ff66; background: #091b30; padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border-color); }
-        .status-dot { width: 8px; height: 8px; background: #00ff66; border-radius: 50%; box-shadow: 0 0 8px #00ff66; }
+        .status-ok { display: flex; align-items: center; gap: 5px; font-weight: bold; font-size: 11px; color: #00ff66; background: #091b30; padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border-color); }
+        .status-dot { width: 7px; height: 7px; background: #00ff66; border-radius: 50%; box-shadow: 0 0 6px #00ff66; }
+
+        /* Mappa e Dark Mode nativa senza API Key */
+        .leaflet-tile {
+            filter: brightness(0.55) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) !important;
+        }
+        .leaflet-container { background: #02060f !important; }
 
         #center-grid { 
             display: grid; 
-            grid-template-columns: 1fr 340px; 
+            grid-template-columns: 1fr; 
             position: relative; 
             background: #000; 
             width: 100%;
             height: 100%;
+            min-height: 350px;
             overflow: hidden; 
         }
-        #map-viewport { 
-            position: relative; 
-            width: 100%; 
-            height: 100%; 
-        }
-        #map { 
-            width: 100% !important; 
-            height: 100% !important; 
-            position: absolute !important; 
-            top: 0; 
-            left: 0; 
-            z-index: 1;
-        }
-        #webgl-overlay { 
-            width: 100% !important; 
-            height: 100% !important; 
-            position: absolute !important; 
-            top: 0; 
-            left: 0; 
-            pointer-events: none; 
-            z-index: 10; 
+        @media (min-width: 900px) {
+            #center-grid { grid-template-columns: 1fr 320px; }
         }
 
+        #map-viewport { position: relative; width: 100%; height: 100%; min-height: 350px; }
+        #map { width: 100% !important; height: 100% !important; position: absolute !important; top: 0; left: 0; z-index: 1; }
+        #webgl-overlay { width: 100% !important; height: 100% !important; position: absolute !important; top: 0; left: 0; pointer-events: none; z-index: 10; }
+
         .dbz-scale-bar {
-            position: absolute; top: 20px; left: 20px; z-index: 20; background: rgba(6, 14, 26, 0.9);
-            border: 1px solid var(--border-color); padding: 12px; border-radius: 6px; font-size: 11px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5); backdrop-filter: blur(4px);
+            position: absolute; top: 15px; left: 15px; z-index: 20; background: rgba(6, 14, 26, 0.9);
+            border: 1px solid var(--border-color); padding: 10px; border-radius: 6px; font-size: 10px;
+            backdrop-filter: blur(4px);
         }
         .dbz-gradient {
-            width: 18px; height: 220px;
+            width: 14px; height: 180px;
             background: linear-gradient(to top, #00b4d8, #00ff66, #ffff00, #ff9900, #ff0055, #ff00ff, #ffffff);
-            margin-top: 6px; border-radius: 2px;
+            margin-top: 4px; border-radius: 2px;
         }
 
         #telemetry-panel {
-            background: var(--panel-bg); border-left: 1px solid var(--border-color); padding: 18px;
+            background: var(--panel-bg); border-left: 1px solid var(--border-color); padding: 15px;
             font-size: 12px; overflow-y: auto; z-index: 20;
         }
         .telemetry-header {
-            font-size: 16px; font-weight: bold; color: var(--text-main); margin-bottom: 14px; padding-bottom: 8px;
+            font-size: 15px; font-weight: bold; color: var(--text-main); margin-bottom: 10px; padding-bottom: 6px;
             border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;
         }
-        .telemetry-row { display: flex; justify-content: space-between; margin-bottom: 9px; color: #94a3b8; font-size: 13px; }
+        .telemetry-row { display: flex; justify-content: space-between; margin-bottom: 7px; color: #94a3b8; font-size: 12px; }
         .telemetry-val { color: #fff; font-weight: bold; }
 
-        .legend-box { margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 14px; }
-        .legend-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 11px; color: #cbd5e1; }
+        .legend-box { margin-top: 15px; border-top: 1px solid var(--border-color); paddingTop: 10px; }
+        .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 10px; color: #cbd5e1; }
 
         #bottom-grid {
             background: #040914; border-top: 1px solid var(--border-color);
-            display: grid; grid-template-columns: 1fr 1fr 1fr 340px; gap: 1px; background-color: var(--border-color);
+            display: grid; grid-template-columns: 1fr; gap: 1px; background-color: var(--border-color);
         }
-        .preview-card { background: var(--panel-bg); padding: 10px 14px; position: relative; overflow: hidden; }
-        .preview-title { font-size: 13px; font-weight: bold; color: var(--text-main); }
-        .preview-subtitle { font-size: 10px; color: #8a99ad; margin-bottom: 4px; }
-        .mini-canvas { width: 100%; height: 140px; }
+        @media (min-width: 768px) {
+            #bottom-grid { grid-template-columns: repeat(4, 1fr); }
+        }
+        .preview-card { background: var(--panel-bg); padding: 10px; position: relative; overflow: hidden; }
+        .preview-title { font-size: 12px; font-weight: bold; color: var(--text-main); }
+        .preview-subtitle { font-size: 9px; color: #8a99ad; margin-bottom: 4px; }
+        .mini-canvas { width: 100%; height: 110px; }
 
-        .specs-card { background: var(--panel-bg); padding: 12px 14px; font-size: 11px; color: #cbd5e1; display: flex; flex-direction: column; justify-content: space-between; }
-        .spec-check { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: #00ff66; }
+        .specs-card { background: var(--panel-bg); padding: 10px; font-size: 10px; color: #cbd5e1; display: flex; flex-direction: column; justify-content: space-between; }
+        .spec-check { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; color: #00ff66; }
 
         #footer {
             background: #02050a; border-top: 1px solid var(--border-color); display: flex;
-            align-items: center; justify-content: space-between; padding: 0 20px; font-size: 11px; color: #64748b;
+            align-items: center; justify-content: space-between; padding: 8px 15px; font-size: 10px; color: #64748b;
         }
     </style>
 </head>
 <body>
 
     <div id="header">
-        <div style="display: flex; align-items: baseline;">
+        <div class="brand-group">
             <div class="brand-title">I.R.I.D.E.</div>
             <div class="brand-subtitle">Italian Radar Interactive Deep Engine</div>
         </div>
         <div class="header-controls">
             <div class="badge-sperimentale">SPERIMENTALE</div>
             <button class="btn-top-mode" onclick="setMasterMode('voxel', this)">VOXEL 3D</button>
-            <button class="btn-top-mode inactive" onclick="setMasterMode('iso', this)">ISO SUPERFICIE</button>
-            <button class="btn-top-mode inactive" onclick="setMasterMode('holo', this)">HOLO WIREFRAME</button>
+            <button class="btn-top-mode inactive" onclick="setMasterMode('iso', this)">ISO</button>
+            <button class="btn-top-mode inactive" onclick="setMasterMode('holo', this)">HOLO</button>
             <div class="status-ok"><div class="status-dot"></div> OK</div>
         </div>
     </div>
@@ -147,8 +145,8 @@
             <canvas id="webgl-overlay"></canvas>
 
             <div class="dbz-scale-bar">
-                <div style="font-weight: bold; margin-bottom: 4px;">Riflettività (dBZ)</div>
-                <div style="display: flex; justify-content: space-between; font-size: 10px; color: #aaa;"><span>75</span><span>10</span></div>
+                <div style="font-weight: bold; margin-bottom: 2px;">dBZ Scale</div>
+                <div style="display: flex; justify-content: space-between; font-size: 9px; color: #aaa;"><span>75</span><span>10</span></div>
                 <div class="dbz-gradient"></div>
             </div>
         </div>
@@ -156,7 +154,7 @@
         <div id="telemetry-panel">
             <div class="telemetry-header">
                 <span id="p-core-id">Core-51611-7</span>
-                <span style="font-size: 11px; color: #00ff66;">● ATTIVO</span>
+                <span style="font-size: 10px; color: #00ff66;">● ATTIVO</span>
             </div>
             <div class="telemetry-row"><span>Latitudine:</span> <span id="p-lat" class="telemetry-val">41.8932°</span></div>
             <div class="telemetry-row"><span>Longitudine:</span> <span id="p-lon" class="telemetry-val">12.4987°</span></div>
@@ -168,10 +166,10 @@
             <div class="telemetry-row"><span>Pioggia stimata:</span> <span id="p-rain" class="telemetry-val">45 mm/h</span></div>
 
             <div class="legend-box">
-                <div class="legend-item"><div style="width:14px; height:14px; border:2px solid var(--pink-core); border-radius:50%;"></div> Centroide</div>
-                <div class="legend-item"><div style="width:18px; height:2px; background:var(--cyan-glow);"></div> Vettore previsto</div>
-                <div class="legend-item"><div style="width:18px; height:2px; background:var(--pink-core);"></div> Vettore reale</div>
-                <div class="legend-item"><div style="width:14px; height:14px; background:linear-gradient(45deg, #ff9900, #ff0055); border-radius:2px;"></div> Classe riflettività color</div>
+                <div class="legend-item"><div style="width:10px; height:10px; border:2px solid var(--pink-core); border-radius:50%;"></div> Centroide</div>
+                <div class="legend-item"><div style="width:14px; height:2px; background:var(--cyan-glow);"></div> Vettore previsto</div>
+                <div class="legend-item"><div style="width:14px; height:2px; background:var(--pink-core);"></div> Vettore reale</div>
+                <div class="legend-item"><div style="width:10px; height:10px; background:linear-gradient(45deg, #ff9900, #ff0055); border-radius:2px;"></div> Classe dBZ</div>
             </div>
         </div>
     </div>
@@ -179,7 +177,7 @@
     <div id="bottom-grid">
         <div class="preview-card">
             <div class="preview-title">1. Voxel 3D</div>
-            <div class="preview-subtitle">Volumi pieni e continui</div>
+            <div class="preview-subtitle">Volumi pieni continui</div>
             <canvas id="mini-canvas-voxel" class="mini-canvas"></canvas>
         </div>
         <div class="preview-card">
@@ -189,31 +187,30 @@
         </div>
         <div class="preview-card">
             <div class="preview-title">3. Holo wireframe</div>
-            <div class="preview-subtitle">Reticolo 3D trasparente</div>
+            <div class="preview-subtitle">Reticolo trasparente</div>
             <canvas id="mini-canvas-holo" class="mini-canvas"></canvas>
         </div>
         <div class="specs-card">
             <div>
-                <div style="font-weight: bold; margin-bottom: 6px; color: #fff;">4. Palette radar (RainViewer)</div>
-                <div class="spec-check">✓ <span>Mappa radar reale</span></div>
+                <div style="font-weight: bold; margin-bottom: 4px; color: #fff;">4. Palette radar</div>
+                <div class="spec-check">✓ <span>Mappa raster reale</span></div>
                 <div class="spec-check">✓ <span>Geometria 3D continua</span></div>
-                <div class="spec-check">✓ <span>Incudine più alta e larga</span></div>
+                <div class="spec-check">✓ <span>Incudine convettiva</span></div>
                 <div class="spec-check">✓ <span>Centroidi colorati</span></div>
-                <div class="spec-check">✓ <span>Tutte le modalità...</span></div>
-                <div class="spec-check">✓ <span>Nessun "dBZ non rilevato"</span></div>
             </div>
         </div>
     </div>
 
     <div id="footer">
-        <span>I.R.I.D.E. | Italian Radar Interactive Deep Engine</span>
-        <span>Dati dal raster RainViewer | Visualizzazione 3D sperimentale</span>
+        <span>I.R.I.D.E. | Engine v2.0</span>
+        <span>Dati RainViewer API</span>
     </div>
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
         const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([41.8932, 12.4987], 7);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(map);
+        // Utilizzo OpenStreetMap standard con filtro CSS Dark Mode (Zero API Key, zero watermark)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
         setTimeout(() => { map.invalidateSize(); }, 300);
 
         let activeGrid = generateFallbackMatrix();
@@ -237,7 +234,7 @@
                 rebuildMainMesh();
                 renderMiniViews();
             }).catch(err => {
-                console.warn("[I.R.I.D.E.] Fallback su dati locali:", err);
+                console.warn("[I.R.I.D.E.] Fallback su matrice locale:", err);
                 rebuildMainMesh();
                 renderMiniViews();
             });
@@ -258,8 +255,8 @@
             cells.forEach(cell => {
                 const icon = L.divIcon({
                     className: 'custom-centroid',
-                    html: `<div style="width:28px; height:28px; border:2px solid var(--pink-core); border-radius:50%; animation: pulse 1.4s infinite;"></div>`,
-                    iconSize: [28, 28]
+                    html: `<div style="width:24px; height:24px; border:2px solid var(--pink-core); border-radius:50%; animation: pulse 1.4s infinite;"></div>`,
+                    iconSize: [24, 24]
                 });
                 const marker = L.marker([cell.lat, cell.lon], { icon: icon }).addTo(map);
                 marker.on('click', () => {
@@ -282,8 +279,8 @@
         const canvasMain = document.getElementById('webgl-overlay');
         const rendererMain = new THREE.WebGLRenderer({ canvas: canvasMain, antialias: true, alpha: true });
         
-        let initW = mapViewport.clientWidth > 0 ? mapViewport.clientWidth : window.innerWidth - 340;
-        let initH = mapViewport.clientHeight > 0 ? mapViewport.clientHeight : window.innerHeight - 264;
+        let initW = mapViewport.clientWidth > 0 ? mapViewport.clientWidth : window.innerWidth;
+        let initH = mapViewport.clientHeight > 0 ? mapViewport.clientHeight : 350;
         rendererMain.setSize(initW, initH);
         rendererMain.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
@@ -425,11 +422,11 @@
             const c = document.getElementById(canvasId);
             if(!c) return;
             const r = new THREE.WebGLRenderer({ canvas: c, antialias: true, alpha: true });
-            r.setSize(c.clientWidth || 120, c.clientHeight || 140);
+            r.setSize(c.clientWidth || 100, c.clientHeight || 110);
             r.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
             const s = new THREE.Scene();
-            const cam = new THREE.PerspectiveCamera(45, (c.clientWidth || 120) / (c.clientHeight || 140), 0.1, 1000);
+            const cam = new THREE.PerspectiveCamera(45, (c.clientWidth || 100) / (c.clientHeight || 110), 0.1, 1000);
             cam.position.set(0, 22, 36);
             cam.lookAt(0, 8, 0);
 
@@ -481,8 +478,8 @@
         animate();
 
         window.addEventListener('resize', () => {
-            const w = mapViewport.clientWidth > 0 ? mapViewport.clientWidth : window.innerWidth - 340;
-            const h = mapViewport.clientHeight > 0 ? mapViewport.clientHeight : window.innerHeight - 264;
+            const w = mapViewport.clientWidth > 0 ? mapViewport.clientWidth : window.innerWidth;
+            const h = mapViewport.clientHeight > 0 ? mapViewport.clientHeight : 350;
             rendererMain.setSize(w, h);
             cameraMain.aspect = w / h;
             cameraMain.updateProjectionMatrix();
