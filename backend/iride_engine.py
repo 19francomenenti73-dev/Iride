@@ -82,7 +82,7 @@ class IrideRealEngine:
 
         cells_data = []
         base_lat, base_lon = 41.8932, 12.4987
-        i = 1  # Inizializzazione sicura della variabile i
+        i = 1
 
         for i in range(1, min(num_features + 1, 5)):
             y_indices, x_indices = np.where(labeled == i)
@@ -151,6 +151,7 @@ class IrideRealEngine:
         database = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "source": "RainViewer Live Multi-Frame API Real-Time",
+            "radar_tile_path": past_frames[-1]['path'],
             "cells": cells_data
         }
 
@@ -161,4 +162,4 @@ class IrideRealEngine:
 if __name__ == "__main__":
     engine = IrideRealEngine()
     engine.run_pipeline()
-    
+        
