@@ -68,12 +68,12 @@
                 <button class="btn-back" onclick="closeCell3DView()">← INDIETRO MAPPA</button>
                 <div>
                     <div id="h-core-id" style="font-weight: bold; font-size: 14px; color: var(--cyan-glow);">Core-Cell</div>
-                    <div style="font-size: 9px; color: #8a99ad;">Matrix-Driven Unique Supercell Engine</div>
+                    <div style="font-size: 9px; color: #8a99ad;">True Footprint-Preserving 3D Engine</div>
                 </div>
             </div>
             <div class="controls-3d">
                 <button class="btn-mode active" id="bm-solid" onclick="switchCellMode('solid')">VOXEL 3D</button>
-                <button class="btn-mode" id="bm-iso" onclick="switchCellMode('iso')">ISO SUPERFICIE</button>
+                <button class="btn-mode" id="bm-iso" onclick="switchCellMode('iso')">ISOVOLUMETRICO</button>
                 <button class="btn-mode" id="bm-holo" onclick="switchCellMode('holo')">HOLO</button>
             </div>
         </div>
@@ -154,7 +154,7 @@
 
             if (cellScene && cellRootGroup) {
                 cellScene.remove(cellRootGroup);
-                cellRootGroup = buildTrueMatrixSupercell(activeCellData?.grid_matrix, currentCellMode);
+                cellRootGroup = buildFootprintDrivenCell(activeCellData?.grid_matrix, currentCellMode);
                 cellScene.add(cellRootGroup);
             }
         }
@@ -190,7 +190,7 @@
             light.position.set(20, 40, 20);
             cellScene.add(light);
 
-            cellRootGroup = buildTrueMatrixSupercell(activeCellData?.grid_matrix, currentCellMode);
+            cellRootGroup = buildFootprintDrivenCell(activeCellData?.grid_matrix, currentCellMode);
             cellScene.add(cellRootGroup);
 
             container.addEventListener('pointerdown', (e) => {
@@ -199,7 +199,7 @@
             });
 
             window.addEventListener('pointermove', (e) => {
-                if (!isDragging || !document.getElementById('view-3d'].classList.contains('active')) return;
+                if (!isDragging || !document.getElementById('view-3d').classList.contains('active')) return;
                 const dx = e.clientX - prevMouse.x;
                 const dy = e.clientY - prevMouse.y;
 
@@ -227,22 +227,22 @@
         }
 
         function getDbzColorHex(dbz) {
-            if (dbz >= 70) return 0xff00ff; // Magenta
-            if (dbz >= 62) return 0xff0055; // Rosso
-            if (dbz >= 55) return 0xff3300; // Arancione scuro
-            if (dbz >= 48) return 0xff9900; // Arancione
-            if (dbz >= 40) return 0xffff00; // Giallo
-            if (dbz >= 35) return 0x00ff66; // Verde
-            return 0x00b4d8; // Azzurro
+            if (dbz >= 70) return 0xff00ff;
+            if (dbz >= 62) return 0xff0055;
+            if (dbz >= 55) return 0xff3300;
+            if (dbz >= 48) return 0xff9900;
+            if (dbz >= 40) return 0xffff00;
+            if (dbz >= 35) return 0x00ff66;
+            return 0x00b4d8;
         }
 
-        // MOTOR: Estrusione organica basata esclusivamente sui dati della grid_matrix della cella
-        function buildTrueMatrixSupercell(matrix, mode) {
+        // MOTORE 3D BASATO SUL FOOTPRINT REALE: Nessuna simmetria circolare, estrusione homotetica della matrice
+        function buildFootprintDrivenCell(matrix, mode) {
             const masterGroup = new THREE.Group();
             masterGroup.rotation.x = tiltX;
             masterGroup.rotation.y = rotY;
 
-            // --- 1. BASE RASTER 2D (Sotto) ---
+            // 1. Base Raster 2D sotto (esatta proiezione della matrice)
             const baseGroup = new THREE.Group();
             baseGroup.position.y = -3.2;
 
@@ -271,49 +271,46 @@
             }
             masterGroup.add(baseGroup);
 
-            // --- 2. STRUTTURA 3D UNICA PER QUESTA CELLA (Derivata dalla matrice) ---
+            // 2. Struttura 3D Asimmetrica guidata al 100% dal footprint nativo della matrice
             const cell3DGroup = new THREE.Group();
-            const heightLevels = 20;
+            const heightLevels = 18;
             const pSize = 0.45;
 
             if (matrix && Array.isArray(matrix)) {
-                // Troviamo il baricentro esatto della cella (nucleo ad alta riflettività)
                 let sumR = 0, sumC = 0, count = 0;
                 for (let r = 0; r < rows; r++) {
                     for (let c = 0; c < cols; c++) {
                         if (matrix[r][c] >= 40) { sumR += r; sumC += c; count++; }
                     }
                 }
-                let centerR = count > 0 ? sumR / count : rows / 2;
-                let centerC = count > 0 ? sumC / count : cols / 2;
+                let coreR = count > 0 ? sumR / count : rows / 2;
+                let coreC = count > 0 ? sumC / count : cols / 2;
 
                 const pos = [], colsArr = [];
 
                 for (let r = 0; r < rows; r++) {
                     for (let c = 0; c < cols; c++) {
                         let baseDbz = matrix[r][c] || 10;
-                        if (baseDbz < 35) continue; // Filtro rigoroso sul nucleo convettivo
+                        if (baseDbz < 35) continue;
 
                         let maxH = Math.floor((baseDbz / 72.0) * heightLevels);
-                        let distFromCenter = Math.hypot(r - centerR, c - centerC);
 
                         for (let h = 0; h <= maxH; h++) {
                             let hR = h / heightLevels;
 
-                            // Morfologia a fungo organica:
-                            // - In basso (hR basso): i voxel seguono strettamente la sagoma del nucleo (gambo denso).
-                            // - In alto (hR alto): i voxel si espandono radialmente verso l'esterno formando l'incudine,
-                            //   ma mantenendo l'asimmetria originale della cella.
-                            let expansionFactor = hR > 0.3 ? 1.0 + Math.pow((hR - 0.3) / 0.7, 1.2) * 2.8 : 1.0;
-                            
-                            let curR = centerR + (r - centerR) * expansionFactor;
-                            let curC = centerC + (c - centerC) * expansionFactor;
+                            // Espansione omotetica del footprint: preserva al 100% la forma irregolare, 
+                            // i lobi e le asimmetrie della matrice originale, allargandosi dolcemente in quota (incudine).
+                            let footprintScale = hR > 0.3 ? 1.0 + Math.pow((hR - 0.3) / 0.7, 1.2) * 1.8 : 1.0;
+
+                            let curR = coreR + (r - coreR) * footprintScale;
+                            let curC = coreC + (c - coreC) * footprintScale;
 
                             let xPos = (curC - cols/2) * pSize;
                             let zPos = (curR - rows/2) * pSize;
                             let yPos = (h - heightLevels/2 + 1) * 0.38;
 
-                            let layerDbz = Math.max(10, baseDbz - (hR * 16));
+                            // In quota la nube diventa più fredda/riflettività inferiore (sfumatura fisica reale)
+                            let layerDbz = Math.max(10, baseDbz - (hR * 18));
                             let col = new THREE.Color(getDbzColorHex(layerDbz));
 
                             pos.push(xPos, yPos, zPos);
@@ -329,7 +326,7 @@
                         geom = new THREE.BoxGeometry(pSize * 0.96, 0.36, pSize * 0.96);
                         mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.82, roughness: 0.25 });
                     } else if (mode === 'iso') {
-                        geom = new THREE.CylinderGeometry(pSize * 0.5, pSize * 0.5, 0.36, 6);
+                        geom = new THREE.BoxGeometry(pSize * 0.96, 0.36, pSize * 0.96);
                         mat = new THREE.MeshPhysicalMaterial({ transparent: true, opacity: 0.65, roughness: 0.2, transmission: 0.6 });
                     } else {
                         geom = new THREE.BoxGeometry(pSize * 0.96, 0.36, pSize * 0.96);
