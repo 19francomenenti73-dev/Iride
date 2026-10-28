@@ -68,11 +68,11 @@
                 <button class="btn-back" onclick="closeCell3DView()">← INDIETRO MAPPA</button>
                 <div>
                     <div id="h-core-id" style="font-weight: bold; font-size: 14px; color: var(--cyan-glow);">Core-Cell</div>
-                    <div style="font-size: 9px; color: #8a99ad;">True Footprint-Preserving 3D Engine</div>
+                    <div style="font-size: 9px; color: #8a99ad;">Continuous Organic 3D Storm Engine</div>
                 </div>
             </div>
             <div class="controls-3d">
-                <button class="btn-mode active" id="bm-solid" onclick="switchCellMode('solid')">VOXEL 3D</button>
+                <button class="btn-mode active" id="bm-solid" onclick="switchCellMode('solid')">SOLIDO 3D</button>
                 <button class="btn-mode" id="bm-iso" onclick="switchCellMode('iso')">ISOVOLUMETRICO</button>
                 <button class="btn-mode" id="bm-holo" onclick="switchCellMode('holo')">HOLO</button>
             </div>
@@ -154,7 +154,7 @@
 
             if (cellScene && cellRootGroup) {
                 cellScene.remove(cellRootGroup);
-                cellRootGroup = buildFootprintDrivenCell(activeCellData?.grid_matrix, currentCellMode);
+                cellRootGroup = buildContinuousSmoothStorm(activeCellData?.grid_matrix, currentCellMode);
                 cellScene.add(cellRootGroup);
             }
         }
@@ -190,7 +190,7 @@
             light.position.set(20, 40, 20);
             cellScene.add(light);
 
-            cellRootGroup = buildFootprintDrivenCell(activeCellData?.grid_matrix, currentCellMode);
+            cellRootGroup = buildContinuousSmoothStorm(activeCellData?.grid_matrix, currentCellMode);
             cellScene.add(cellRootGroup);
 
             container.addEventListener('pointerdown', (e) => {
@@ -236,8 +236,8 @@
             return 0x00b4d8;
         }
 
-        // MOTORE 3D BASATO SUL FOOTPRINT REALE: Nessuna simmetria circolare, estrusione homotetica della matrice
-        function buildFootprintDrivenCell(matrix, mode) {
+        // MOTORE 3D CONTINUO E MORBIDO: Sostituisce i blocchi separati con strati continui fusi e asimmetrici
+        function buildContinuousSmoothStorm(matrix, mode) {
             const masterGroup = new THREE.Group();
             masterGroup.rotation.x = tiltX;
             masterGroup.rotation.y = rotY;
@@ -271,79 +271,63 @@
             }
             masterGroup.add(baseGroup);
 
-            // 2. Struttura 3D Asimmetrica guidata al 100% dal footprint nativo della matrice
+            // 2. Struttura 3D Continua (Strati orizzontali fusi che mantengono la forma asimmetrica della matrice)
             const cell3DGroup = new THREE.Group();
-            const heightLevels = 18;
+            const numSlices = 14;
             const pSize = 0.45;
 
             if (matrix && Array.isArray(matrix)) {
-                let sumR = 0, sumC = 0, count = 0;
+                let maxDbz = 55;
                 for (let r = 0; r < rows; r++) {
                     for (let c = 0; c < cols; c++) {
-                        if (matrix[r][c] >= 40) { sumR += r; sumC += c; count++; }
+                        if (matrix[r][c] > maxDbz) maxDbz = matrix[r][c];
                     }
                 }
-                let coreR = count > 0 ? sumR / count : rows / 2;
-                let coreC = count > 0 ? sumC / count : cols / 2;
 
-                const pos = [], colsArr = [];
+                // Generiamo dischi/strati di forma sagomata basati direttamente sulla matrice
+                for (let s = 0; s < numSlices; s++) {
+                    let hRatio = s / numSlices; // da 0 (base) a 1 (cima)
+                    let yPos = (hRatio * 7.5) - 2.5;
 
-                for (let r = 0; r < rows; r++) {
-                    for (let c = 0; c < cols; c++) {
-                        let baseDbz = matrix[r][c] || 10;
-                        if (baseDbz < 35) continue;
+                    // In alto la nube si espande organicamente (incudine)
+                    let scaleFactor = 1.0 + Math.pow(hRatio, 1.4) * 1.5;
 
-                        let maxH = Math.floor((baseDbz / 72.0) * heightLevels);
+                    const sliceGroup = new THREE.Group();
+                    sliceGroup.position.y = yPos;
 
-                        for (let h = 0; h <= maxH; h++) {
-                            let hR = h / heightLevels;
+                    for (let r = 0; r < rows; r++) {
+                        for (let c = 0; c < cols; c++) {
+                            let dbz = matrix[r][c] || 10;
+                            // Salendo in quota, i pixel a minor riflettività svaniscono, lasciando il core imponente
+                            let threshold = 30 + (hRatio * 25);
+                            if (dbz < threshold) continue;
 
-                            // Espansione omotetica del footprint: preserva al 100% la forma irregolare, 
-                            // i lobi e le asimmetrie della matrice originale, allargandosi dolcemente in quota (incudine).
-                            let footprintScale = hR > 0.3 ? 1.0 + Math.pow((hR - 0.3) / 0.7, 1.2) * 1.8 : 1.0;
+                            let layerDbz = Math.max(15, dbz - (hRatio * 14));
+                            let colHex = getDbzColorHex(layerDbz);
 
-                            let curR = coreR + (r - coreR) * footprintScale;
-                            let curC = coreC + (c - coreC) * footprintScale;
+                            // Geometria morbida e fusa (cilindri/scatole arrotondate ravvicinate)
+                            const geom = new THREE.CylinderGeometry(pSize * scaleFactor * 0.7, pSize * scaleFactor * 0.7, 0.55, 12);
+                            let mat;
+                            if (mode === 'solid') {
+                                mat = new THREE.MeshStandardMaterial({
+                                    color: colHex, roughness: 0.25, transparent: true, opacity: 0.75
+                                });
+                            } else if (mode === 'iso') {
+                                mat = new THREE.MeshPhysicalMaterial({
+                                    color: colHex, roughness: 0.15, transmission: 0.65, transparent: true, opacity: 0.6
+                                });
+                            } else {
+                                mat = new THREE.MeshBasicMaterial({
+                                    color: colHex, wireframe: true, transparent: true, opacity: 0.55
+                                });
+                            }
 
-                            let xPos = (curC - cols/2) * pSize;
-                            let zPos = (curR - rows/2) * pSize;
-                            let yPos = (h - heightLevels/2 + 1) * 0.38;
-
-                            // In quota la nube diventa più fredda/riflettività inferiore (sfumatura fisica reale)
-                            let layerDbz = Math.max(10, baseDbz - (hR * 18));
-                            let col = new THREE.Color(getDbzColorHex(layerDbz));
-
-                            pos.push(xPos, yPos, zPos);
-                            colsArr.push(col.r, col.g, col.b);
+                            const mesh = new THREE.Mesh(geom, mat);
+                            mesh.position.set((c - cols/2) * pSize * scaleFactor, 0, (r - rows/2) * pSize * scaleFactor);
+                            sliceGroup.add(mesh);
                         }
                     }
-                }
-
-                const totalPoints = pos.length / 3;
-                if (totalPoints > 0) {
-                    let geom, mat;
-                    if (mode === 'solid') {
-                        geom = new THREE.BoxGeometry(pSize * 0.96, 0.36, pSize * 0.96);
-                        mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.82, roughness: 0.25 });
-                    } else if (mode === 'iso') {
-                        geom = new THREE.BoxGeometry(pSize * 0.96, 0.36, pSize * 0.96);
-                        mat = new THREE.MeshPhysicalMaterial({ transparent: true, opacity: 0.65, roughness: 0.2, transmission: 0.6 });
-                    } else {
-                        geom = new THREE.BoxGeometry(pSize * 0.96, 0.36, pSize * 0.96);
-                        mat = new THREE.MeshBasicMaterial({ wireframe: true, transparent: true, opacity: 0.65 });
-                    }
-
-                    const instMesh = new THREE.InstancedMesh(geom, mat, totalPoints);
-                    const dummy = new THREE.Object3D();
-                    for (let i = 0; i < totalPoints; i++) {
-                        dummy.position.set(pos[i*3], pos[i*3+1], pos[i*3+2]);
-                        dummy.updateMatrix();
-                        instMesh.setMatrixAt(i, dummy.matrix);
-                        instMesh.setColorAt(i, new THREE.Color(colsArr[i*3], colsArr[i*3+1], colsArr[i*3+2]));
-                    }
-                    instMesh.instanceMatrix.needsUpdate = true;
-                    if (instMesh.instanceColor) instMesh.instanceColor.needsUpdate = true;
-                    cell3DGroup.add(instMesh);
+                    cell3DGroup.add(sliceGroup);
                 }
             }
 
