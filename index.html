@@ -15,18 +15,20 @@
             --text-main: #ffffff;
         }
         * { box-sizing: border-box; touch-action: none; }
-        body { margin: 0; padding: 0; background: var(--bg-deep); color: var(--text-main); font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; width: 100vw; height: 100vh; }
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg-deep); color: var(--text-main); font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
 
         #view-tracker { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; display: flex; flex-direction: column; }
-        #header-tracker { height: 54px; background: var(--panel-bg); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; z-index: 10; backdrop-filter: blur(6px); }
+        #header-tracker { height: 54px; min-height: 54px; background: var(--panel-bg); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; z-index: 10; backdrop-filter: blur(6px); }
         .brand-title { color: var(--cyan-glow); font-weight: 800; font-size: 18px; letter-spacing: 2px; }
         .brand-subtitle { font-size: 11px; color: #8a99ad; margin-left: 10px; }
-        #map { flex-grow: 1; width: 100%; height: 100%; z-index: 1; }
+        
+        #map-container { position: relative; width: 100%; flex-grow: 1; height: calc(100vh - 54px); }
+        #map { width: 100%; height: 100%; background: #02060f; }
 
         #view-3d { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2000; background: radial-gradient(circle at center, #071325 0%, #020408 100%); display: none; flex-direction: column; }
         #view-3d.active { display: flex; }
 
-        #header-3d { background: var(--panel-bg); border-bottom: 1px solid var(--border-color); padding: 12px 16px; z-index: 10; }
+        #header-3d { background: var(--panel-bg); border-bottom: 1px solid var(--border-color); padding: 12px 16px; z-index: 10; min-height: 90px; }
         .telemetry-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
         .tele-title { font-size: 15px; font-weight: bold; color: var(--cyan-glow); }
         .btn-close-3d { background: #ff0055; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer; }
@@ -47,7 +49,7 @@
             </div>
             <div style="font-size: 11px; color: #00ff66; font-weight: bold; background: #091b30; padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border-color);">● TRACKER ATTIVO</div>
         </div>
-        <div style="position: relative; flex-grow: 1; width: 100%; height: 100%;">
+        <div id="map-container">
             <div id="map"></div>
         </div>
     </div>
@@ -80,6 +82,9 @@
         const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([42.0, 12.5], 6);
         L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 }).addTo(map);
 
+        // Forza il ricalcolo delle dimensioni della mappa Leaflet dopo il caricamento
+        setTimeout(() => { map.invalidateSize(); }, 200);
+
         let activeCellData = null;
 
         const pathSegments = window.location.pathname.split('/').filter(Boolean);
@@ -102,12 +107,11 @@
                 }
             })
             .catch(err => {
-                console.warn("[I.R.I.D.E.] JSON non trovato, carico cella di test dimostrativa:", err);
+                console.warn("[I.R.I.D.E.] JSON non trovato, carico cella dimostrativa di test:", err);
                 loadFallbackCell();
             });
 
         function loadFallbackCell() {
-            // Matrice di test mock rigorosa per testare subito la struttura 3D perfetta
             const mockMatrix = Array(16).fill(0).map(() => Array(16).fill(10));
             for(let r=5; r<11; r++) {
                 for(let c=5; c<11; c++) {
@@ -151,7 +155,7 @@
             document.getElementById('t-dir').innerText = `${cell.kinematics?.direction_deg || 0}°`;
             
             document.getElementById('view-3d').classList.add('active');
-            setTimeout(initCell3DEngine, 50);
+            setTimeout(initCell3DEngine, 100);
         }
 
         function closeCell3DView() {
@@ -165,8 +169,8 @@
         function initCell3DEngine() {
             const canvas = document.getElementById('canvas-cell-3d');
             const container = document.getElementById('canvas-container-3d');
-            const width = container.clientWidth;
-            const height = container.clientHeight;
+            const width = container.clientWidth || window.innerWidth;
+            const height = container.clientHeight || (window.innerHeight - 150);
 
             if (cellRenderer) {
                 cellRenderer.setSize(width, height);
@@ -215,8 +219,8 @@
             window.addEventListener('pointerup', () => { isDragging = false; });
             window.addEventListener('resize', () => {
                 if (!container || !cellRenderer) return;
-                const w = container.clientWidth;
-                const h = container.clientHeight;
+                const w = container.clientWidth || window.innerWidth;
+                const h = container.clientHeight || (window.innerHeight - 150);
                 cellRenderer.setSize(w, h);
                 cellCamera.aspect = w / h;
                 cellCamera.updateProjectionMatrix();
@@ -225,7 +229,6 @@
             animateCell3D();
         }
 
-        // Scala colori dBZ radar standard ufficiale
         function getDbzColorHex(dbz) {
             if (dbz >= 68) return 0xff00ff; // Magenta
             if (dbz >= 58) return 0xff0044; // Rosso
@@ -236,7 +239,6 @@
             return 0x0055ff; // Blu
         }
 
-        // MOTORE PROFESSIONALE STRUTTURATO CON BORDI NETTI E ANCORAGGIO 2D
         function buildProfessionalRadarEngine(matrix) {
             const masterGroup = new THREE.Group();
             masterGroup.rotation.x = tiltX;
@@ -252,7 +254,6 @@
             const originX = (cols * pSize) / 2;
             const originZ = (rows * pSize) / 2;
 
-            // 1. Piattaforma di Base Radar 2D al suolo (Doppio layer wireframe pulito)
             const groundGroup = new THREE.Group();
             groundGroup.position.y = -2.6;
 
@@ -274,7 +275,6 @@
             }
             masterGroup.add(groundGroup);
 
-            // 2. Colonne Verticali Strutturate con Spigoli Vivi (EdgesGeometry)
             const stackGroup = new THREE.Group();
             const maxLevels = 14;
 
@@ -300,7 +300,6 @@
 
                             let mesh = new THREE.Mesh(boxGeom, boxMat);
 
-                            // Bordi netti e scuri per separare nettamente i blocchi (stile CAD/Radar Pro)
                             let edges = new THREE.EdgesGeometry(boxGeom);
                             let lineMat = new THREE.LineBasicMaterial({ color: 0x010409, linewidth: 2 });
                             let wireframeLines = new THREE.LineSegments(edges, lineMat);
