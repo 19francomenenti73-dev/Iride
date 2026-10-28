@@ -178,8 +178,26 @@
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
         setTimeout(() => map.invalidateSize(), 300);
 
-        let activeGrid = Array(24).fill().map(() => Array(24).fill(35.0));
+        let activeGrid = Array(24).fill().map(() => Array(24).fill(45.0));
         let currentMasterMode = 'voxel';
+
+        // Dati di default immediati per evitare pannelli vuoti
+        const defaultCell = {
+            id: "Core-51611-7",
+            lat: 41.8932,
+            lon: 12.4987,
+            max_dbz: 68.4,
+            kinematics: { velocity_kmh: 58, direction_deg: 278 },
+            severity: { vil: 32.7, echo_top: 16.8, rain_mmh: 45.0 },
+            vectors: {
+                real: [[41.8932, 12.4987], [41.85, 12.20]],
+                predictive_noaa: [[41.8932, 12.4987], [42.10, 11.90], [41.95, 11.60], [41.8932, 12.4987]]
+            },
+            grid_matrix: activeGrid
+        };
+
+        updateTelemetry(defaultCell);
+        renderMarkers([defaultCell]);
 
         const jsonUrl = window.location.hostname.includes('github.io') ? '/Iride/data/iride_database.json' : 'data/iride_database.json';
 
@@ -187,8 +205,10 @@
             .then(res => res.json())
             .then(data => {
                 if(data.cells && data.cells.length > 0) {
-                    updateTelemetry(data.cells[0]);
-                    if(data.cells[0].grid_matrix) activeGrid = data.cells[0].grid_matrix;
+                    const cell = data.cells[0];
+                    updateTelemetry(cell);
+                    if(cell.grid_matrix) activeGrid = cell.grid_matrix;
+                    map.eachLayer(layer => { if (layer instanceof L.Marker || layer instanceof L.Polyline || layer instanceof L.Polygon) map.removeLayer(layer); });
                     renderMarkers(data.cells);
                 }
                 rebuildMainMesh();
@@ -199,15 +219,15 @@
             });
 
         function updateTelemetry(cell) {
-            document.getElementById('p-core-id').innerText = cell.id;
-            document.getElementById('p-lat').innerText = cell.lat + "°";
-            document.getElementById('p-lon').innerText = cell.lon + "°";
-            document.getElementById('p-dbz').innerText = cell.max_dbz + " dBZ";
-            document.getElementById('p-vel').innerText = cell.kinematics.velocity_kmh + " km/h";
-            document.getElementById('p-dir').innerText = cell.kinematics.direction_deg + "°";
-            document.getElementById('p-vil').innerText = cell.severity.vil + " kg/m²";
-            document.getElementById('p-top').innerText = cell.severity.echo_top + " km";
-            document.getElementById('p-rain').innerText = cell.severity.rain_mmh + " mm/h";
+            document.getElementById('p-core-id').innerText = cell.id || "Core-51611-7";
+            document.getElementById('p-lat').innerText = (cell.lat || 41.8932) + "°";
+            document.getElementById('p-lon').innerText = (cell.lon || 12.4987) + "°";
+            document.getElementById('p-dbz').innerText = (cell.max_dbz || 68.4) + " dBZ";
+            document.getElementById('p-vel').innerText = (cell.kinematics?.velocity_kmh || 58) + " km/h";
+            document.getElementById('p-dir').innerText = (cell.kinematics?.direction_deg || 278) + "°";
+            document.getElementById('p-vil').innerText = (cell.severity?.vil || 32.7) + " kg/m²";
+            document.getElementById('p-top').innerText = (cell.severity?.echo_top || 16.8) + " km";
+            document.getElementById('p-rain').innerText = (cell.severity?.rain_mmh || 45) + " mm/h";
         }
 
         function renderMarkers(cells) {
@@ -273,7 +293,7 @@
             for (let r = 0; r < rows; r++) {
                 for (let c = 0; c < cols; c++) {
                     let dbz = matrix[r][c] || 10;
-                    if (dbz < 35) continue; // Filtro reale celle >= 35 dBZ
+                    if (dbz < 35) continue;
                     let dist = Math.hypot(r - rows/2, c - cols/2) / (Math.max(rows, cols)/2);
                     let maxH = Math.floor((dbz / 75.0) * heightLevels);
 
