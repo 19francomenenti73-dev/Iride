@@ -68,11 +68,11 @@
                 <button class="btn-back" onclick="closeCell3DView()">← INDIETRO MAPPA</button>
                 <div>
                     <div id="h-core-id" style="font-weight: bold; font-size: 14px; color: var(--cyan-glow);">Core-Cell</div>
-                    <div style="font-size: 9px; color: #8a99ad;">Professional Continuous Meteorological 3D Volume</div>
+                    <div style="font-size: 9px; color: #8a99ad;">Professional Master Supercell Engine</div>
                 </div>
             </div>
             <div class="controls-3d">
-                <button class="btn-mode active" id="bm-solid" onclick="switchCellMode('solid')">SOLIDO 3D</button>
+                <button class="btn-mode active" id="bm-solid" onclick="switchCellMode('solid')">VOXEL 3D</button>
                 <button class="btn-mode" id="bm-iso" onclick="switchCellMode('iso')">ISOVOLUMETRICO</button>
                 <button class="btn-mode" id="bm-holo" onclick="switchCellMode('holo')">HOLO</button>
             </div>
@@ -154,7 +154,7 @@
 
             if (cellScene && cellRootGroup) {
                 cellScene.remove(cellRootGroup);
-                cellRootGroup = buildProfessionalStormVolume(activeCellData?.grid_matrix, currentCellMode);
+                cellRootGroup = buildMasterSupercellVolume(activeCellData?.grid_matrix, currentCellMode);
                 cellScene.add(cellRootGroup);
             }
         }
@@ -182,15 +182,15 @@
 
             cellScene = new THREE.Scene();
             cellCamera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1000);
-            cellCamera.position.set(0, 16, 36);
+            cellCamera.position.set(0, 15, 34);
             cellCamera.lookAt(0, 1.2, 0);
 
             cellScene.add(new THREE.AmbientLight(0xffffff, 1.6));
-            const light = new THREE.DirectionalLight(0xffffff, 1.8);
+            const light = new THREE.DirectionalLight(0xffffff, 1.9);
             light.position.set(25, 50, 25);
             cellScene.add(light);
 
-            cellRootGroup = buildProfessionalStormVolume(activeCellData?.grid_matrix, currentCellMode);
+            cellRootGroup = buildMasterSupercellVolume(activeCellData?.grid_matrix, currentCellMode);
             cellScene.add(cellRootGroup);
 
             container.addEventListener('pointerdown', (e) => {
@@ -226,24 +226,26 @@
             animateCell3D();
         }
 
+        // Palette dBZ meteorologica ufficiale standard
         function getDbzColorHex(dbz) {
-            if (dbz >= 68) return 0xff00ff; // Magenta
+            if (dbz >= 68) return 0xff00ff; // Magenta (Core estremo)
             if (dbz >= 58) return 0xff0044; // Rosso intenso
             if (dbz >= 50) return 0xff5500; // Arancione
             if (dbz >= 42) return 0xffcc00; // Giallo
             if (dbz >= 32) return 0x00e64d; // Verde
             if (dbz >= 22) return 0x00b4d8; // Azzurro
-            return 0x0066ff; // Blu
+            return 0x0055ff; // Blu incudine periferica
         }
 
-        function buildProfessionalStormVolume(matrix, mode) {
+        // MOTORE MASTER 3D: Volume solido, continuo e termodinamicamente perfetto (stile riferimento)
+        function buildMasterSupercellVolume(matrix, mode) {
             const masterGroup = new THREE.Group();
             masterGroup.rotation.x = tiltX;
             masterGroup.rotation.y = rotY;
 
-            // 1. Base Raster 2D sotto
+            // 1. Base Raster 2D al suolo
             const baseGroup = new THREE.Group();
-            baseGroup.position.y = -3.5;
+            baseGroup.position.y = -3.4;
 
             let rows = 24, cols = 24;
             if (matrix && Array.isArray(matrix)) {
@@ -270,9 +272,9 @@
             }
             masterGroup.add(baseGroup);
 
-            // 2. Struttura 3D Continua e Fusa
+            // 2. Struttura 3D Volumetrica Piena (Heightfield colonnare denso)
             const cell3DGroup = new THREE.Group();
-            const heightLevels = 18;
+            const heightLevels = 20;
             const pSize = 0.5;
 
             if (matrix && Array.isArray(matrix)) {
@@ -290,38 +292,42 @@
                 for (let r = 0; r < rows; r++) {
                     for (let c = 0; c < cols; c++) {
                         let baseDbz = matrix[r][c] || 10;
-                        if (baseDbz < 22) continue;
+                        if (baseDbz < 20) continue;
 
-                        let maxH = Math.floor((baseDbz / 70.0) * heightLevels) + 3;
+                        let maxH = Math.floor((baseDbz / 70.0) * heightLevels) + 4;
 
                         for (let h = 0; h <= maxH; h++) {
                             let hR = h / heightLevels; 
 
-                            let spreadFactor = hR > 0.3 
-                                ? 1.0 + Math.pow((hR - 0.3) / 0.7, 1.3) * 3.4 
-                                : 1.0 + (hR * 0.25);
+                            // FATTORE DI ESPANSIONE NON LINEARE (Anvil Spread):
+                            // Sotto sale dritto e verticale (updraft). Sopra si apre a ombrello massiccio.
+                            let spreadFactor = hR > 0.32 
+                                ? 1.0 + Math.pow((hR - 0.32) / 0.68, 1.25) * 3.5 
+                                : 1.0 + (hR * 0.2);
 
                             let curR = coreR + (r - coreR) * spreadFactor;
                             let curC = coreC + (c - coreC) * spreadFactor;
 
                             let xPos = (curC - cols/2) * pSize;
                             let zPos = (curR - rows/2) * pSize;
-                            let yPos = (h - heightLevels/2) * 0.42;
+                            let yPos = (h - heightLevels/2) * 0.4;
 
+                            // Termodinamica riflettività: core centrale caldo in basso/medio, incudine fredda in quota
                             let distFromCore = Math.hypot(r - coreR, c - coreC);
                             let currentDbz;
                             
-                            if (distFromCore <= 2.2 && hR < 0.6) {
-                                currentDbz = Math.max(baseDbz, 62);
+                            if (distFromCore <= 2.2 && hR < 0.55) {
+                                currentDbz = Math.max(baseDbz, 60); // Core verticale rosso/magenta intenso
                             } else {
-                                currentDbz = baseDbz - (hR * 26);
+                                currentDbz = baseDbz - (hR * 24); // Sfumatura verso azzurro/blu nei bordi dell'incudine
                             }
 
                             let col = new THREE.Color(getDbzColorHex(currentDbz));
 
                             pos.push(xPos, yPos, zPos);
                             colsArr.push(col.r, col.g, col.b);
-                            scaleArr.push(hR > 0.3 ? 1.35 + (hR - 0.3) * 1.8 : 1.25);
+                            // Sovrapposizione e fusione voxel in quota per eliminare ogni buco
+                            scaleArr.push(hR > 0.32 ? 1.32 + (hR - 0.32) * 1.7 : 1.22);
                         }
                     }
                 }
@@ -330,13 +336,13 @@
                 if (totalPoints > 0) {
                     let geom, mat;
                     if (mode === 'solid') {
-                        geom = new THREE.CylinderGeometry(pSize * 0.7, pSize * 0.7, 0.48, 16);
-                        mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.88, roughness: 0.2 });
+                        geom = new THREE.BoxGeometry(pSize * 1.02, 0.44, pSize * 1.02);
+                        mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.9, roughness: 0.22 });
                     } else if (mode === 'iso') {
-                        geom = new THREE.CylinderGeometry(pSize * 0.7, pSize * 0.7, 0.48, 16);
-                        mat = new THREE.MeshPhysicalMaterial({ transparent: true, opacity: 0.72, roughness: 0.15, transmission: 0.6 });
+                        geom = new THREE.BoxGeometry(pSize * 1.02, 0.44, pSize * 1.02);
+                        mat = new THREE.MeshPhysicalMaterial({ transparent: true, opacity: 0.75, roughness: 0.15, transmission: 0.6 });
                     } else {
-                        geom = new THREE.BoxGeometry(pSize * 1.1, 0.48, pSize * 1.1);
+                        geom = new THREE.BoxGeometry(pSize * 1.05, 0.44, pSize * 1.05);
                         mat = new THREE.MeshBasicMaterial({ wireframe: true, transparent: true, opacity: 0.65 });
                     }
 
@@ -362,7 +368,6 @@
 
         function animateCell3D() {
             requestAnimationFrame(animateCell3D);
-            // CORRETTO: parentesi tonde ripristinate correttamente
             if (!isDragging && document.getElementById('view-3d').classList.contains('active')) {
                 rotY += 0.003;
                 if (cellRootGroup) cellRootGroup.rotation.y = rotY;
