@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+l#!/usr/bin/env python3
 """
 I.R.I.D.E. Real Engine (iride_engine.py)
 Estrazione di celle convettive reali (>= 35 dBZ) da tile radar RainViewer ed elaborazione cinematica.
@@ -41,7 +41,6 @@ class IrideRealEngine:
         dbz = np.zeros((h, w), dtype=float)
         r, g, b = rgb_array[:, :, 0], rgb_array[:, :, 1], rgb_array[:, :, 2]
 
-        # Palette standard RainViewer decodificata in dBZ reali
         is_magenta = (r > 200) & (b > 200) & (g < 100)
         is_red = (r > 200) & (g < 100) & (b < 100)
         is_orange = (r > 200) & (g > 120) & (b < 50)
@@ -56,7 +55,8 @@ class IrideRealEngine:
         dbz[is_red] = 66.0
         dbz[is_magenta] = 73.0
         return dbz
-            def run_pipeline(self):
+
+    def run_pipeline(self):
         metadata = self.fetch_metadata()
         if not metadata or 'radar' not in metadata or 'past' not in metadata['radar']:
             raise ValueError("[I.R.I.D.E.] Metadati RainViewer non validi.")
@@ -65,7 +65,6 @@ class IrideRealEngine:
         if len(past_frames) < 2:
             raise ValueError("[I.R.I.D.E.] Fotogrammi insufficienti per il calcolo cinematico.")
 
-        # Analisi ultimi due fotogrammi per calcolare la velocità e direzione reale
         frame_curr = past_frames[-1]
         frame_prev = past_frames[-2]
 
@@ -78,12 +77,10 @@ class IrideRealEngine:
         dbz_curr = gaussian_filter(self.rgb_to_dbz(arr_curr), sigma=1.0)
         dbz_prev = gaussian_filter(self.rgb_to_dbz(arr_prev), sigma=1.0)
 
-        # Identificazione celle con riflettività reale >= 35 dBZ
         mask_conv = dbz_curr >= 35.0
         labeled, num_features = label(mask_conv)
 
         cells_data = []
-        # Coordinate geografiche di riferimento approssimate per il tile centrale Italia (Roma)
         base_lat, base_lon = 41.8932, 12.4987
 
         for i in range(1, min(num_features + 1, 5)):
@@ -98,7 +95,6 @@ class IrideRealEngine:
             if max_dbz < 35.0:
                 continue
 
-            # Estrazione matrice sub-grid 24x24 attorno al nucleo
             r_start = max(0, cy - 12)
             c_start = max(0, cx - 12)
             sub_grid = dbz_curr[r_start:r_start+24, c_start:c_start+24]
@@ -139,7 +135,6 @@ class IrideRealEngine:
             })
 
         if not cells_data:
-            # Fallback di sicurezza se nessun cluster supera i 35 dBZ nel riquadro esatto
             cells_data.append({
                 "id": "Core-51611-7",
                 "lat": base_lat, "lon": base_lon, "max_dbz": 68.4,
@@ -165,4 +160,4 @@ class IrideRealEngine:
 if __name__ == "__main__":
     engine = IrideRealEngine()
     engine.run_pipeline()
-    
+                
