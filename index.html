@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>I.R.I.D.E. - Italian Radar Interactive Deep Engine</title>
+    <title>I.R.I.D.E. - Radar Convective Tracker & Holographic Engine</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root {
-            --bg-deep: #02060f;
-            --panel-bg: rgba(6, 14, 26, 0.92);
+            --bg-radar: #02060f;
+            --panel-bg: rgba(6, 14, 26, 0.95);
             --border-color: #162c46;
             --cyan-glow: #00d2ff;
             --pink-core: #ff0055;
@@ -16,312 +16,384 @@
         }
         * { box-sizing: border-box; touch-action: none; }
         body {
-            margin: 0; padding: 0; background: var(--bg-deep); color: var(--text-main);
+            margin: 0; padding: 0; background: var(--bg-radar); color: var(--text-main);
             font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden;
-            width: 100vw; height: 100vh; display: grid; grid-template-rows: 54px 1fr;
+            width: 100vw; height: 100vh;
         }
-        #header {
-            background: var(--panel-bg); border-bottom: 1px solid var(--border-color);
-            display: flex; align-items: center; justify-content: space-between; padding: 0 16px; z-index: 1000;
+
+        /* Vista 1: Mappa Tracker 2D */
+        #view-tracker { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; display: flex; flex-direction: column; }
+        #header-tracker {
+            height: 54px; background: var(--panel-bg); border-bottom: 1px solid var(--border-color);
+            display: flex; align-items: center; justify-content: space-between; padding: 0 16px; z-index: 10;
             backdrop-filter: blur(6px);
         }
         .brand-title { color: var(--cyan-glow); font-weight: 800; font-size: 18px; letter-spacing: 2px; }
         .brand-subtitle { font-size: 11px; color: #8a99ad; margin-left: 10px; }
-        .header-controls { display: flex; align-items: center; gap: 6px; }
+        #map { flex-grow: 1; width: 100%; height: 100%; z-index: 1; }
 
+        .dbz-scale-bar {
+            position: absolute; bottom: 20px; left: 20px; z-index: 1000; background: var(--panel-bg);
+            border: 1px solid var(--border-color); padding: 8px 10px; border-radius: 6px; font-size: 10px; backdrop-filter: blur(4px);
+        }
+        .dbz-gradient {
+            width: 14px; height: 140px;
+            background: linear-gradient(to top, #00b4d8, #00ff66, #ffff00, #ff9900, #ff0055, #ff00ff, #ffffff);
+            margin-top: 4px; border-radius: 2px;
+        }
+
+        /* Vista 2: Plancia 3D Immersiva (Schermo Intero al click) */
+        #view-3d {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2000;
+            background: radial-gradient(circle at center, #061428 0%, #02060f 100%);
+            display: none; flex-direction: column;
+        }
+        #view-3d.active { display: flex; }
+
+        #header-3d {
+            height: 60px; background: var(--panel-bg); border-bottom: 1px solid var(--border-color);
+            display: flex; align-items: center; justify-content: space-between; padding: 0 16px; z-index: 10;
+        }
+        .controls-3d { display: flex; gap: 6px; align-items: center; }
         .btn-mode {
             background: #091b30; color: var(--cyan-glow); border: 1px solid var(--border-color);
             padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 10px; cursor: pointer;
         }
         .btn-mode.active { background: #00b4d8; color: #000; border-color: #00b4d8; box-shadow: 0 0 10px rgba(0,180,216,0.5); }
-
-        .status-ok { display: flex; align-items: center; gap: 6px; font-weight: bold; font-size: 11px; color: #00ff66; background: #091b30; padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border-color); }
-        .status-dot { width: 7px; height: 7px; background: #00ff66; border-radius: 50%; box-shadow: 0 0 6px #00ff66; }
-
-        #workspace { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
-        #map { width: 100% !important; height: 100% !important; position: absolute; top: 0; left: 0; z-index: 1; }
-        #canvas-3d-main { width: 100% !important; height: 100% !important; position: absolute; top: 0; left: 0; z-index: 2; pointer-events: auto; }
-
-        .dbz-scale-bar {
-            position: absolute; top: 15px; left: 15px; z-index: 10; background: var(--panel-bg);
-            border: 1px solid var(--border-color); padding: 8px 10px; border-radius: 6px; font-size: 10px; backdrop-filter: blur(4px);
-        }
-        .dbz-gradient {
-            width: 14px; height: 160px;
-            background: linear-gradient(to top, #00b4d8, #00ff66, #ffff00, #ff9900, #ff0055, #ff00ff, #ffffff);
-            margin-top: 4px; border-radius: 2px;
+        .btn-back {
+            background: #ff0055; color: #fff; border: none; padding: 6px 12px; border-radius: 4px;
+            font-weight: bold; font-size: 11px; cursor: pointer;
         }
 
-        /* Pannello Telemetria Flottante (al click sul centroide) */
-        #telemetry-modal {
-            position: absolute; top: 15px; right: 15px; width: 320px;
-            background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 8px;
-            padding: 14px; z-index: 10; backdrop-filter: blur(10px); display: none;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        #canvas-container { flex-grow: 1; position: relative; width: 100%; height: 100%; overflow: hidden; }
+        #canvas-holo { width: 100% !important; height: 100% !important; display: block; }
+
+        .telemetry-overlay {
+            position: absolute; bottom: 20px; right: 20px; background: var(--panel-bg);
+            border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 16px;
+            font-size: 11px; backdrop-filter: blur(8px); min-width: 240px; pointer-events: none;
         }
-        #telemetry-modal.active { display: block; }
-        .telemetry-header { font-size: 14px; font-weight: bold; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
-        .telemetry-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px; color: #94a3b8; }
-        .telemetry-val { color: #fff; font-weight: bold; }
-        .btn-close { background: none; border: none; color: #fff; font-size: 14px; cursor: pointer; }
+        .tele-row { display: flex; justify-content: space-between; margin-bottom: 4px; color: #94a3b8; }
+        .tele-val { color: #fff; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div id="header">
-        <div style="display: flex; align-items: baseline;">
-            <div class="brand-title">I.R.I.D.E.</div>
-            <div class="brand-subtitle">Holographic Convective Engine</div>
-        </div>
-        <div class="header-controls">
-            <button class="btn-mode active" id="btn-voxel" onclick="setHoloMode('voxel')">VOXEL 3D</button>
-            <button class="btn-mode" id="btn-iso" onclick="setHoloMode('iso')">ISOVOLUMETRICO</button>
-            <button class="btn-mode" id="btn-holo" onclick="setHoloMode('holo')">HOLO</button>
-            <div class="status-ok"><div class="status-dot"></div> OK</div>
-        </div>
-    </div>
 
-    <div id="workspace">
-        <div id="map"></div>
-        <canvas id="canvas-3d-main"></canvas>
-
-        <div class="dbz-scale-bar">
-            <div style="font-weight: bold; margin-bottom: 2px;">dBZ Scale</div>
-            <div style="display: flex; justify-content: space-between; font-size: 9px; color: #aaa;"><span>75</span><span>10</span></div>
-            <div class="dbz-gradient"></div>
-        </div>
-
-        <div id="telemetry-modal">
-            <div class="telemetry-header">
-                <span id="m-core-id" style="color:var(--cyan-glow);">Core-Cell</span>
-                <button class="btn-close" onclick="closeTelemetry()">✕</button>
+    <!-- VISTA 1: MAPPA TRACKER 2D -->
+    <div id="view-tracker">
+        <div id="header-tracker">
+            <div style="display: flex; align-items: baseline;">
+                <div class="brand-title">I.R.I.D.E.</div>
+                <div class="brand-subtitle">Real-Time Convective Tracker</div>
             </div>
-            <div class="telemetry-row"><span>Latitudine:</span> <span id="m-lat" class="telemetry-val">--</span></div>
-            <div class="telemetry-row"><span>Longitudine:</span> <span id="m-lon" class="telemetry-val">--</span></div>
-            <div class="telemetry-row"><span>Riflettività max:</span> <span id="m-dbz" class="telemetry-val" style="color:var(--pink-core);">--</span></div>
-            <div class="telemetry-row"><span>Velocità / Dir:</span> <span id="m-vel" class="telemetry-val">--</span></div>
-            <div class="telemetry-row"><span>VIL / Echo Top:</span> <span id="m-vil" class="telemetry-val">--</span></div>
+            <div style="font-size: 11px; color: #00ff66; font-weight: bold; background: #091b30; padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border-color);">
+                ● TRACKER ATTIVO
+            </div>
+        </div>
+        <div style="position: relative; flex-grow: 1; width: 100%; height: 100%;">
+            <div id="map"></div>
+            <div class="dbz-scale-bar">
+                <div style="font-weight: bold; margin-bottom: 2px;">Riflettività (dBZ)</div>
+                <div style="display: flex; justify-content: space-between; font-size: 9px; color: #aaa;"><span>75</span><span>10</span></div>
+                <div class="dbz-gradient"></div>
+            </div>
         </div>
     </div>
-        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- VISTA 2: PLANCIA OLOGRAFICA 3D (SCHERMO INTERO) -->
+    <div id="view-3d">
+        <div id="header-3d">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <button class="btn-back" onclick="closeFullscreen3D()">← INDIETRO MAPPA</button>
+                <div>
+                    <div id="h-core-id" style="font-weight: bold; font-size: 14px; color: var(--cyan-glow);">Core-Cell</div>
+                    <div style="font-size: 9px; color: #8a99ad;">Nexrad Station 90s Workstation Engine</div>
+                </div>
+            </div>
+            <div class="controls-3d">
+                <button class="btn-mode active" id="bm-voxel" onclick="switchMode('voxel')">VOXEL 3D</button>
+                <button class="btn-mode" id="bm-iso" onclick="switchMode('iso')">ISOVOLUMETRICO</button>
+                <button class="btn-mode" id="bm-holo" onclick="switchMode('holo')">HOLO</button>
+            </div>
+        </div>
+        <div id="canvas-container">
+            <canvas id="canvas-holo"></canvas>
+            <div class="telemetry-overlay">
+                <div class="tele-row"><span>Riflettività Max:</span> <span id="t-dbz" class="tele-val" style="color:var(--pink-core);">--</span></div>
+                <div class="tele-row"><span>Velocità / Dir:</span> <span id="t-vel" class="tele-val">--</span></div>
+                <div class="tele-row"><span>VIL / Echo Top:</span> <span id="t-vil" class="tele-val">--</span></div>
+                <div class="tele-row" style="margin-top:6px; font-size:9px; color:#00ff66; border-top:1px solid var(--border-color); pt:4px;">
+                    <span>Rotazione: Drag Oriz. | Tilt: Drag Vert.</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
-        // 1. Inizializzazione Mappa Leaflet (Sfondo Oro grafico)
-        const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([41.8932, 12.4987], 7);
-        L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+        // --- 1. CONFIGURAZIONE MAPPA TRACKER 2D ---
+        const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([45.0, 11.0], 5);
+        L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 }).addTo(map);
 
+        let activeCellData = null;
         let currentMode = 'voxel';
-        let activeGrid = Array(24).fill().map(() => Array(24).fill(45.0));
 
-        // Dati dimostrativi reali della supercella centrata su Roma
-        const sampleCell = {
-            id: "Core-51611-7",
-            lat: 41.8932,
-            lon: 12.4987,
-            max_dbz: 68.4,
-            kinematics: { velocity_kmh: 58, direction_deg: 278 },
-            severity: { vil: 32.7, echo_top: 16.8, rain_mmh: 45.0 },
-            vectors: {
-                real: [[41.8932, 12.4987], [41.80, 12.10]],
-                predictive_noaa: [[41.8932, 12.4987], [41.95, 11.70]]
-            },
-            grid_matrix: activeGrid
-        };
+        const pathSegments = window.location.pathname.split('/').filter(Boolean);
+        const jsonUrl = window.location.hostname.includes('github.io') && pathSegments.length > 0 
+            ? `/${pathSegments[0]}/data/iride_database.json` 
+            : 'data/iride_database.json';
 
-        // Render centroide sulla mappa
-        const centroidIcon = L.divIcon({
-            className: 'custom-centroid',
-            html: `<div style="width:32px; height:32px; border:2px solid var(--pink-core); border-radius:50%; animation: pulse 1.4s infinite; background: rgba(255,0,85,0.3); display:flex; align-items:center; justify-content:center;"><div style="width:10px; height:10px; background:var(--pink-core); border-radius:50%;"></div></div>`,
-            iconSize: [32, 32]
-        });
-        const marker = L.marker([sampleCell.lat, sampleCell.lon], { icon: centroidIcon }).addTo(map);
-        marker.on('click', () => openTelemetry(sampleCell));
-        L.polyline(sampleCell.vectors.real, { color: '#00d2ff', weight: 2, dashArray: '4,4' }).addTo(map);
-        L.polyline(sampleCell.vectors.predictive_noaa, { color: '#ff0055', weight: 1.5 }).addTo(map);
+        fetch(jsonUrl)
+            .then(res => res.ok ? res.json() : Promise.reject('JSON non trovato'))
+            .then(data => {
+                if (data && data.radar_tile_path) {
+                    L.tileLayer(`https://tilecache.rainviewer.com${data.radar_tile_path}/256/{z}/{x}/{y}/2/1_1.png`, {
+                        opacity: 0.75, maxZoom: 18
+                    }).addTo(map);
+                }
+                if (data && data.cells && data.cells.length > 0) {
+                    renderCentroids(data.cells);
+                } else {
+                    console.log("[I.R.I.D.E.] Nessun nucleo >= 35 dBZ attivo nel frame corrente.");
+                }
+            })
+            .catch(err => console.warn("[I.R.I.D.E.] Attesa dati pipeline GitHub Actions:", err));
 
-        function openTelemetry(cell) {
-            document.getElementById('m-core-id').innerText = cell.id;
-            document.getElementById('m-lat').innerText = cell.lat + "°";
-            document.getElementById('m-lon').innerText = cell.lon + "°";
-            document.getElementById('m-dbz').innerText = cell.max_dbz + " dBZ";
-            document.getElementById('m-vel').innerText = `${cell.kinematics.velocity_kmh} km/h (${cell.kinematics.direction_deg}°)`;
-            document.getElementById('m-vil').innerText = `${cell.severity.vil} kg/m² | ${cell.severity.echo_top} km`;
-            document.getElementById('telemetry-modal').classList.add('active');
+        function renderCentroids(cells) {
+            cells.forEach(cell => {
+                const icon = L.divIcon({
+                    className: 'custom-centroid',
+                    html: `<div style="width:30px; height:30px; border:2px solid var(--pink-core); border-radius:50%; animation: pulse 1.4s infinite; background: rgba(255,0,85,0.3); display:flex; align-items:center; justify-content:center;"><div style="width:8px; height:8px; background:var(--pink-core); border-radius:50%;"></div></div>`,
+                    iconSize: [30, 30]
+                });
+                const marker = L.marker([cell.lat, cell.lon], { icon: icon }).addTo(map);
+                marker.on('click', () => openFullscreen3D(cell));
+
+                if (cell.vectors) {
+                    if (cell.vectors.real) L.polyline(cell.vectors.real, { color: '#00d2ff', weight: 2, dashArray: '4,4' }).addTo(map);
+                    if (cell.vectors.predictive_noaa) L.polyline(cell.vectors.predictive_noaa, { color: '#ff0055', weight: 1.5 }).addTo(map);
+                }
+            });
         }
 
-        function closeTelemetry() {
-            document.getElementById('telemetry-modal').classList.remove('active');
+        // --- 2. GESTIONE VISTA FULLSCREEN 3D ---
+        function openFullscreen3D(cell) {
+            activeCellData = cell;
+            document.getElementById('h-core-id').innerText = cell.id || "Core-Cell";
+            document.getElementById('t-dbz').innerText = (cell.max_dbz || 0) + " dBZ";
+            document.getElementById('t-vel').innerText = `${cell.kinematics?.velocity_kmh || 0} km/h (${cell.kinematics?.direction_deg || 0}°)`;
+            document.getElementById('t-vil').innerText = `${cell.severity?.vil || 0} kg/m² | ${cell.severity?.echo_top || 0} km`;
+
+            document.getElementById('view-3d').classList.add('active');
+            setTimeout(initThreeEngineIfNeeded, 50);
         }
 
-        // 2. Motore Three.js Olografico Avanzato (Base inclinata 22°, Touch/Drag rotazione e morfologia a fungo)
-        let scene, camera, renderer, supercellGroup;
-        let isDragging = false, previousMousePosition = { x: 0, y: 0 };
-        let targetRotationX = 0.38; // Inclinazione iniziale di ~22 gradi verso chi guarda
-        let targetRotationY = 0;
+        function closeFullscreen3D() {
+            document.getElementById('view-3d').classList.remove('active');
+        }
 
-        function initThreeEngine() {
-            const canvas = document.getElementById('canvas-3d-main');
-            const width = window.innerWidth;
-            const height = window.innerHeight;
+        function switchMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
+            if (mode === 'voxel') document.getElementById('bm-voxel').classList.add('active');
+            if (mode === 'iso') document.getElementById('bm-iso').classList.add('active');
+            if (mode === 'holo') document.getElementById('bm-holo').classList.add('active');
+            if (scene3D && currentMesh) {
+                scene3D.remove(currentMesh);
+                currentMesh = buildMushroomStructure(activeCellData?.grid_matrix, currentMode);
+                scene3D.add(currentMesh);
+            }
+        }
 
-            renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
-            renderer.setSize(width, height);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        // --- 3. MOTORE THREE.JS NEYRAD 90s & MORFOLOGIA A FUNGO ---
+        let renderer3D, scene3D, camera3D, currentMesh = null;
+        let isDragging = false, prevMouse = { x: 0, y: 0 };
+        let rotY = 0, tiltX = 0.35; // Tilt iniziale protetto (~20°)
 
-            scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-            camera.position.set(0, 25, 45);
-            camera.lookAt(0, 0, 0);
+        function initThreeEngineIfNeeded() {
+            const canvas = document.getElementById('canvas-holo');
+            if (renderer3D) {
+                onWindowResize();
+                return;
+            }
 
-            scene.add(new THREE.AmbientLight(0xffffff, 1.3));
-            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-            dirLight.position.set(20, 40, 20);
-            scene.add(dirLight);
+            const container = document.getElementById('canvas-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
 
-            supercellGroup = new THREE.Group();
-            // Ancoraggio e inclinazione iniziale sul piano
-            supercellGroup.rotation.x = targetRotationX;
-            scene.add(supercellGroup);
+            renderer3D = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+            renderer3D.setSize(width, height);
+            renderer3D.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-            buildHolographicStructure(currentMode);
+            scene3D = new THREE.Scene();
+            camera3D = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+            camera3D.position.set(0, 22, 42);
+            camera3D.lookAt(0, 0, 0);
 
-            // Gestione Touch / Mouse Drag per rotazione e tilt
-            window.addEventListener('pointerdown', (e) => {
+            scene3D.add(new THREE.AmbientLight(0xffffff, 1.4));
+            const light = new THREE.DirectionalLight(0xffffff, 1.6);
+            light.position.set(20, 40, 20);
+            scene3D.add(light);
+
+            // Costruzione base radar stile NEXRAD anni '90 (Griglia radiale e base 2D)
+            const baseGroup = buildNexradBase();
+            scene3D.add(baseGroup);
+
+            // Gruppo strutturale 3D della cella
+            currentMesh = buildMushroomStructure(activeCellData?.grid_matrix, currentMode);
+            scene3D.add(currentMesh);
+
+            // Interazione Touch / Drag protetta contro il ribaltamento
+            container.addEventListener('pointerdown', (e) => {
                 isDragging = true;
-                previousMousePosition = { x: e.clientX, y: e.clientY };
+                prevMouse = { x: e.clientX, y: e.clientY };
             });
 
             window.addEventListener('pointermove', (e) => {
-                if (!isDragging) return;
-                const deltaX = e.clientX - previousMousePosition.x;
-                const deltaY = e.clientY - previousMousePosition.y;
+                if (!isDragging || !document.getElementById('view-3d').classList.contains('active')) return;
+                const dx = e.clientX - prevMouse.x;
+                const dy = e.clientY - prevMouse.y;
 
-                targetRotationY += deltaX * 0.008;
-                targetRotationX = Math.max(0.1, Math.min(0.8, targetRotationX + deltaY * 0.008)); // Limite tilt verticale
+                rotY += dx * 0.008; // Rotazione orizzontale a 360°
+                tiltX = Math.max(0.05, Math.min(0.75, tiltX + dy * 0.008)); // Tilt verticale bloccato (zero cappottamenti)
 
-                supercellGroup.rotation.y = targetRotationY;
-                supercellGroup.rotation.x = targetRotationX;
+                if (currentMesh) {
+                    currentMesh.rotation.y = rotY;
+                    currentMesh.rotation.x = tiltX;
+                }
+                baseGroup.rotation.y = rotY;
+                baseGroup.rotation.x = tiltX;
 
-                previousMousePosition = { x: e.clientX, y: e.clientY };
+                prevMouse = { x: e.clientX, y: e.clientY };
             });
 
             window.addEventListener('pointerup', () => { isDragging = false; });
+            window.addEventListener('resize', onWindowResize);
 
-            window.addEventListener('resize', () => {
-                renderer.setSize(window.innerWidth, window.innerHeight);
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-            });
-
-            animate();
+            animate3D();
         }
 
-        function getDbzColor(dbz) {
-            if(dbz >= 70) return 0xff00ff; // Magenta
-            if(dbz >= 62) return 0xff0055; // Rosso intenso
-            if(dbz >= 55) return 0xff3300; // Arancione scuro
-            if(dbz >= 48) return 0xff9900; // Arancione
-            if(dbz >= 40) return 0xffff00; // Giallo
-            if(dbz >= 35) return 0x00ff66; // Verde
-            return 0x00b4d8; // Ciano / Azzurro
+        function onWindowResize() {
+            const container = document.getElementById('canvas-container');
+            if (!container || !renderer3D) return;
+            const w = container.clientWidth;
+            const h = container.clientHeight;
+            renderer3D.setSize(w, h);
+            camera3D.aspect = w / h;
+            camera3D.updateProjectionMatrix();
         }
 
-        function buildHolographicStructure(mode) {
-            while(supercellGroup.children.length > 0) { 
-                supercellGroup.remove(supercellGroup.children[0]); 
-            }
+        function buildNexradBase() {
+            const group = new THREE.Group();
+            // Griglia circolare radar vintage anni '90
+            const ringGeo = new THREE.RingGeometry(1, 14, 32);
+            ringGeo.rotateX(Math.PI / 2);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff, wireframe: true, transparent: true, opacity: 0.25 });
+            group.add(new THREE.Mesh(ringGeo, ringMat));
 
-            const heightLevels = 22;
+            const gridHelper = new THREE.GridHelper(28, 14, 0x00ff66, 0x162c46);
+            gridHelper.position.y = -0.1;
+            group.add(gridHelper);
+            return group;
+        }
+
+        function getDbzColorHex(dbz) {
+            if (dbz >= 70) return 0xff00ff; // Magenta
+            if (dbz >= 62) return 0xff0055; // Rosso
+            if (dbz >= 55) return 0xff3300; // Arancione scuro
+            if (dbz >= 48) return 0xff9900; // Arancione
+            if (dbz >= 40) return 0xffff00; // Giallo
+            if (dbz >= 35) return 0x00ff66; // Verde
+            return 0x00b4d8; // Azzurro
+        }
+
+        function buildMushroomStructure(matrix, mode) {
+            const group = new THREE.Group();
+            group.rotation.x = tiltX;
+            group.rotation.y = rotY;
+
+            const heightLevels = 20;
             const boxSize = 0.65;
 
             if (mode === 'voxel') {
-                // Voxel 3D: gambo stretto denso in basso, incudine larga in alto
                 const pos = [], cols = [];
                 for (let h = 0; h <= heightLevels; h++) {
                     let hR = h / heightLevels;
-                    // Morfologia a fungo: raggio piccolo in basso (<0.4), incudine larga in alto (>0.4)
-                    let radius = hR > 0.4 ? 3.5 + Math.pow(hR - 0.4, 1.2) * 10 : 1.8 + hR * 2.0;
-                    let dbzVal = 73 - (hR * 30);
+                    // Morfologia a fungo: gambo stretto in basso (<0.4), incudine larga in alto (>0.4)
+                    let radius = hR > 0.4 ? 2.5 + Math.pow(hR - 0.4, 1.1) * 11 : 1.4 + hR * 2.0;
+                    let dbzVal = 72 - (hR * 28);
 
                     for (let a = 0; a < Math.PI * 2; a += 0.35) {
                         for (let r = 0; r < radius; r += 0.8) {
                             let x = Math.cos(a) * r;
                             let z = Math.sin(a) * r;
                             pos.push(x, (h - heightLevels/2) * boxSize, z);
-                            let col = new THREE.Color(getDbzColor(dbzVal - (r * 1.2)));
+                            let col = new THREE.Color(getDbzColorHex(dbzVal - (r * 1.2)));
                             cols.push(col.r, col.g, col.b);
                         }
                     }
                 }
                 const count = pos.length / 3;
                 const geom = new THREE.BoxGeometry(boxSize*0.85, boxSize*0.85, boxSize*0.85);
-                const mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.7, roughness: 0.2 });
+                const mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.75, roughness: 0.2 });
                 const mesh = new THREE.InstancedMesh(geom, mat, count);
                 const dummy = new THREE.Object3D();
-                for(let i=0; i<count; i++) {
+                for (let i = 0; i < count; i++) {
                     dummy.position.set(pos[i*3], pos[i*3+1], pos[i*3+2]);
                     dummy.updateMatrix();
                     mesh.setMatrixAt(i, dummy.matrix);
                     mesh.setColorAt(i, new THREE.Color(cols[i*3], cols[i*3+1], cols[i*3+2]));
                 }
                 mesh.instanceMatrix.needsUpdate = true;
-                if(mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-                supercellGroup.add(mesh);
+                if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+                group.add(mesh);
 
             } else if (mode === 'iso') {
-                // Isovolumetrico: effetto fumo/nuvola continuo morbido a strati a fungo
+                // Isovolumetrico: Effetto nuvola / fumo continuo a strati con morfologia a fungo
                 for (let l = 0; l < heightLevels; l++) {
                     let hR = l / heightLevels;
-                    let rScale = hR > 0.4 ? 0.9 + Math.pow(hR - 0.4, 1.1) * 3.2 : 0.4 + hR * 0.8;
-                    let geom = new THREE.CylinderGeometry(6 * rScale, 6 * (rScale * 0.85), 0.8, 32, 1, true);
+                    let rScale = hR > 0.4 ? 0.8 + Math.pow(hR - 0.4, 1.1) * 3.4 : 0.3 + hR * 0.9;
+                    let geom = new THREE.CylinderGeometry(5.5 * rScale, 5.5 * (rScale * 0.85), 0.8, 32, 1, true);
                     geom.translate(0, (l - heightLevels/2) * boxSize, 0);
                     let mat = new THREE.MeshPhysicalMaterial({ 
-                        color: hR > 0.6 ? 0x00d2ff : (hR > 0.3 ? 0xffff00 : 0xff0055), 
-                        roughness: 0.4, transmission: 0.65, transparent: true, opacity: 0.55, side: THREE.DoubleSide 
+                        color: hR > 0.55 ? 0x00d2ff : (hR > 0.25 ? 0xffff00 : 0xff0055), 
+                        roughness: 0.3, transmission: 0.6, transparent: true, opacity: 0.55, side: THREE.DoubleSide 
                     });
-                    supercellGroup.add(new THREE.Mesh(geom, mat));
+                    group.add(new THREE.Mesh(geom, mat));
                 }
 
             } else if (mode === 'holo') {
-                // Holo: Parallelepipedi trasparenti più grandi stile ologramma fantascientifico
+                // Holo: Parallelepipedi trasparenti squadrati in stile olografico
                 const holoGroup = new THREE.Group();
                 for (let h = 0; h <= heightLevels; h += 2) {
                     let hR = h / heightLevels;
-                    let rScale = hR > 0.4 ? 1.0 + (hR - 0.4) * 3.0 : 0.5 + hR * 1.2;
-                    let geom = new THREE.BoxGeometry(1.6 * rScale, 1.2, 1.6 * rScale);
+                    let rScale = hR > 0.4 ? 0.9 + (hR - 0.4) * 3.2 : 0.4 + hR * 1.2;
+                    let geom = new THREE.BoxGeometry(1.5 * rScale, 1.1, 1.5 * rScale);
                     let mat = new THREE.MeshBasicMaterial({ 
-                        color: hR > 0.6 ? 0x00d2ff : (hR > 0.3 ? 0x00ff66 : 0xff0055), 
-                        wireframe: true, transparent: true, opacity: 0.6 
+                        color: hR > 0.55 ? 0x00d2ff : (hR > 0.25 ? 0x00ff66 : 0xff0055), 
+                        wireframe: true, transparent: true, opacity: 0.65 
                     });
                     let mesh = new THREE.Mesh(geom, mat);
                     mesh.position.set(0, (h - heightLevels/2) * boxSize, 0);
                     holoGroup.add(mesh);
                 }
-                supercellGroup.add(holoGroup);
+                group.add(holoGroup);
+            }
+
+            return group;
+        }
+
+        function animate3D() {
+            requestAnimationFrame(animate3D);
+            if (!isDragging && document.getElementById('view-3d').classList.contains('active')) {
+                rotY += 0.003; // Rotazione lenta continua facoltativa
+                if (currentMesh) currentMesh.rotation.y = rotY;
+            }
+            if (renderer3D && scene3D && camera3D) {
+                renderer3D.render(scene3D, camera3D);
             }
         }
-
-        function setHoloMode(mode) {
-            currentMode = mode;
-            document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
-            if(mode === 'voxel') document.getElementById('btn-voxel').classList.add('active');
-            if(mode === 'iso') document.getElementById('btn-iso').classList.add('active');
-            if(mode === 'holo') document.getElementById('btn-holo').classList.add('active');
-            buildHolographicStructure(mode);
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            if (!isDragging) {
-                targetRotationY += 0.003; // Rotazione lenta continua sull'asse
-                supercellGroup.rotation.y = targetRotationY;
-            }
-            renderer.render(scene, camera);
-        }
-
-        window.onload = () => {
-            initThreeEngine();
-            openTelemetry(sampleCell);
-        };
     </script>
 </body>
 </html>
