@@ -1,4 +1,4 @@
-l#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 I.R.I.D.E. Real Engine (iride_engine.py)
 Estrazione di celle convettive reali (>= 35 dBZ) da tile radar RainViewer ed elaborazione cinematica.
@@ -82,6 +82,7 @@ class IrideRealEngine:
 
         cells_data = []
         base_lat, base_lon = 41.8932, 12.4987
+        i = 1  # Inizializzazione sicura della variabile i
 
         for i in range(1, min(num_features + 1, 5)):
             y_indices, x_indices = np.where(labeled == i)
@@ -160,4 +161,4 @@ class IrideRealEngine:
 if __name__ == "__main__":
     engine = IrideRealEngine()
     engine.run_pipeline()
-                
+    
