@@ -3,36 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>I.R.I.D.E. 3D - Matrioska Core Engine</title>
+    <title>I.R.I.D.E. 3D - Solid Tomography Engine</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         body { background-color: #050811; color: #e2e8f0; font-family: monospace; overflow: hidden; height: 100vh; }
         #canvas-container { width: 100vw; height: 100vh; display: block; }
-        .hud-panel {
-            position: absolute; top: 15px; left: 15px;
-            background: rgba(10, 15, 30, 0.88); backdrop-filter: blur(10px);
-            border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 10px;
-            padding: 15px; width: 310px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); z-index: 10;
+        
+        /* BANNER TOP ANCORATO */
+        .top-banner {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            background: rgba(10, 15, 30, 0.92);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(59, 130, 246, 0.4);
+            padding: 10px 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
-        h2 { font-size: 1rem; color: #60a5fa; margin-bottom: 10px; display: flex; justify-content: space-between; }
-        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; font-size: 0.75rem; }
-        .stat-card { background: rgba(255,255,255,0.05); padding: 6px 8px; border-radius: 4px; border-left: 3px solid #3b82f6; }
-        .stat-value { font-size: 1rem; font-weight: bold; color: #fff; }
-        .control-group { margin-bottom: 10px; }
-        label { display: block; font-size: 0.7rem; color: #94a3b8; margin-bottom: 3px; }
-        .btn-group { display: flex; gap: 6px; }
+
+        .banner-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .banner-title {
+            font-size: 0.95rem;
+            color: #60a5fa;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+        }
+
+        .cell-badge {
+            background: rgba(59, 130, 246, 0.2);
+            border: 1px solid #3b82f6;
+            color: #38bdf8;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+
+        .metrics-bar {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            font-size: 0.7rem;
+        }
+
+        .metric-box {
+            background: rgba(255, 255, 255, 0.04);
+            padding: 4px 6px;
+            border-radius: 4px;
+            border-left: 2px solid #38bdf8;
+        }
+
+        .metric-label { color: #94a3b8; font-size: 0.6rem; }
+        .metric-val { color: #fff; font-weight: bold; font-size: 0.85rem; }
+
+        .controls-row {
+            display: grid;
+            grid-template-columns: 1fr 1.2fr 0.8fr;
+            gap: 10px;
+            align-items: center;
+            font-size: 0.7rem;
+        }
+
+        .ctrl-item { display: flex; flex-direction: column; gap: 2px; }
+        .ctrl-item label { color: #94a3b8; font-size: 0.65rem; }
+
+        .btn-group { display: flex; gap: 4px; }
         button {
             flex: 1; background: #1e293b; color: #38bdf8; border: 1px solid #38bdf8;
-            padding: 6px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.75rem;
+            padding: 4px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.7rem;
         }
         button:hover { background: #38bdf8; color: #0f172a; }
+
         input[type=range] { width: 100%; accent-color: #38bdf8; }
-        .legend {
-            display: flex; justify-content: space-between; margin-top: 12px;
-            padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 0.62rem;
+
+        .legend-inline {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            font-size: 0.6rem;
+            align-items: center;
         }
         .legend-item { display: flex; align-items: center; gap: 3px; }
-        .dot { width: 7px; height: 7px; border-radius: 50%; }
+        .dot { width: 6px; height: 6px; border-radius: 50%; }
+
+        @media (max-width: 600px) {
+            .metrics-bar { grid-template-columns: repeat(2, 1fr); }
+            .controls-row { grid-template-columns: 1fr; gap: 6px; }
+        }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -41,38 +108,52 @@
 
     <div id="canvas-container"></div>
 
-    <div class="hud-panel">
-        <h2>I.R.I.D.E. RADAR 3D <span style="font-size: 0.65rem; color: #4ade80;">STRICT CORE</span></h2>
-        
-        <div class="stat-grid">
-            <div class="stat-card">
-                <div>PARALLELEPIPEDI</div>
-                <div class="stat-value" id="voxel-count">0</div>
+    <!-- BANNER ANCORATO IN ALTO -->
+    <div class="top-banner">
+        <div class="banner-header">
+            <div class="banner-title">I.R.I.D.E. 3D TOMOGRAPHY</div>
+            <div class="cell-badge" id="cell-id">CENTROIDE #CELL-8042</div>
+        </div>
+
+        <div class="metrics-bar">
+            <div class="metric-box">
+                <div class="metric-label">dBZ MAX</div>
+                <div class="metric-val" style="color:#ff00aa" id="val-dbz">68.5 dBZ</div>
             </div>
-            <div class="stat-card">
-                <div>OPACITÀ BASE</div>
-                <div class="stat-value" id="opacity-val">70%</div>
+            <div class="metric-box">
+                <div class="metric-label">ECHO TOP</div>
+                <div class="metric-val" id="val-top">11.4 km</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">PARALLELEPIPEDI</div>
+                <div class="metric-val" id="voxel-count">0</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">OPACITÀ BASE</div>
+                <div class="metric-val" id="opacity-val">70%</div>
             </div>
         </div>
 
-        <div class="control-group">
-            <label>Sfumatura Pennellata (Fine Tuning ±10%)</label>
-            <div class="btn-group">
-                <button onclick="adjustOpacity(-0.10)">- 10%</button>
-                <button onclick="adjustOpacity(0.10)">+ 10%</button>
+        <div class="controls-row">
+            <div class="ctrl-item">
+                <label>Opacità Volumetrica (±10%)</label>
+                <div class="btn-group">
+                    <button onclick="adjustOpacity(-0.10)">- 10%</button>
+                    <button onclick="adjustOpacity(0.10)">+ 10%</button>
+                </div>
+            </div>
+
+            <div class="ctrl-item">
+                <label>Sezione Tomografica RHI (Taglio XZ)</label>
+                <input type="range" id="slice-slider" min="-30" max="30" value="30" step="0.5">
+            </div>
+
+            <div class="ctrl-item">
+                <button onclick="regenerateCell()" style="height: 28px; margin-top: 10px;">Aggiorna Radar</button>
             </div>
         </div>
 
-        <div class="control-group">
-            <label>Sezione Tomografica RHI (Taglio XZ)</label>
-            <input type="range" id="slice-slider" min="-30" max="30" value="30" step="0.5">
-        </div>
-
-        <div class="control-group">
-            <button onclick="regenerateCell()" style="width: 100%;">Rigenera Cella Radar</button>
-        </div>
-
-        <div class="legend">
+        <div class="legend-inline">
             <div class="legend-item"><div class="dot" style="background:#0055ff"></div> Blu</div>
             <div class="legend-item"><div class="dot" style="background:#00ff44"></div> Verde</div>
             <div class="legend-item"><div class="dot" style="background:#ffcc00"></div> Giallo</div>
@@ -88,10 +169,10 @@
         let currentOpacity = 0.70;
         const BOX_SIZE = 60;
 
-        // Parallelepipedi proporzionati (pianta stretta e raccolta)
-        const BRICK = { x: 1.3, y: 0.8, z: 1.3 }; 
+        // Parallelepipedi per tomografia piena
+        const BRICK = { x: 1.2, y: 0.8, z: 1.2 }; 
 
-        const GRID_SIZE = 35;
+        const GRID_SIZE = 32;
         let radarMatrix = [];
 
         function generateSyntheticRadarMatrix() {
@@ -102,9 +183,8 @@
                 for (let c = 0; c < GRID_SIZE; c++) {
                     let dist = Math.hypot(r - center, c - center);
                     let dbz = 0;
-                    // Raggio limitato per evitare l'effetto disco piatto
-                    if (dist < 9) {
-                        dbz = Math.max(0, 70 - (dist * 6.0) + (Math.random() * 5));
+                    if (dist < 11) {
+                        dbz = Math.max(0, 72 - (dist * 5.8) + (Math.random() * 4));
                     }
                     row.push(Math.round(dbz));
                 }
@@ -116,10 +196,10 @@
             const container = document.getElementById('canvas-container');
 
             scene = new THREE.Scene();
-            scene.fog = new THREE.FogExp2(0x050811, 0.01);
+            scene.fog = new THREE.FogExp2(0x050811, 0.009);
 
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(65, 45, 75);
+            camera.position.set(65, 30, 75);
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -128,152 +208,19 @@
 
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
+            controls.target.set(0, -5, 0);
 
-            scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-            let dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+            let dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
             dirLight.position.set(40, 60, 40);
             scene.add(dirLight);
 
             createBoundingBox();
             setupMaterials();
             generateSyntheticRadarMatrix();
-            build3DCellFromRaster();
+            buildSolidTomographyFromRaster();
 
             window.addEventListener('resize', onWindowResize);
             document.getElementById('slice-slider').addEventListener('input', (e) => {
-                applyRHISlice(parseFloat(e.target.value));
-            });
-
-            animate();
-        }
-
-        function createBoundingBox() {
-            const wireGeo = new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE);
-            const wireMat = new THREE.MeshBasicMaterial({ color: 0x1e3a5f, wireframe: true, transparent: true, opacity: 0.15 });
-            scene.add(new THREE.Mesh(wireGeo, wireMat));
-
-            const grid = new THREE.GridHelper(BOX_SIZE, 10, 0x38bdf8, 0x1e293b);
-            grid.position.y = -BOX_SIZE / 2;
-            scene.add(grid);
-        }
-
-        function setupMaterials() {
-            materials.blue = new THREE.MeshStandardMaterial({ color: 0x0055ff, transparent: true, opacity: currentOpacity * 0.5, depthWrite: false });
-            materials.green = new THREE.MeshStandardMaterial({ color: 0x00ff44, transparent: true, opacity: currentOpacity * 0.7, depthWrite: false });
-            materials.yellow = new THREE.MeshStandardMaterial({ color: 0xffcc00, transparent: true, opacity: currentOpacity * 0.85, depthWrite: false });
-            materials.red = new THREE.MeshStandardMaterial({ color: 0xff2200, transparent: true, opacity: Math.min(1.0, currentOpacity * 1.0), depthWrite: false });
-            materials.magenta = new THREE.MeshStandardMaterial({ color: 0xff00aa, transparent: true, opacity: Math.min(1.0, currentOpacity * 1.1), depthWrite: false });
-        }
-
-        function build3DCellFromRaster() {
-            if (stormContainer) scene.remove(stormContainer);
-            stormContainer = new THREE.Group();
-
-            const brickGeometry = new THREE.BoxGeometry(BRICK.x, BRICK.y, BRICK.z);
-            let totalBricks = 0;
-            const maxTargetBricks = 3500; // Ottimizzato per fluidità mobile
-
-            const halfGrid = GRID_SIZE / 2;
-            const startY = BOX_SIZE / 2 - BRICK.y; // Partenza sotto il tetto
-
-            let validCells = [];
-            for (let r = 0; r < GRID_SIZE; r++) {
-                for (let c = 0; c < GRID_SIZE; c++) {
-                    if (radarMatrix[r][c] >= 15) {
-                        validCells.push({ r, c, dbz: radarMatrix[r][c] });
-                    }
-                }
-            }
-
-            if (validCells.length === 0) return;
-
-            const layersPerCell = Math.min(25, Math.floor(maxTargetBricks / validCells.length));
-
-            validCells.forEach(cell => {
-                const posX = (cell.c - halfGrid) * BRICK.x;
-                const posZ = (cell.r - halfGrid) * BRICK.z;
-                const distFromCenter = Math.hypot(cell.c - halfGrid, cell.r - halfGrid);
-
-                const cellMaxLayers = Math.max(5, Math.floor((cell.dbz / 70) * layersPerCell));
-
-                for (let l = 0; l < cellMaxLayers; l++) {
-                    if (totalBricks >= maxTargetBricks) break;
-
-                    const normH = l / cellMaxLayers; // 0.0 = Top (Blu), 1.0 = Base
-                    const posY = startY - (l * (BRICK.y + 0.04));
-
-                    const tiltX = posX + (normH * 2.5);
-
-                    let matType = 'blue';
-
-                    // GERARCHIA RIGOROSA DALL'ALTO VERSO IL BASSO:
-                    if (normH < 0.25) {
-                        matType = 'blue';    // Ancorato in alto
-                    } else if (normH < 0.5) {
-                        matType = 'green';   // Sotto il blu a scendere
-                    } else if (normH < 0.75) {
-                        matType = 'yellow';  // Sotto il verde
-                    } else {
-                        // Al centro / bordo tra giallo e verde: inseriamo Rosso e Magenta
-                        if (distFromCenter < 3 && normH >= 0.65 && normH <= 0.80) {
-                            matType = (cell.dbz > 60) ? 'magenta' : 'red';
-                        } else {
-                            matType = 'yellow';
-                        }
-                    }
-
-                    const brickMesh = new THREE.Mesh(brickGeometry, materials[matType]);
-                    brickMesh.position.set(tiltX, posY, posZ);
-                    brickMesh.userData = { origX: tiltX, origY: posY, origZ: posZ };
-
-                    stormContainer.add(brickMesh);
-                    totalBricks++;
-                }
-            });
-
-            scene.add(stormContainer);
-            document.getElementById('voxel-count').innerText = totalBricks;
-        }
-
-        function adjustOpacity(delta) {
-            currentOpacity = Math.max(0.1, Math.min(1.0, currentOpacity + delta));
-            document.getElementById('opacity-val').innerText = Math.round(currentOpacity * 100) + '%';
-
-            materials.blue.opacity = currentOpacity * 0.5;
-            materials.green.opacity = currentOpacity * 0.7;
-            materials.yellow.opacity = currentOpacity * 0.85;
-            materials.red.opacity = Math.min(1.0, currentOpacity * 1.0);
-            materials.magenta.opacity = Math.min(1.0, currentOpacity * 1.1);
-        }
-
-        function applyRHISlice(limitX) {
-            if (!stormContainer) return;
-            stormContainer.children.forEach(child => {
-                child.visible = (child.userData.origX <= limitX);
-            });
-        }
-
-        function regenerateCell() {
-            generateSyntheticRadarMatrix();
-            build3DCellFromRaster();
-            document.getElementById('slice-slider').value = 30;
-            applyRHISlice(30);
-        }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            controls.update();
-            if (stormContainer) stormContainer.rotation.y += 0.0015;
-            renderer.render(scene, camera);
-        }
-
-        window.onload = init;
-    </script>
-</body>
-</html>
+                applyRHISlice
+                
