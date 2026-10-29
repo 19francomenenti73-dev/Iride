@@ -1,4 +1,5 @@
-requests>=2.31.0
-numpy>=1.24.0
-scipy>=1.10.0
-pillow>=9.5.0
+
+h5py>=3.10,<4
+numpy>=1.26,<3
+scipy>=1.11,<2
+pyproj>=3.6,<4
