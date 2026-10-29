@@ -1,4 +1,3 @@
-
 name: I.R.I.D.E. volume
 
 on:
@@ -31,6 +30,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: true
 
       - name: Set up Python
@@ -49,15 +49,19 @@ jobs:
 
       - name: Verify input database
         run: |
+          set -eu
+
           if [ ! -f data/iride_database.json ]; then
             echo "::error::Missing data/iride_database.json"
             exit 1
           fi
+
           python -m json.tool data/iride_database.json > /dev/null
           echo "Radar JSON verified."
 
       - name: Build real radar matrix
         run: |
+          set -eu
           python backend/iride_engine.py
 
       - name: Prepare public JSON
@@ -81,8 +85,9 @@ jobs:
           ls -lh docs/data/iride.json
 
       - name: Publish generated JSON
+        shell: bash
         run: |
-          set -eu
+          set -euo pipefail
 
           git config user.name "github-actions[bot]"
           git config user.email \
@@ -92,8 +97,30 @@ jobs:
 
           if git diff --cached --quiet; then
             echo "JSON unchanged; no commit required."
-          else
-            git commit -m "Auto-update IRIDE radar data"
-            git push
+            exit 0
           fi
-          
+
+          git commit -m "Auto-update IRIDE radar data"
+
+          for attempt in 1 2 3; do
+            echo "Publication attempt ${attempt}/3"
+
+            git fetch origin main
+
+            if ! git rebase -X theirs origin/main; then
+              echo "::error::Rebase failed; refusing to overwrite remote changes."
+              git rebase --abort || true
+              exit 1
+            fi
+
+            if git push origin HEAD:main; then
+              echo "Radar JSON published successfully."
+              exit 0
+            fi
+
+            echo "Push rejected; will resynchronize and retry."
+            sleep 2
+          done
+
+          echo "::error::Unable to publish after 3 attempts."
+          exit 1
