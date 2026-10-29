@@ -4,42 +4,96 @@ name: I.R.I.D.E. volume
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     paths:
-      - 'data/source.h5'
-      - 'backend/iride_engine.py'
-      - 'requirements.txt'
-      - '.github/workflows/iride.yml'
+      - "backend/**"
+      - "data/**"
+      - "docs/data/**"
+      - ".github/workflows/iride_pipeline.yml"
+      - "requirements.txt"
+  schedule:
+    - cron: "*/20 * * * *"
 
 permissions:
   contents: write
 
+concurrency:
+  group: iride-radar-pipeline
+  cancel-in-progress: false
+
 jobs:
   process:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    timeout-minutes: 10
 
-      - uses: actions/setup-python@v5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          python-version: '3.12'
-          cache: pip
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: Verify input database
+        run: |
+          if [ ! -f data/iride_database.json ]; then
+            echo "::error::Missing data/iride_database.json"
+            exit 1
+          fi
+          python -m json.tool data/iride_database.json > /dev/null
+          echo "Radar JSON verified."
 
       - name: Build real radar matrix
         run: |
-          python backend/iride_engine.py \
-            --input data/source.h5 \
-            --output docs/data/iride.json
+          python backend/iride_engine.py
+
+      - name: Prepare public JSON
+        run: |
+          set -eu
+
+          mkdir -p docs/data
+
+          if [ -f docs/data/iride.json ]; then
+            echo "Engine output already exists at docs/data/iride.json"
+          elif [ -f data/iride_output.json ]; then
+            cp data/iride_output.json docs/data/iride.json
+          else
+            echo "::error::Engine produced no recognized JSON output"
+            exit 1
+          fi
+
+          python -m json.tool docs/data/iride.json > /dev/null
+
+          echo "Published JSON is valid."
+          ls -lh docs/data/iride.json
 
       - name: Publish generated JSON
         run: |
+          set -eu
+
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/data/iride.json
-          if ! git diff --cached --quiet; then
-            git commit -m "Update I.R.I.D.E. volume data"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -- docs/data/iride.json
+
+          if git diff --cached --quiet; then
+            echo "JSON unchanged; no commit required."
+          else
+            git commit -m "Auto-update IRIDE radar data"
             git push
           fi
           
