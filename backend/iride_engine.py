@@ -1,571 +1,455 @@
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 I.R.I.D.E.
 Integrated Radar Imaging & Detection Engine
 
-Motore di elaborazione per dati radar strutturati in JSON.
-Input principale: data/iride_database.json
-Output: data/iride_output.json
-
-Non genera celle meteorologiche artificiali.
-Non sostituisce i dati mancanti con simulazioni.
-Conserva la provenienza e segnala le limitazioni dei dati.
+Elabora dati radar già acquisiti.
+Non genera celle meteorologiche simulate.
+Non dichiara misure derivate come osservazioni dirette.
+Le previsioni sono estrapolazioni cinematiche, non previsioni NOAA.
 """
-
-from __future__ import annotations
 
 import json
 import math
 import os
 import sys
-import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
+ROOT = Path(__file__).resolve().parent.parent
 
-INPUT_CANDIDATES = [
-    DATA_DIR / "iride_database.json",
-    DATA_DIR / "source.json",
-]
+INPUT_FILE = ROOT / "data" / "iride_database.json"
+HISTORY_FILE = ROOT / "data" / "iride_history.json"
+OUTPUT_FILE = ROOT / "data" / "iride_output.json"
+PUBLIC_FILE = ROOT / "docs" / "data" / "iride.json"
 
-OUTPUT_FILE = DATA_DIR / "iride_output.json"
-
-# Soglie applicate ai valori della matrice fornita.
-# ATTENZIONE: sono soglie operative sui valori del JSON.
-# Non certificano una calibrazione fisica del dato sorgente.
-MATRIX_THRESHOLDS = [10.0, 20.0, 30.0, 35.0, 40.0, 50.0]
-
-MIN_MATRIX_VALUE = 0.0
-MAX_CELLS_OUTPUT = 500
+MAX_HISTORY = 500
+MIN_TIME_DELTA_SECONDS = 1
 
 
-def utc_now() -> str:
+def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def finite_number(value: Any) -> bool:
+def parse_time(value):
+    if not isinstance(value, str) or not value.strip():
+        return None
+
+    try:
+        normalized = value.strip().replace("Z", "+00:00")
+        result = datetime.fromisoformat(normalized)
+
+        if result.tzinfo is None:
+            result = result.replace(tzinfo=timezone.utc)
+
+        return result.astimezone(timezone.utc)
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def valid_coordinate(lat, lon):
+    try:
+        lat = float(lat)
+        lon = float(lon)
+    except (TypeError, ValueError):
+        return False
+
     return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(float(value))
+        math.isfinite(lat)
+        and math.isfinite(lon)
+        and -90 <= lat <= 90
+        and -180 <= lon <= 180
     )
 
 
-def number(value: Any, default: float = 0.0) -> float:
-    if finite_number(value):
-        return float(value)
-    return default
+def read_json(path, default=None):
+    if not path.exists():
+        return default
+
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            return json.load(file)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            f"Impossibile leggere {path}: {exc}"
+        ) from exc
 
 
-def valid_coordinate(lat: Any, lon: Any) -> bool:
-    return (
-        finite_number(lat)
-        and finite_number(lon)
-        and -90.0 <= float(lat) <= 90.0
-        and -180.0 <= float(lon) <= 180.0
-    )
-
-
-def find_input_file() -> Path:
-    for candidate in INPUT_CANDIDATES:
-        if candidate.is_file():
-            return candidate
-
-    raise FileNotFoundError(
-        "Database radar JSON non trovato. File cercati: "
-        + ", ".join(str(p.relative_to(ROOT)) for p in INPUT_CANDIDATES)
-    )
-
-
-def load_json(path: Path) -> Any:
-    with path.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
-
-
-def save_json(path: Path, payload: dict[str, Any]) -> None:
+def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
 
     temporary = path.with_suffix(path.suffix + ".tmp")
-    with temporary.open("w", encoding="utf-8") as handle:
+
+    with temporary.open("w", encoding="utf-8") as file:
         json.dump(
-            payload,
-            handle,
+            data,
+            file,
             ensure_ascii=False,
             indent=2,
-            allow_nan=False,
+            allow_nan=False
         )
-        handle.write("\n")
+        file.write("\n")
 
     temporary.replace(path)
 
 
-def normalize_database(raw: Any) -> tuple[dict[str, Any], list]:
-    """
-    Accetta il formato principale:
-      {"timestamp": ..., "source": ..., "cells": [...]}
+def cell_id(cell):
+    value = cell.get("id")
 
-    Accetta anche un elenco di celle oppure un wrapper contenente
-    una chiave cells. Non inventa dati se il formato è vuoto.
-    """
-    if isinstance(raw, list):
-        metadata = {}
-        cells = raw
+    if value is None:
+        return None
 
-    elif isinstance(raw, dict):
-        metadata = raw
-        cells = raw.get("cells")
-
-        if cells is None and isinstance(raw.get("data"), dict):
-            cells = raw["data"].get("cells")
-
-        if cells is None and isinstance(raw.get("results"), list):
-            cells = raw["results"]
-
-    else:
-        raise ValueError("Formato JSON non riconosciuto.")
-
-    if not isinstance(cells, list):
-        raise ValueError(
-            "Il JSON non contiene una lista 'cells' valida."
-        )
-
-    return metadata, cells
+    value = str(value).strip()
+    return value or None
 
 
-def clean_matrix(raw_matrix: Any) -> list[list[float]]:
-    """
-    Mantiene la geometria della matrice originale.
-    Valori non numerici, infiniti o NaN diventano celle nulle.
-    Non crea una matrice sostitutiva.
-    """
-    if not isinstance(raw_matrix, list):
-        return []
+def matrix_statistics(matrix):
+    if not isinstance(matrix, list):
+        return {
+            "rows": 0,
+            "columns": 0,
+            "numeric_cells": 0,
+            "matrix_max": None,
+        }
 
-    result = []
+    values = []
+    max_columns = 0
 
-    for row in raw_matrix:
+    for row in matrix:
         if not isinstance(row, list):
             continue
 
-        clean_row = []
-        for value in row:
-            if finite_number(value):
-                clean_row.append(
-                    max(MIN_MATRIX_VALUE, float(value))
-                )
-            else:
-                clean_row.append(0.0)
+        max_columns = max(max_columns, len(row))
 
-        result.append(clean_row)
-
-    return result
-
-
-def matrix_shape(matrix: list[list[float]]) -> dict[str, int]:
-    return {
-        "rows": len(matrix),
-        "columns": max((len(row) for row in matrix), default=0),
-    }
-
-
-def matrix_statistics(matrix: list[list[float]]) -> dict[str, Any]:
-    values = [value for row in matrix for value in row]
-
-    if not values:
-        return {
-            "valid": False,
-            "rows": 0,
-            "columns": 0,
-            "max_value": None,
-            "mean_value": None,
-            "active_pixels": 0,
-            "threshold_counts": {},
-        }
-
-    counts = {
-        str(threshold): sum(v >= threshold for v in values)
-        for threshold in MATRIX_THRESHOLDS
-    }
-
-    active = sum(v > 0.0 for v in values)
-
-    return {
-        "valid": True,
-        **matrix_shape(matrix),
-        "max_value": round(max(values), 2),
-        "mean_value": round(sum(values) / len(values), 2),
-        "active_pixels": active,
-        "threshold_counts": counts,
-    }
-
-
-def perimeter_pixels(
-    matrix: list[list[float]],
-    threshold: float = 10.0,
-) -> list[dict[str, int]]:
-    """
-    Estrae il contorno della zona con valori >= threshold.
-
-    Le coordinate sono indici di riga/colonna, NON coordinate
-    geografiche. Perimetro geografico e area richiedono la
-    risoluzione spaziale reale della matrice.
-    """
-    if not matrix:
-        return []
-
-    width = max((len(row) for row in matrix), default=0)
-    if width == 0:
-        return []
-
-    height = len(matrix)
-
-    def active(r: int, c: int) -> bool:
-        return (
-            0 <= r < height
-            and 0 <= c < len(matrix[r])
-            and matrix[r][c] >= threshold
-        )
-
-    perimeter = []
-
-    for r, row in enumerate(matrix):
-        for c, value in enumerate(row):
-            if value < threshold:
+        for item in row:
+            if isinstance(item, bool):
                 continue
 
-            neighbors = (
-                active(r - 1, c),
-                active(r + 1, c),
-                active(r, c - 1),
-                active(r, c + 1),
-            )
+            try:
+                value = float(item)
+            except (TypeError, ValueError):
+                continue
 
-            if not all(neighbors):
-                perimeter.append({"row": r, "column": c})
-
-    return perimeter
-
-
-def classify_structure(
-    stats: dict[str, Any],
-    cell: dict[str, Any],
-) -> dict[str, Any]:
-    """
-    Classificazione euristica preliminare.
-    Non dichiara una supercella o un MCS come confermati:
-    tali diagnosi richiedono anche struttura spaziale,
-    evoluzione temporale e verifiche meteorologiche.
-    """
-    matrix_max = stats.get("max_value")
-    supplied_max = cell.get("max_dbz")
-
-    peak = number(
-        supplied_max,
-        number(matrix_max, 0.0),
-    )
-
-    active = stats.get("active_pixels", 0)
-    rows = stats.get("rows", 0)
-    cols = stats.get("columns", 0)
-    aspect = max(rows, cols) / max(1, min(rows, cols))
-
-    labels = []
-    confidence = "bassa"
-
-    if peak >= 50:
-        labels.append("nucleo_con_valori_molto_elevati")
-    elif peak >= 40:
-        labels.append("nucleo_intenso")
-    elif peak >= 30:
-        labels.append("nucleo_convezione_significativa")
-    else:
-        labels.append("nucleo_debole_o_moderato")
-
-    if active >= 100 and aspect >= 2.0:
-        labels.append("struttura_estesa_allungata")
-    elif active >= 100:
-        labels.append("struttura_estesa")
-    elif active > 0:
-        labels.append("cella_radar_rilevata")
-    else:
-        labels.append("matrice_senza_pixel_attivi")
+            if math.isfinite(value):
+                values.append(value)
 
     return {
-        "labels": labels,
-        "confidence": confidence,
-        "confirmed_meteorological_type": None,
-        "limitations": (
-            "Classificazione preliminare: forma e intensità della "
-            "matrice non bastano per confermare MCS, MCC, MCV, "
-            "squall line, V-shape, comma head, echo hook o supercella."
-        ),
+        "rows": len(matrix),
+        "columns": max_columns,
+        "numeric_cells": len(values),
+        "matrix_max": max(values) if values else None,
     }
-    
-def process_cell(raw_cell: Any, index: int) -> dict[str, Any] | None:
-    if not isinstance(raw_cell, dict):
+
+
+def normalize_history(history):
+    if not isinstance(history, dict):
+        history = {}
+
+    history.setdefault("tracks", {})
+
+    if not isinstance(history["tracks"], dict):
+        history["tracks"] = {}
+
+    return history
+
+
+def add_observation(history, cell, timestamp):
+    identifier = cell_id(cell)
+
+    if not identifier:
+        return
+
+    if not valid_coordinate(cell.get("lat"), cell.get("lon")):
+        return
+
+    dt = parse_time(timestamp)
+
+    if dt is None:
+        return
+
+    tracks = history["tracks"]
+    observations = tracks.setdefault(identifier, [])
+
+    if not isinstance(observations, list):
+        observations = []
+        tracks[identifier] = observations
+
+    observation = {
+        "timestamp": dt.isoformat(),
+        "lat": float(cell["lat"]),
+        "lon": float(cell["lon"]),
+    }
+
+    # Non aggiunge due volte la stessa osservazione.
+    for old in observations:
+        if not isinstance(old, dict):
+            continue
+
+        old_dt = parse_time(old.get("timestamp"))
+
+        if old_dt == dt:
+            # Aggiorna solo se la posizione coincide.
+            # Una posizione differente con lo stesso timestamp
+            # non viene accettata come seconda osservazione.
+            try:
+                same_position = (
+                    abs(float(old["lat"]) - observation["lat"]) < 1e-7
+                    and abs(float(old["lon"]) - observation["lon"]) < 1e-7
+                )
+            except (KeyError, TypeError, ValueError):
+                same_position = False
+
+            if same_position:
+                return
+
+            return
+
+    observations.append(observation)
+
+    observations.sort(
+        key=lambda item: parse_time(item["timestamp"])
+        or datetime.min.replace(tzinfo=timezone.utc)
+    )
+
+    tracks[identifier] = observations[-MAX_HISTORY:]
+
+
+def distance_bearing(a, b):
+    """Restituisce distanza in km e direzione in gradi."""
+    lat1 = math.radians(a["lat"])
+    lat2 = math.radians(b["lat"])
+    dlat = lat2 - lat1
+    dlon = math.radians(b["lon"] - a["lon"])
+
+    hav = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2)
+        * math.sin(dlon / 2) ** 2
+    )
+
+    hav = max(0.0, min(1.0, hav))
+    distance = 6371.0088 * 2 * math.asin(math.sqrt(hav))
+
+    y = math.sin(dlon) * math.cos(lat2)
+    x = (
+        math.cos(lat1) * math.sin(lat2)
+        - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    )
+
+    bearing = (math.degrees(math.atan2(y, x)) + 360) % 360
+
+    return distance, bearing
+
+
+def project_position(previous, latest, hours):
+    """
+    Estrapola il moto osservato con velocità angolare locale.
+    È una stima lineare, non una previsione meteorologica completa.
+    """
+    t0 = parse_time(previous["timestamp"])
+    t1 = parse_time(latest["timestamp"])
+
+    if t0 is None or t1 is None:
         return None
 
-    lat = raw_cell.get("lat")
-    lon = raw_cell.get("lon")
+    elapsed_seconds = (t1 - t0).total_seconds()
+
+    if elapsed_seconds < MIN_TIME_DELTA_SECONDS:
+        return None
+
+    distance_km, bearing = distance_bearing(previous, latest)
+
+    speed_kmh = distance_km / (elapsed_seconds / 3600.0)
+
+    if not math.isfinite(speed_kmh) or speed_kmh > 250:
+        return None
+
+    future_distance = speed_kmh * hours
+
+    if not math.isfinite(future_distance):
+        return None
+
+    angular_distance = future_distance / 6371.0088
+    bearing_rad = math.radians(bearing)
+
+    lat1 = math.radians(latest["lat"])
+    lon1 = math.radians(latest["lon"])
+
+    lat2 = math.asin(
+        math.sin(lat1) * math.cos(angular_distance)
+        + math.cos(lat1) * math.sin(angular_distance)
+        * math.cos(bearing_rad)
+    )
+
+    lon2 = lon1 + math.atan2(
+        math.sin(bearing_rad) * math.sin(angular_distance)
+        * math.cos(lat1),
+        math.cos(angular_distance)
+        - math.sin(lat1) * math.sin(lat2)
+    )
+
+    lat = math.degrees(lat2)
+    lon = (math.degrees(lon2) + 540) % 360 - 180
 
     if not valid_coordinate(lat, lon):
         return None
 
-    matrix = clean_matrix(raw_cell.get("grid_matrix"))
-    stats = matrix_statistics(matrix)
+    return [round(lat, 6), round(lon, 6)]
 
-    kinematics = raw_cell.get("kinematics")
-    if not isinstance(kinematics, dict):
-        kinematics = {}
 
-    severity = raw_cell.get("severity")
-    if not isinstance(severity, dict):
-        severity = {}
+def build_track(identifier, history):
+    observations = history["tracks"].get(identifier, [])
 
-    vectors = raw_cell.get("vectors")
-    if not isinstance(vectors, dict):
-        vectors = {}
+    if not isinstance(observations, list) or len(observations) < 2:
+        return {
+            "real_vector": None,
+            "forecast_3h": None,
+            "forecast_6h": None,
+            "observation_count": len(observations)
+            if isinstance(observations, list) else 0,
+            "forecast_method": "unavailable_insufficient_history",
+        }
 
-    real_vector = vectors.get("real")
-    predictive_vector = vectors.get("predictive_noaa")
+    previous, latest = observations[-2], observations[-1]
 
-    perimeter = perimeter_pixels(matrix, threshold=10.0)
+    t0 = parse_time(previous.get("timestamp"))
+    t1 = parse_time(latest.get("timestamp"))
+
+    if (
+        t0 is None
+        or t1 is None
+        or (t1 - t0).total_seconds() < MIN_TIME_DELTA_SECONDS
+    ):
+        return {
+            "real_vector": None,
+            "forecast_3h": None,
+            "forecast_6h": None,
+            "observation_count": len(observations),
+            "forecast_method": "unavailable_invalid_timestamps",
+        }
+
+    start = [float(previous["lat"]), float(previous["lon"])]
+    end = [float(latest["lat"]), float(latest["lon"])]
+
+    p3 = project_position(previous, latest, 3)
+    p6 = project_position(previous, latest, 6)
 
     return {
-        "id": str(raw_cell.get("id", f"cell-{index + 1}")),
-        "lat": float(lat),
-        "lon": float(lon),
-        "max_dbz": (
-            float(raw_cell["max_dbz"])
-            if finite_number(raw_cell.get("max_dbz"))
-            else stats.get("max_value")
+        "real_vector": [start, end],
+        "forecast_3h": [end, p3] if p3 else None,
+        "forecast_6h": [end, p6] if p6 else None,
+        "observation_count": len(observations),
+        "last_observation_utc": latest["timestamp"],
+        "forecast_method": "linear_motion_extrapolation",
+        "forecast_warning": (
+            "Estrapolazione cinematica; non include evoluzione, "
+            "dissipazione, nuove celle o interazione con altri sistemi."
         ),
-        "kinematics": {
-            "velocity_kmh": (
-                float(kinematics["velocity_kmh"])
-                if finite_number(kinematics.get("velocity_kmh"))
-                else None
-            ),
-            "direction_deg": (
-                float(kinematics["direction_deg"]) % 360.0
-                if finite_number(kinematics.get("direction_deg"))
-                else None
-            ),
-        },
-        "severity": {
-            "vil": (
-                float(severity["vil"])
-                if finite_number(severity.get("vil"))
-                else None
-            ),
-            "echo_top": (
-                float(severity["echo_top"])
-                if finite_number(severity.get("echo_top"))
-                else None
-            ),
-            "rain_mmh": (
-                float(severity["rain_mmh"])
-                if finite_number(severity.get("rain_mmh"))
-                else None
-            ),
-        },
-        "vectors": {
-            "real": validate_vector(real_vector),
-            "predictive_noaa": validate_vector(predictive_vector),
-        },
-        "grid_matrix": matrix,
-        "matrix_statistics": stats,
-        "perimeter": {
-            "threshold": 10.0,
-            "coordinate_system": "matrix_row_column",
-            "pixels": perimeter,
-            "pixel_count": len(perimeter),
-            "geographic_polygon_available": False,
-        },
-        "structure_analysis": classify_structure(stats, raw_cell),
     }
 
 
-def validate_vector(raw_vector: Any) -> list[list[float]] | None:
-    """
-    Valida le coppie [lat, lon] conservando l'ordine originale.
-    Non crea vettori sostitutivi e non modifica le previsioni.
-    """
-    if not isinstance(raw_vector, list):
-        return None
-
-    points = []
-
-    for point in raw_vector:
-        if not isinstance(point, (list, tuple)) or len(point) < 2:
-            continue
-
-        lat, lon = point[0], point[1]
-
-        if valid_coordinate(lat, lon):
-            points.append([float(lat), float(lon)])
-
-    return points if len(points) >= 2 else None
-
-
-def summarize(cells: list[dict[str, Any]]) -> dict[str, Any]:
-    peaks = [
-        cell["max_dbz"]
-        for cell in cells
-        if finite_number(cell.get("max_dbz"))
-    ]
-
-    threshold_counts = {
-        str(threshold): sum(
-            peak >= threshold for peak in peaks
+def process():
+    if not INPUT_FILE.exists():
+        raise FileNotFoundError(
+            f"Database assente: {INPUT_FILE}\n"
+            "Il motore non inventa dati per sostituirlo."
         )
-        for threshold in MATRIX_THRESHOLDS
-    }
 
-    return {
-        "cell_count": len(cells),
-        "cells_ge_30": threshold_counts["30.0"],
-        "cells_ge_35": threshold_counts["35.0"],
-        "cells_ge_40": threshold_counts["40.0"],
-        "cells_ge_50": threshold_counts["50.0"],
-        "strongest_cell_id": (
-            max(
-                cells,
-                key=lambda item: (
-                    item["max_dbz"]
-                    if finite_number(item.get("max_dbz"))
-                    else -1.0
-                ),
-            )["id"]
-            if cells
-            else None
-        ),
-        "max_reported_value": max(peaks) if peaks else None,
-        "threshold_counts": threshold_counts,
-    }
+    source = read_json(INPUT_FILE)
 
+    if not isinstance(source, dict):
+        raise ValueError("Il database deve contenere un oggetto JSON.")
 
-def build_output(
-    input_path: Path,
-    metadata: dict[str, Any],
-    raw_cells: list[Any],
-) -> dict[str, Any]:
-    processed = []
+    cells = source.get("cells")
 
-    for index, raw_cell in enumerate(raw_cells):
-        cell = process_cell(raw_cell, index)
-        if cell is not None:
-            processed.append(cell)
+    if not isinstance(cells, list):
+        raise ValueError(
+            "Il database JSON deve contenere un array 'cells'."
+        )
 
-    # Limite di sicurezza per dimensioni del JSON pubblicato.
-    # La selezione non altera il database originale.
-    processed.sort(
-        key=lambda item: (
-            item["max_dbz"]
-            if finite_number(item.get("max_dbz"))
-            else -1.0
-        ),
-        reverse=True,
+    timestamp = (
+        source.get("timestamp")
+        or source.get("generated_at")
+        or source.get("updated_at")
     )
 
-    total_processed = len(processed)
-    output_cells = processed[:MAX_CELLS_OUTPUT]
+    if not isinstance(timestamp, str) or parse_time(timestamp) is None:
+        raise ValueError(
+            "Timestamp del database assente o non valido. "
+            "Non posso registrare un'osservazione temporale affidabile."
+        )
 
-    source_timestamp = metadata.get("timestamp")
-    source_name = metadata.get("source", "non_specificata")
+    history = normalize_history(read_json(HISTORY_FILE, {}))
 
-    input_bytes = input_path.read_bytes()
-    input_sha256 = hashlib.sha256(input_bytes).hexdigest()
+    valid_cells = []
+    rejected = 0
 
-    return {
+    for original in cells:
+        if not isinstance(original, dict):
+            rejected += 1
+            continue
+
+        if not cell_id(original):
+            rejected += 1
+            continue
+
+        if not valid_coordinate(
+            original.get("lat"),
+            original.get("lon")
+        ):
+            rejected += 1
+            continue
+
+        cell = dict(original)
+
+        # Non sovrascrive i valori dichiarati dalla sorgente.
+        cell["matrix_stats"] = matrix_statistics(
+            cell.get("grid_matrix")
+        )
+
+        add_observation(history, cell, timestamp)
+
+        cell["track"] = build_track(cell["id"], history)
+
+        valid_cells.append(cell)
+
+    result = {
         "product": "I.R.I.D.E.",
-        "engine": "Integrated Radar Imaging & Detection Engine",
-        "schema_version": "1.0",
-        "generated_at_utc": utc_now(),
-        "source": {
-            "name": source_name,
-            "timestamp": source_timestamp,
-            "input_file": str(input_path.relative_to(ROOT)),
-            "sha256": input_sha256,
-            "radar_tile_path": metadata.get("radar_tile_path"),
-        },
-        "status": "ok" if output_cells else "no_valid_cells",
-        "data_integrity": {
-            "input_cell_count": len(raw_cells),
-            "valid_cell_count": total_processed,
-            "published_cell_count": len(output_cells),
-            "truncated": total_processed > MAX_CELLS_OUTPUT,
-            "synthetic_cells_created": 0,
-            "source_matrix_values_preserved": True,
-        },
-        "summary": summarize(output_cells),
-        "analysis": {
-            "perimeter_threshold": 10.0,
-            "matrix_thresholds": MATRIX_THRESHOLDS,
-            "matrix_units": (
-                "unità del dato sorgente; calibrazione da verificare"
-            ),
-            "geographic_pixel_resolution": None,
-            "satellite_crosscheck": "not_available_in_input",
-            "historical_motion_validation": "not_available_in_input",
-            "forecast_validation": "not_available_in_input",
-        },
-        "cells": output_cells,
-        "warnings": [
-            (
-                "I valori della matrice sono conservati come forniti; "
-                "non è verificata qui la loro equivalenza a dBZ calibrati."
-            ),
-            (
-                "Il perimetro è espresso in pixel della matrice, "
-                "non in un poligono geografico."
-            ),
-            (
-                "I vettori sono mantenuti dalla sorgente: non sono "
-                "una previsione meteorologica indipendentemente validata."
-            ),
-            (
-                "La classificazione mesoscala richiede dati spaziali "
-                "e temporali ulteriori per essere confermata."
-            ),
-        ],
+        "product_name": "Integrated Radar Imaging & Detection Engine",
+        "timestamp": timestamp,
+        "processed_at_utc": utc_now(),
+        "source_timestamp": timestamp,
+        "source_name": source.get("source_name", "unknown"),
+        "source_status": "processed_input",
+        "cell_count": len(valid_cells),
+        "rejected_cell_count": rejected,
+        "vector_policy": (
+            "Vettori calcolati solo da osservazioni storiche distinte. "
+            "Le previsioni sono estrapolazioni cinematiche."
+        ),
+        "cells": valid_cells,
     }
 
+    # Scrittura degli output e dello storico.
+    write_json(HISTORY_FILE, history)
+    write_json(OUTPUT_FILE, result)
+    write_json(PUBLIC_FILE, result)
 
-def main() -> int:
-    try:
-        input_path = find_input_file()
-        raw = load_json(input_path)
-        metadata, raw_cells = normalize_database(raw)
-
-        result = build_output(input_path, metadata, raw_cells)
-
-        save_json(OUTPUT_FILE, result)
-
-        print("I.R.I.D.E. engine completato.")
-        print(f"Input: {input_path.relative_to(ROOT)}")
-        print(f"Output: {OUTPUT_FILE.relative_to(ROOT)}")
-        print(f"Celle valide: {result['data_integrity']['valid_cell_count']}")
-        print(f"Celle pubblicate: {result['data_integrity']['published_cell_count']}")
-        print(f"Celle con valore >= 35: {result['summary']['cells_ge_35']}")
-        print(f"Stato: {result['status']}")
-
-        return 0 if result["status"] == "ok" else 1
-
-    except Exception as exc:
-        print(
-            f"ERRORE I.R.I.D.E.: {type(exc).__name__}: {exc}",
-            file=sys.stderr,
-        )
-        return 1
+    print("I.R.I.D.E. engine completato")
+    print(f"Celle valide: {len(valid_cells)}")
+    print(f"Celle scartate: {rejected}")
+    print(f"Input: {INPUT_FILE}")
+    print(f"Output: {OUTPUT_FILE}")
+    print(f"Output pubblico: {PUBLIC_FILE}")
+    print(f"Storico: {HISTORY_FILE}")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
-    
+    try:
+        process()
+    except Exception as exc:
+        print(f"ERRORE I.R.I.D.E.: {exc}", file=sys.stderr)
+        sys.exit(1)
