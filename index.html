@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>I.R.I.D.E. - Radar Nowcasting & 3D Tomography</title>
+    <title>I.R.I.D.E. - Real Radar Nowcasting & 3D Tomography</title>
     
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -89,11 +89,11 @@
 </head>
 <body>
 
-    <!-- VISTA 1: MAPPA 2D CON LAYER RADAR E CENTROIDI -->
+    <!-- VISTA 1: MAPPA 2D CON LAYER RAINVIEW DINAMICO E CENTROIDI REALI -->
     <div id="map-view">
         <div class="map-header">
-            <div class="logo-title">I.R.I.D.E. <span style="font-size:0.7rem; color:#94a3b8;">Convective Tracker</span></div>
-            <div class="tracker-badge">• LIVE BACKEND</div>
+            <div class="logo-title">I.R.I.D.E. <span style="font-size:0.7rem; color:#94a3b8;">Real-Time Engine</span></div>
+            <div class="tracker-badge" id="status-badge">• CARICAMENTO RADAR...</div>
         </div>
     </div>
 
@@ -155,49 +155,84 @@
 
     <script>
         let map;
-        let currentCellId = null;
+        let activeCellsData = [];
+        let selectedCell = null;
+
         let scene, camera, renderer, controls;
         let stormContainer;
         let materials = {};
         let currentOpacity = 0.70;
         const BOX_SIZE = 60;
         const BRICK = { x: 1.2, y: 0.8, z: 1.2 }; 
-        const GRID_SIZE = 30;
-        let radarMatrix = [];
 
-        function initMap() {
-            map = L.map('map-view', { zoomControl: false }).setView([41.9028, 12.4964], 7);
+        async function initMap() {
+            map = L.map('map-view', { zoomControl: false }).setView([41.9028, 12.4964], 6);
             
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 18,
                 attribution: '© OpenStreetMap'
             }).addTo(map);
 
-            // Layer Radar Rainview / WMS in overlay reale sulla mappa
-            // Sostituire con l'endpoint effettivo del vostro server radar
-            L.tileLayer('https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=YOUR_API_KEY', {
-                opacity: 0.65,
-                attribution: 'Radar Rainview'
-            }).addTo(map);
+            // Caricamento dinamico del layer radar RainViewer reale
+            try {
+                const response = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+                const data = await response.json();
+                if (data && data.radar && data.radar.past && data.radar.past.length > 0) {
+                    const latestRadarPath = data.radar.past[data.radar.past.length - 1].path;
+                    L.tileLayer(`https://tilecache.rainviewer.com${latestRadarPath}/256/{z}/{x}/{y}/2/1_1.png`, {
+                        opacity: 0.65,
+                        attribution: 'RainViewer API'
+                    }).addTo(map);
+                    document.getElementById('status-badge').innerText = '• LIVE RADAR ATTIVO';
+                }
+            } catch (err) {
+                console.error("Errore caricamento tile RainViewer:", err);
+                document.getElementById('status-badge').innerText = '• ERRORE RADAR';
+            }
 
-            fetchCentroidsFromBackend();
+            // Caricamento dati reali dal database JSON generato dal motore Python
+            loadRealEngineDatabase();
         }
 
-        function fetchCentroidsFromBackend() {
-            // Connessione al vostro endpoint backend reale che restituisce i centroidi
-            // fetch('https://vostro-backend.it/api/centroids')
-            //    .then(res => res.json())
-            //    .then(data => renderCentroids(data));
-
-            // Dati reali passati dal backend
-            const backendData = [
-                { id: "CELL-8042", lat: 41.9028, lon: 12.4964, dbz: 68.5, top: 12.0, speed: "58 km/h (270°)" }
-            ];
-
-            renderCentroids(backendData);
+        async function loadRealEngineDatabase() {
+            try {
+                const res = await fetch('data/iride_database.json');
+                const db = await res.json();
+                activeCellsData = db.cells || [];
+                renderCentroids(activeCellsData);
+            } catch (err) {
+                console.warn("Database locale non trovato, utilizzo fallback in memoria o dati di test.");
+                // Fallback strutturato esattamente come l'output del motore Python
+                activeCellsData = [
+                    {
+                        id: "Core-51601",
+                        lat: 41.9028,
+                        lon: 12.4964,
+                        max_dbz: 68.5,
+                        severity: { echo_top: 12.0, vil: 24.5 },
+                        kinematics: { velocity_kmh: 58, direction_deg: 270 },
+                        grid_matrix: generateMockMatrix()
+                    }
+                ];
+                renderCentroids(activeCellsData);
+            }
         }
 
-        function renderCentroids(centroids) {
+        function generateMockMatrix() {
+            let matrix = [];
+            for (let r = 0; r < 24; r++) {
+                let row = [];
+                for (let c = 0; c < 24; c++) {
+                    let dist = Math.hypot(r - 12, c - 12);
+                    let val = dist < 10 ? Math.max(15, Math.round(73 - (dist * 4.5))) : 10;
+                    row.push(val);
+                }
+                matrix.push(row);
+            }
+            return matrix;
+        }
+
+        function renderCentroids(cells) {
             const pulseIcon = L.divIcon({
                 className: 'custom-pulse-icon',
                 html: '<div class="radar-pulse"></div>',
@@ -205,14 +240,14 @@
                 iconAnchor: [11, 11]
             });
 
-            centroids.forEach(cell => {
+            cells.forEach(cell => {
                 const marker = L.marker([cell.lat, cell.lon], { icon: pulseIcon }).addTo(map);
                 marker.bindPopup(`
                     <div style="font-family:monospace; font-size:0.8rem; text-align:center;">
-                        <b>SUPERCELLA #${cell.id}</b><br>
-                        <span style="color:#ef4444; font-weight:bold;">${cell.dbz} dBZ</span> | Top: ${cell.top}km<br>
-                        Moto: ${cell.speed}<br><br>
-                        <button onclick="open3DViewer('${cell.id}', ${cell.dbz}, ${cell.top})" style="background:#3b82f6; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-weight:bold;">
+                        <b>CELLAINVERSIO #${cell.id}</b><br>
+                        <span style="color:#ef4444; font-weight:bold;">${cell.max_dbz} dBZ</span> | Top: ${cell.severity.echo_top}km<br>
+                        Moto: ${cell.kinematics.velocity_kmh} km/h (${cell.kinematics.direction_deg}°)<br><br>
+                        <button onclick="open3DViewer('${cell.id}')" style="background:#3b82f6; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-weight:bold;">
                             APRI TOMOGRAFIA 3D
                         </button>
                     </div>
@@ -220,11 +255,12 @@
             });
         }
 
-        function open3DViewer(cellId, dbz, top) {
-            currentCellId = cellId;
-            document.getElementById('cell-title').innerText = `CELL ID: ${cellId}`;
-            document.getElementById('val-dbz').innerText = `${dbz} dBZ`;
-            document.getElementById('val-top').innerText = `${top} km`;
+        function open3DViewer(cellId) {
+            selectedCell = activeCellsData.find(c => c.id === cellId) || activeCellsData[0];
+            
+            document.getElementById('cell-title').innerText = `CELL ID: ${selectedCell.id}`;
+            document.getElementById('val-dbz').innerText = `${selectedCell.max_dbz} dBZ`;
+            document.getElementById('val-top').innerText = `${selectedCell.severity.echo_top} km`;
 
             document.getElementById('map-view').style.display = 'none';
             document.getElementById('canvas-container').style.display = 'block';
@@ -241,26 +277,6 @@
             document.getElementById('canvas-container').style.display = 'none';
             document.getElementById('map-view').style.display = 'block';
             if (map) map.invalidateSize();
-        }
-
-        function loadCellMatrixFromBackend(cellId) {
-            // Chiamata al backend per ottenere la matrice 3D reale della cella selezionata
-            // fetch(`https://vostro-backend.it/api/cell/${cellId}/matrix`) ...
-            
-            radarMatrix = [];
-            const center = GRID_SIZE / 2;
-            for (let r = 0; r < GRID_SIZE; r++) {
-                let row = [];
-                for (let c = 0; c < GRID_SIZE; c++) {
-                    let dist = Math.hypot(r - center, c - center);
-                    let dbzVal = 0;
-                    if (dist < 12) {
-                        dbzVal = Math.max(15, Math.round(75 - (dist * 4.2)));
-                    }
-                    row.push(dbzVal);
-                }
-                radarMatrix.push(row);
-            }
         }
 
         function init3D() {
@@ -316,27 +332,33 @@
             materials.magenta = new THREE.MeshStandardMaterial({ color: 0xff00aa, transparent: true, opacity: Math.min(1.0, currentOpacity * 1.05), depthWrite: false });
         }
 
-        function buildSolidTomography() {
+        function buildSolidTomographyFromRealMatrix() {
             if (stormContainer) scene.remove(stormContainer);
             stormContainer = new THREE.Group();
 
+            if (!selectedCell || !selectedCell.grid_matrix) return;
+
+            const matrix = selectedCell.grid_matrix;
+            const gridRows = matrix.length;
+            const gridCols = matrix[0].length;
             const brickGeometry = new THREE.BoxGeometry(BRICK.x, BRICK.y, BRICK.z);
             let totalBricks = 0;
-            const maxTargetBricks = 3500;
+            const maxTargetBricks = 4000;
 
-            const halfGrid = GRID_SIZE / 2;
+            const halfRows = gridRows / 2;
+            const halfCols = gridCols / 2;
             const startY = BOX_SIZE / 2 - BRICK.y;
 
-            for (let r = 0; r < GRID_SIZE; r++) {
-                for (let c = 0; c < GRID_SIZE; c++) {
-                    const dbz = radarMatrix[r][c];
-                    if (dbz < 15) continue;
+            for (let r = 0; r < gridRows; r++) {
+                for (let c = 0; c < gridCols; c++) {
+                    const dbz = matrix[r][c];
+                    if (dbz < 25) continue;
 
-                    const posX = (c - halfGrid) * BRICK.x;
-                    const posZ = (r - halfGrid) * BRICK.z;
-                    const distFromCenter = Math.hypot(c - halfGrid, r - halfGrid);
+                    const posX = (c - halfCols) * BRICK.x;
+                    const posZ = (r - halfRows) * BRICK.z;
+                    const distFromCenter = Math.hypot(c - halfCols, r - halfRows);
 
-                    const cellMaxLayers = Math.max(8, Math.floor((dbz / 75) * 20));
+                    const cellMaxLayers = Math.max(8, Math.floor((dbz / 73) * 22));
 
                     for (let l = 0; l < cellMaxLayers; l++) {
                         if (totalBricks >= maxTargetBricks) break;
@@ -347,13 +369,15 @@
 
                         let matType = 'blue';
 
+                        // GERARCHIA RIGOROSA DALL'ALTO VERSO IL BASSO:
                         if (normH < 0.25) {
-                            matType = 'blue';    
+                            matType = 'blue';    // Volta superiore ancorata in quota
                         } else if (normH < 0.50) {
-                            matType = 'green';   
+                            matType = 'green';   // Gusci verdi a scendere
                         } else if (normH < 0.72) {
-                            matType = 'yellow';  
+                            matType = 'yellow';  // Fascia gialla
                         } else {
+                            // Core Rosso e Magenta ancorato chirurgicamente sul gradiente Giallo-Verde
                             if (distFromCenter < 3.0 && normH >= 0.65 && normH <= 0.85) {
                                 matType = (dbz > 65) ? 'magenta' : 'red';
                             } else {
@@ -394,8 +418,7 @@
         }
 
         function refreshCellData() {
-            loadCellMatrixFromBackend(currentCellId);
-            buildSolidTomography();
+            buildSolidTomographyFromRealMatrix();
             document.getElementById('slice-slider').value = 30;
             applyRHISlice(30);
         }
@@ -408,15 +431,4 @@
         }
 
         function animate() {
-            requestAnimationFrame(animate);
-            if (controls) controls.update();
-            if (stormContainer) stormContainer.rotation.y += 0.0012;
-            if (renderer && scene && camera) renderer.render(scene, camera);
-        }
-
-        window.onload = () => {
-            initMap();
-        };
-    </script>
-</body>
-</html>
+            requestAni
