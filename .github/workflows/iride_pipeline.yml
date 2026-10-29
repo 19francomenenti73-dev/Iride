@@ -1,5 +1,5 @@
 
-name: IRIDE Radar Acquisition and Engine
+name: IRIDE Radar Pipeline
 
 on:
   workflow_dispatch:
@@ -11,21 +11,20 @@ on:
       - '.github/workflows/iride.yml'
 
   schedule:
-    # Esecuzione ogni 20 minuti.
     - cron: '7,27,47 * * * *'
 
 permissions:
   contents: write
 
 concurrency:
-  group: iride-radar-engine
+  group: iride-radar-pipeline
   cancel-in-progress: false
 
 jobs:
-  acquire-process-publish:
-    name: Acquire, Process and Publish
+  radar-pipeline:
+    name: Acquire, Decode, Track and Publish
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
@@ -34,122 +33,144 @@ jobs:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
 
-      - name: Configure Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
 
-      - name: Install decoding dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install h5py numpy
+          python -m pip install numpy h5py pyproj
 
-      - name: Check acquisition module
+      - name: Verify required files
         run: |
           test -f backend/acquire_opera.py || {
             echo "::error::Manca backend/acquire_opera.py"
             exit 1
           }
 
-      - name: Acquire OPERA radar data
+          test -f backend/decode_opera.py || {
+            echo "::error::Manca backend/decode_opera.py"
+            exit 1
+          }
+
+          test -f backend/engine.py || {
+            echo "::error::Manca backend/engine.py"
+            exit 1
+          }
+
+          mkdir -p data/raw docs/data
+
+      - name: Acquire OPERA radar product
         id: acquire
-        continue-on-error: true
-        run: |
-          python backend/acquire_opera.py
+        run: python backend/acquire_opera.py
 
-      - name: Report acquisition status
-        if: always()
-        env:
-          ACQUIRE_OUTCOME: ${{ steps.acquire.outcome }}
-        run: |
-          echo "Acquisizione OPERA: ${ACQUIRE_OUTCOME}"
+      - name: Decode ODIM HDF5
+        id: decode
+        run: python backend/decode_opera.py
 
-          if [ "${ACQUIRE_OUTCOME}" != "success" ]; then
-            echo "::warning::Acquisizione non riuscita. Non considerare aggiornati i dati radar."
-          fi
-
-      - name: Check for usable input database
-        id: input
-        run: |
-          if [ -f data/iride_database.json ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Process existing database
-        if: steps.input.outputs.available == 'true'
-        run: |
-          python backend/engine.py
-
-      - name: Validate generated JSON
-        if: steps.input.outputs.available == 'true'
+      - name: Verify decoded database
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
 
-          files = [
+          path = Path("data/iride_database.json")
+
+          if not path.is_file():
+              raise SystemExit("Database decodificato assente")
+
+          with path.open(encoding="utf-8") as f:
+              data = json.load(f)
+
+          if not isinstance(data, dict):
+              raise SystemExit("Il database non è un oggetto JSON")
+
+          if not isinstance(data.get("cells"), list):
+              raise SystemExit("Il database non contiene cells")
+
+          timestamp = data.get("timestamp")
+          if not timestamp:
+              raise SystemExit("Timestamp del prodotto assente")
+
+          print("Database decodificato valido")
+          print("Timestamp:", timestamp)
+          print("Celle individuate:", len(data["cells"]))
+          PY
+
+      - name: Run tracking engine
+        id: engine
+        run: python backend/engine.py
+
+      - name: Validate public output
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          required = [
               Path("data/iride_output.json"),
-              Path("docs/data/iride.json"),
               Path("data/iride_history.json"),
+              Path("docs/data/iride.json"),
           ]
 
-          for path in files:
+          for path in required:
               if not path.is_file():
-                  raise SystemExit(f"Output mancante: {path}")
+                  raise SystemExit(f"File di output mancante: {path}")
 
               with path.open(encoding="utf-8") as f:
-                  data = json.load(f)
+                  payload = json.load(f)
 
-              if not isinstance(data, dict):
+              if not isinstance(payload, dict):
                   raise SystemExit(f"JSON non valido: {path}")
 
           with Path("docs/data/iride.json").open(encoding="utf-8") as f:
               public = json.load(f)
 
           if not isinstance(public.get("cells"), list):
-              raise SystemExit("Output pubblico privo dell'array cells")
+              raise SystemExit("Output pubblico privo di cells")
 
-          print("Validazione JSON completata.")
-          print("Celle pubblicate:", len(public["cells"]))
+          print("Output pubblico valido")
           print("Timestamp:", public.get("timestamp"))
+          print("Celle pubblicate:", len(public["cells"]))
           PY
 
       - name: Publish generated JSON
-        if: steps.input.outputs.available == 'true'
+        env:
+          BRANCH_NAME: ${{ github.ref_name }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add \
+            data/iride_database.json \
             data/iride_history.json \
             data/iride_output.json \
             docs/data/iride.json
 
           if git diff --cached --quiet; then
-            echo "Nessuna modifica ai JSON generati."
+            echo "Nessuna modifica da pubblicare."
             exit 0
           fi
 
-          git commit -m "Update IRIDE processed radar data"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git commit -m "Update IRIDE radar data"
+          git push origin "HEAD:${BRANCH_NAME}"
 
-      - name: Summary
+      - name: Pipeline summary
         if: always()
         env:
-          ACQUIRE_OUTCOME: ${{ steps.acquire.outcome }}
-          INPUT_AVAILABLE: ${{ steps.input.outputs.available }}
+          ACQUIRE_RESULT: ${{ steps.acquire.outcome }}
+          DECODE_RESULT: ${{ steps.decode.outcome }}
+          ENGINE_RESULT: ${{ steps.engine.outcome }}
         run: |
           {
-            echo "## I.R.I.D.E. — Report"
+            echo "## I.R.I.D.E. — Pipeline report"
             echo ""
-            echo "- Acquisizione OPERA: ${ACQUIRE_OUTCOME}"
-            echo "- Database preesistente: ${INPUT_AVAILABLE}"
-            echo "- Decodifica HDF5: non implementata in questo workflow"
-            echo "- Segmentazione radar DBZH: non implementata in questo workflow"
+            echo "- Acquisizione: ${ACQUIRE_RESULT}"
+            echo "- Decoder: ${DECODE_RESULT}"
+            echo "- Motore: ${ENGINE_RESULT}"
             echo ""
-            echo "Un workflow verde non certifica che i dati pubblicati siano aggiornati."
+            echo "Un'esecuzione riuscita non certifica da sola la qualità meteorologica dei risultati."
           } >> "$GITHUB_STEP_SUMMARY"
           
