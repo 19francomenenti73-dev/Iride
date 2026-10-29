@@ -3,176 +3,219 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>I.R.I.D.E. 3D - Solid Tomography Engine</title>
+    <title>I.R.I.D.E. - Integrated 2D/3D Radar Engine</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         body { background-color: #050811; color: #e2e8f0; font-family: monospace; overflow: hidden; height: 100vh; }
-        #canvas-container { width: 100vw; height: 100vh; display: block; }
         
-        /* BANNER TOP ANCORATO */
+        /* CONTENITORI VISTE */
+        #map-view, #canvas-container {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+        }
+        #map-view { z-index: 1; }
+        #canvas-container { z-index: 2; display: none; }
+
+        /* HEADER MAPPA 2D */
+        .map-header {
+            position: absolute; top: 0; left: 0; width: 100vw;
+            background: rgba(10, 15, 30, 0.9); backdrop-filter: blur(8px);
+            border-bottom: 1px solid rgba(59, 130, 246, 0.3);
+            padding: 10px 15px; z-index: 100;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .logo-title { font-size: 1rem; font-weight: bold; color: #38bdf8; letter-spacing: 1px; }
+        .tracker-badge { background: rgba(74, 222, 128, 0.15); border: 1px solid #4ade80; color: #4ade80; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; }
+
+        /* BANNER TOP 3D */
         .top-banner {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            background: rgba(10, 15, 30, 0.92);
-            backdrop-filter: blur(12px);
+            position: absolute; top: 0; left: 0; width: 100vw;
+            background: rgba(10, 15, 30, 0.92); backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(59, 130, 246, 0.4);
-            padding: 10px 16px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
-            z-index: 100;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
+            padding: 10px 16px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
+            z-index: 100; display: flex; flex-direction: column; gap: 8px;
         }
 
-        .banner-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        .banner-header { display: flex; justify-content: space-between; align-items: center; }
+        
+        .btn-back {
+            background: #ef4444; color: #fff; border: 1px solid #f87171;
+            padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 0.75rem; cursor: pointer;
         }
+        .btn-back:hover { background: #dc2626; }
 
-        .banner-title {
-            font-size: 0.95rem;
-            color: #60a5fa;
-            font-weight: bold;
-            letter-spacing: 0.5px;
-        }
-
-        .cell-badge {
-            background: rgba(59, 130, 246, 0.2);
-            border: 1px solid #3b82f6;
-            color: #38bdf8;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: bold;
-        }
-
-        .metrics-bar {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 6px;
-            font-size: 0.7rem;
-        }
-
-        .metric-box {
-            background: rgba(255, 255, 255, 0.04);
-            padding: 4px 6px;
-            border-radius: 4px;
-            border-left: 2px solid #38bdf8;
-        }
-
+        .metrics-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; font-size: 0.7rem; }
+        .metric-box { background: rgba(255, 255, 255, 0.04); padding: 4px 6px; border-radius: 4px; border-left: 2px solid #38bdf8; }
         .metric-label { color: #94a3b8; font-size: 0.6rem; }
         .metric-val { color: #fff; font-weight: bold; font-size: 0.85rem; }
 
-        .controls-row {
-            display: grid;
-            grid-template-columns: 1fr 1.2fr 0.8fr;
-            gap: 10px;
-            align-items: center;
-            font-size: 0.7rem;
-        }
-
+        .controls-row { display: grid; grid-template-columns: 1fr 1.2fr 0.8fr; gap: 10px; align-items: center; font-size: 0.7rem; }
         .ctrl-item { display: flex; flex-direction: column; gap: 2px; }
         .ctrl-item label { color: #94a3b8; font-size: 0.65rem; }
 
         .btn-group { display: flex; gap: 4px; }
-        button {
+        button.ctrl-btn {
             flex: 1; background: #1e293b; color: #38bdf8; border: 1px solid #38bdf8;
             padding: 4px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.7rem;
         }
-        button:hover { background: #38bdf8; color: #0f172a; }
+        button.ctrl-btn:hover { background: #38bdf8; color: #0f172a; }
 
         input[type=range] { width: 100%; accent-color: #38bdf8; }
 
-        .legend-inline {
-            display: flex;
-            justify-content: flex-end;
-            gap: 8px;
-            font-size: 0.6rem;
-            align-items: center;
-        }
+        .legend-inline { display: flex; justify-content: flex-end; gap: 8px; font-size: 0.6rem; align-items: center; }
         .legend-item { display: flex; align-items: center; gap: 3px; }
         .dot { width: 6px; height: 6px; border-radius: 50%; }
+
+        /* MARKER RADAR 2D CUSTOM */
+        .radar-pulse {
+            width: 20px; height: 20px; background: rgba(239, 68, 68, 0.8);
+            border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 15px #ef4444;
+            animation: pulse 1.5s infinite; cursor: pointer;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1.4); box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+            100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
 
         @media (max-width: 600px) {
             .metrics-bar { grid-template-columns: repeat(2, 1fr); }
             .controls-row { grid-template-columns: 1fr; gap: 6px; }
         }
     </style>
+
+    <!-- Leaflet & Three.js Libraries -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
 
-    <div id="canvas-container"></div>
-
-    <!-- BANNER ANCORATO IN ALTO -->
-    <div class="top-banner">
-        <div class="banner-header">
-            <div class="banner-title">I.R.I.D.E. 3D TOMOGRAPHY</div>
-            <div class="cell-badge" id="cell-id">CENTROIDE #CELL-8042</div>
+    <!-- VISTA MAPPA 2D -->
+    <div id="map-view">
+        <div class="map-header">
+            <div class="logo-title">I.R.I.D.E. <span style="font-size:0.7rem; color:#94a3b8;">Real-Time Convective Tracker</span></div>
+            <div class="tracker-badge">• TRACKER ATTIVO</div>
         </div>
+    </div>
 
-        <div class="metrics-bar">
-            <div class="metric-box">
-                <div class="metric-label">dBZ MAX</div>
-                <div class="metric-val" style="color:#ff00aa" id="val-dbz">68.5 dBZ</div>
+    <!-- VISTA VIEWER 3D -->
+    <div id="canvas-container">
+        <div class="top-banner">
+            <div class="banner-header">
+                <button class="btn-back" onclick="showMapView()">← INDIETRO MAPPA</button>
+                <div style="font-size:0.85rem; font-weight:bold; color:#60a5fa;" id="cell-id">CENTROIDE #CELL-8042 (ROMA)</div>
             </div>
-            <div class="metric-box">
-                <div class="metric-label">ECHO TOP</div>
-                <div class="metric-val" id="val-top">11.4 km</div>
-            </div>
-            <div class="metric-box">
-                <div class="metric-label">PARALLELEPIPEDI</div>
-                <div class="metric-val" id="voxel-count">0</div>
-            </div>
-            <div class="metric-box">
-                <div class="metric-label">OPACITÀ BASE</div>
-                <div class="metric-val" id="opacity-val">70%</div>
-            </div>
-        </div>
 
-        <div class="controls-row">
-            <div class="ctrl-item">
-                <label>Opacità Volumetrica (±10%)</label>
-                <div class="btn-group">
-                    <button onclick="adjustOpacity(-0.10)">- 10%</button>
-                    <button onclick="adjustOpacity(0.10)">+ 10%</button>
+            <div class="metrics-bar">
+                <div class="metric-box">
+                    <div class="metric-label">dBZ MAX</div>
+                    <div class="metric-val" style="color:#ff00aa">68.5 dBZ</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">ECHO TOP</div>
+                    <div class="metric-val">12.0 km</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">PARALLELEPIPEDI</div>
+                    <div class="metric-val" id="voxel-count">0</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">OPACITÀ BASE</div>
+                    <div class="metric-val" id="opacity-val">70%</div>
                 </div>
             </div>
 
-            <div class="ctrl-item">
-                <label>Sezione Tomografica RHI (Taglio XZ)</label>
-                <input type="range" id="slice-slider" min="-30" max="30" value="30" step="0.5">
+            <div class="controls-row">
+                <div class="ctrl-item">
+                    <label>Opacità Volumetric (±10%)</label>
+                    <div class="btn-group">
+                        <button class="ctrl-btn" onclick="adjustOpacity(-0.10)">- 10%</button>
+                        <button class="ctrl-btn" onclick="adjustOpacity(0.10)">+ 10%</button>
+                    </div>
+                </div>
+
+                <div class="ctrl-item">
+                    <label>Sezione Tomografica RHI (Taglio XZ)</label>
+                    <input type="range" id="slice-slider" min="-30" max="30" value="30" step="0.5">
+                </div>
+
+                <div class="ctrl-item">
+                    <button class="ctrl-btn" onclick="regenerateCell()" style="height: 28px; margin-top: 10px;">Aggiorna Radar</button>
+                </div>
             </div>
 
-            <div class="ctrl-item">
-                <button onclick="regenerateCell()" style="height: 28px; margin-top: 10px;">Aggiorna Radar</button>
+            <div class="legend-inline">
+                <div class="legend-item"><div class="dot" style="background:#0055ff"></div> Blu</div>
+                <div class="legend-item"><div class="dot" style="background:#00ff44"></div> Verde</div>
+                <div class="legend-item"><div class="dot" style="background:#ffcc00"></div> Giallo</div>
+                <div class="legend-item"><div class="dot" style="background:#ff2200"></div> Rosso</div>
+                <div class="legend-item"><div class="dot" style="background:#ff00aa"></div> Mag.</div>
             </div>
-        </div>
-
-        <div class="legend-inline">
-            <div class="legend-item"><div class="dot" style="background:#0055ff"></div> Blu</div>
-            <div class="legend-item"><div class="dot" style="background:#00ff44"></div> Verde</div>
-            <div class="legend-item"><div class="dot" style="background:#ffcc00"></div> Giallo</div>
-            <div class="legend-item"><div class="dot" style="background:#ff2200"></div> Rosso</div>
-            <div class="legend-item"><div class="dot" style="background:#ff00aa"></div> Mag.</div>
         </div>
     </div>
 
     <script>
+        /* GESTIONE MAPPA 2D (LEAFLET) */
+        let map;
+        function initMap() {
+            map = L.map('map-view', { zoomControl: false }).setView([41.9028, 12.4964], 7); // Roma
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 18,
+                attribution: '© OpenStreetMap'
+            }).addTo(map);
+
+            // Icona Custom per Centroide Radar
+            const pulseIcon = L.divIcon({
+                className: 'custom-pulse-icon',
+                html: '<div class="radar-pulse"></div>',
+                iconSize: [20, 20],
+                iconAnchor: [10, 10]
+            });
+
+            // Centroide su Roma con Popup Interattivo
+            const cellMarker = L.marker([41.9028, 12.4964], { icon: pulseIcon }).addTo(map);
+            cellMarker.bindPopup(`
+                <div style="font-family:monospace; font-size:0.8rem; text-align:center;">
+                    <b>SUPERCELLA #CELL-8042</b><br>
+                    <span style="color:#ef4444; font-weight:bold;">68.5 dBZ</span> | Echo Top: 12km<br><br>
+                    <button onclick="open3DViewer('CELL-8042')" style="background:#3b82f6; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-weight:bold;">
+                        APRI TOMOGRAFIA 3D
+                    </button>
+                </div>
+            `);
+        }
+
+        /* GESTIONE SWITCH VISTE */
+        function open3DViewer(cellId) {
+            document.getElementById('map-view').style.display = 'none';
+            document.getElementById('canvas-container').style.display = 'block';
+            if (!renderer) {
+                init3D();
+            } else {
+                onWindowResize();
+            }
+        }
+
+        function showMapView() {
+            document.getElementById('canvas-container').style.display = 'none';
+            document.getElementById('map-view').style.display = 'block';
+            if (map) map.invalidateSize();
+        }
+
+        /* MOTORE 3D TOMOGRAFICO (THREE.JS) */
         let scene, camera, renderer, controls;
         let stormContainer;
         let materials = {};
         let currentOpacity = 0.70;
         const BOX_SIZE = 60;
 
-        // Parallelepipedi per tomografia piena
         const BRICK = { x: 1.2, y: 0.8, z: 1.2 }; 
-
-        const GRID_SIZE = 32;
+        const GRID_SIZE = 30;
         let radarMatrix = [];
 
         function generateSyntheticRadarMatrix() {
@@ -183,16 +226,16 @@
                 for (let c = 0; c < GRID_SIZE; c++) {
                     let dist = Math.hypot(r - center, c - center);
                     let dbz = 0;
-                    if (dist < 11) {
-                        dbz = Math.max(0, 72 - (dist * 5.8) + (Math.random() * 4));
+                    if (dist < 12) {
+                        dbz = Math.max(10, Math.round(75 - (dist * 4.5)));
                     }
-                    row.push(Math.round(dbz));
+                    row.push(dbz);
                 }
                 radarMatrix.push(row);
             }
         }
 
-        function init() {
+        function init3D() {
             const container = document.getElementById('canvas-container');
 
             scene = new THREE.Scene();
@@ -222,5 +265,131 @@
 
             window.addEventListener('resize', onWindowResize);
             document.getElementById('slice-slider').addEventListener('input', (e) => {
-                applyRHISlice
-                
+                applyRHISlice(parseFloat(e.target.value));
+            });
+
+            animate();
+        }
+
+        function createBoundingBox() {
+            const wireGeo = new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE);
+            const wireMat = new THREE.MeshBasicMaterial({ color: 0x1e3a5f, wireframe: true, transparent: true, opacity: 0.12 });
+            scene.add(new THREE.Mesh(wireGeo, wireMat));
+
+            const grid = new THREE.GridHelper(BOX_SIZE, 12, 0x38bdf8, 0x1e293b);
+            grid.position.y = -BOX_SIZE / 2;
+            scene.add(grid);
+        }
+
+        function setupMaterials() {
+            materials.blue = new THREE.MeshStandardMaterial({ color: 0x0055ff, transparent: true, opacity: currentOpacity * 0.45, depthWrite: false });
+            materials.green = new THREE.MeshStandardMaterial({ color: 0x00ff44, transparent: true, opacity: currentOpacity * 0.65, depthWrite: false });
+            materials.yellow = new THREE.MeshStandardMaterial({ color: 0xffcc00, transparent: true, opacity: currentOpacity * 0.80, depthWrite: false });
+            materials.red = new THREE.MeshStandardMaterial({ color: 0xff2200, transparent: true, opacity: Math.min(1.0, currentOpacity * 0.95), depthWrite: false });
+            materials.magenta = new THREE.MeshStandardMaterial({ color: 0xff00aa, transparent: true, opacity: Math.min(1.0, currentOpacity * 1.05), depthWrite: false });
+        }
+
+        function buildSolidTomographyFromRaster() {
+            if (stormContainer) scene.remove(stormContainer);
+            stormContainer = new THREE.Group();
+
+            const brickGeometry = new THREE.BoxGeometry(BRICK.x, BRICK.y, BRICK.z);
+            let totalBricks = 0;
+            const maxTargetBricks = 3500;
+
+            const halfGrid = GRID_SIZE / 2;
+            const startY = BOX_SIZE / 2 - BRICK.y;
+
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    const dbz = radarMatrix[r][c];
+                    if (dbz < 15) continue;
+
+                    const posX = (c - halfGrid) * BRICK.x;
+                    const posZ = (r - halfGrid) * BRICK.z;
+                    const distFromCenter = Math.hypot(c - halfGrid, r - halfGrid);
+
+                    const cellMaxLayers = Math.max(8, Math.floor((dbz / 75) * 20));
+
+                    for (let l = 0; l < cellMaxLayers; l++) {
+                        if (totalBricks >= maxTargetBricks) break;
+
+                        const normH = l / cellMaxLayers; 
+                        const posY = startY - (l * (BRICK.y + 0.02));
+                        const tiltX = posX + (normH * 1.5);
+
+                        let matType = 'blue';
+
+                        if (normH < 0.25) {
+                            matType = 'blue';    
+                        } else if (normH < 0.50) {
+                            matType = 'green';   
+                        } else if (normH < 0.72) {
+                            matType = 'yellow';  
+                        } else {
+                            if (distFromCenter < 3.0 && normH >= 0.65 && normH <= 0.85) {
+                                matType = (dbz > 65) ? 'magenta' : 'red';
+                            } else {
+                                matType = 'yellow';
+                            }
+                        }
+
+                        const brickMesh = new THREE.Mesh(brickGeometry, materials[matType]);
+                        brickMesh.position.set(tiltX, posY, posZ);
+                        brickMesh.userData = { origX: tiltX, origY: posY, origZ: posZ };
+
+                        stormContainer.add(brickMesh);
+                        totalBricks++;
+                    }
+                }
+            }
+
+            scene.add(stormContainer);
+            document.getElementById('voxel-count').innerText = totalBricks;
+        }
+
+        function adjustOpacity(delta) {
+            currentOpacity = Math.max(0.1, Math.min(1.0, currentOpacity + delta));
+            document.getElementById('opacity-val').innerText = Math.round(currentOpacity * 100) + '%';
+
+            materials.blue.opacity = currentOpacity * 0.45;
+            materials.green.opacity = currentOpacity * 0.65;
+            materials.yellow.opacity = currentOpacity * 0.80;
+            materials.red.opacity = Math.min(1.0, currentOpacity * 0.95);
+            materials.magenta.opacity = Math.min(1.0, currentOpacity * 1.05);
+        }
+
+        function applyRHISlice(limitX) {
+            if (!stormContainer) return;
+            stormContainer.children.forEach(child => {
+                child.visible = (child.userData.origX <= limitX);
+            });
+        }
+
+        function regenerateCell() {
+            generateSyntheticRadarMatrix();
+            buildSolidTomographyFromRaster();
+            document.getElementById('slice-slider').value = 30;
+            applyRHISlice(30);
+        }
+
+        function onWindowResize() {
+            if (!renderer) return;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (controls) controls.update();
+            if (stormContainer) stormContainer.rotation.y += 0.0012;
+            if (renderer && scene && camera) renderer.render(scene, camera);
+        }
+
+        window.onload = () => {
+            initMap();
+        };
+    </script>
+</body>
+</html>
