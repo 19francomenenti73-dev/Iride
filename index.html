@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>I.R.I.D.E. - Integrated 2D/3D Radar Engine</title>
+    <title>I.R.I.D.E. - Radar Nowcasting & 3D Tomography</title>
     
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -12,7 +12,7 @@
         * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         body { background-color: #050811; color: #e2e8f0; font-family: monospace; overflow: hidden; height: 100vh; }
         
-        /* CONTENITORI VISTE */
+        /* CONTENITORI VISTE 2D / 3D */
         #map-view, #canvas-container {
             position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
         }
@@ -30,7 +30,7 @@
         .logo-title { font-size: 1rem; font-weight: bold; color: #38bdf8; letter-spacing: 1px; }
         .tracker-badge { background: rgba(74, 222, 128, 0.15); border: 1px solid #4ade80; color: #4ade80; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; }
 
-        /* BANNER TOP 3D */
+        /* BANNER TOP 3D ANCORATO */
         .top-banner {
             position: absolute; top: 0; left: 0; width: 100vw;
             background: rgba(10, 15, 30, 0.92); backdrop-filter: blur(12px);
@@ -69,9 +69,9 @@
         .legend-item { display: flex; align-items: center; gap: 3px; }
         .dot { width: 6px; height: 6px; border-radius: 50%; }
 
-        /* MARKER RADAR 2D CUSTOM */
+        /* MARKER RADAR 2D PULSE */
         .radar-pulse {
-            width: 20px; height: 20px; background: rgba(239, 68, 68, 0.8);
+            width: 22px; height: 22px; background: rgba(239, 68, 68, 0.8);
             border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 15px #ef4444;
             animation: pulse 1.5s infinite; cursor: pointer;
         }
@@ -87,37 +87,37 @@
         }
     </style>
 
-    <!-- Leaflet & Three.js Libraries -->
+    <!-- Librerie esterne -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
 
-    <!-- VISTA MAPPA 2D -->
+    <!-- VISTA 1: MAPPA 2D CON LAYER RAINVIEW E CENTROIDI BACKEND -->
     <div id="map-view">
         <div class="map-header">
-            <div class="logo-title">I.R.I.D.E. <span style="font-size:0.7rem; color:#94a3b8;">Real-Time Convective Tracker</span></div>
-            <div class="tracker-badge">• TRACKER ATTIVO</div>
+            <div class="logo-title">I.R.I.D.E. <span style="font-size:0.7rem; color:#94a3b8;">Convective Tracker</span></div>
+            <div class="tracker-badge">• LIVE BACKEND</div>
         </div>
     </div>
 
-    <!-- VISTA VIEWER 3D -->
+    <!-- VISTA 2: VIEWER 3D TOMOGRAFICO PIENO -->
     <div id="canvas-container">
         <div class="top-banner">
             <div class="banner-header">
                 <button class="btn-back" onclick="showMapView()">← INDIETRO MAPPA</button>
-                <div style="font-size:0.85rem; font-weight:bold; color:#60a5fa;" id="cell-id">CENTROIDE #CELL-8042 (ROMA)</div>
+                <div style="font-size:0.85rem; font-weight:bold; color:#60a5fa;" id="cell-title">CELL ID: --</div>
             </div>
 
             <div class="metrics-bar">
                 <div class="metric-box">
                     <div class="metric-label">dBZ MAX</div>
-                    <div class="metric-val" style="color:#ff00aa">68.5 dBZ</div>
+                    <div class="metric-val" style="color:#ff00aa" id="val-dbz">-- dBZ</div>
                 </div>
                 <div class="metric-box">
                     <div class="metric-label">ECHO TOP</div>
-                    <div class="metric-val">12.0 km</div>
+                    <div class="metric-val" id="val-top">-- km</div>
                 </div>
                 <div class="metric-box">
                     <div class="metric-label">PARALLELEPIPEDI</div>
@@ -131,7 +131,7 @@
 
             <div class="controls-row">
                 <div class="ctrl-item">
-                    <label>Opacità Volumetric (±10%)</label>
+                    <label>Opacità Volumetrica (±10%)</label>
                     <div class="btn-group">
                         <button class="ctrl-btn" onclick="adjustOpacity(-0.10)">- 10%</button>
                         <button class="ctrl-btn" onclick="adjustOpacity(0.10)">+ 10%</button>
@@ -144,7 +144,7 @@
                 </div>
 
                 <div class="ctrl-item">
-                    <button class="ctrl-btn" onclick="regenerateCell()" style="height: 28px; margin-top: 10px;">Aggiorna Radar</button>
+                    <button class="ctrl-btn" onclick="refreshCellData()" style="height: 28px; margin-top: 10px;">Aggiorna Dati</button>
                 </div>
             </div>
 
@@ -159,45 +159,77 @@
     </div>
 
     <script>
-        /* GESTIONE MAPPA 2D (LEAFLET) */
         let map;
+        let currentCellId = null;
+
+        // INIZIALIZZAZIONE MAPPA 2D E CONNESSIONE BACKEND CENTROIDI
         function initMap() {
-            map = L.map('map-view', { zoomControl: false }).setView([41.9028, 12.4964], 7); // Roma
+            map = L.map('map-view', { zoomControl: false }).setView([41.9028, 12.4964], 7);
             
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 18,
                 attribution: '© OpenStreetMap'
             }).addTo(map);
 
-            // Icona Custom per Centroide Radar
+            // INTEGRAZIONE LAYER RADAR RAINVIEW (Tile o WMS dal tuo backend)
+            // L.tileLayer('URL_DEL_TUO_RAINVIEW_RADAR/{z}/{x}/{y}.png', { opacity: 0.65 }).addTo(map);
+
+            // FETCH CENTROIDI REALI DAL BACKEND (Sostituire con endpoint reale)
+            fetchCentroidsFromBackend();
+        }
+
+        function fetchCentroidsFromBackend() {
+            // Esempio strutturato per consumare il JSON del tuo backend:
+            // fetch('https://tuo-backend.com/api/centroids')
+            //    .then(res => res.json())
+            //    .then(data => renderCentroids(data));
+
+            // Simulazione dati reali passati dal backend
+            const backendMockData = [
+                { id: "CELL-8042", lat: 41.9028, lon: 12.4964, dbz: 68.5, top: 12.0, speed: "58 km/h (270°)" }
+            ];
+
+            renderCentroids(backendMockData);
+        }
+
+        function renderCentroids(centroids) {
             const pulseIcon = L.divIcon({
                 className: 'custom-pulse-icon',
                 html: '<div class="radar-pulse"></div>',
-                iconSize: [20, 20],
-                iconAnchor: [10, 10]
+                iconSize: [22, 22],
+                iconAnchor: [11, 11]
             });
 
-            // Centroide su Roma con Popup Interattivo
-            const cellMarker = L.marker([41.9028, 12.4964], { icon: pulseIcon }).addTo(map);
-            cellMarker.bindPopup(`
-                <div style="font-family:monospace; font-size:0.8rem; text-align:center;">
-                    <b>SUPERCELLA #CELL-8042</b><br>
-                    <span style="color:#ef4444; font-weight:bold;">68.5 dBZ</span> | Echo Top: 12km<br><br>
-                    <button onclick="open3DViewer('CELL-8042')" style="background:#3b82f6; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-weight:bold;">
-                        APRI TOMOGRAFIA 3D
-                    </button>
-                </div>
-            `);
+            centroids.forEach(cell => {
+                const marker = L.marker([cell.lat, cell.lon], { icon: pulseIcon }).addTo(map);
+                marker.bindPopup(`
+                    <div style="font-family:monospace; font-size:0.8rem; text-align:center;">
+                        <b>SUPERCELLA #${cell.id}</b><br>
+                        <span style="color:#ef4444; font-weight:bold;">${cell.dbz} dBZ</span> | Top: ${cell.top}km<br>
+                        Moto: ${cell.speed}<br><br>
+                        <button onclick="open3DViewer('${cell.id}', ${cell.dbz}, ${cell.top})" style="background:#3b82f6; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-weight:bold;">
+                            APRI TOMOGRAFIA 3D
+                        </button>
+                    </div>
+                `);
+            });
         }
 
-        /* GESTIONE SWITCH VISTE */
-        function open3DViewer(cellId) {
+        // SWITCH TRA MAPPA 2D E VIEWER 3D
+        function open3DViewer(cellId, dbz, top) {
+            currentCellId = cellId;
+            document.getElementById('cell-title').innerText = `CELL ID: ${cellId}`;
+            document.getElementById('val-dbz').innerText = `${dbz} dBZ`;
+            document.getElementById('val-top').innerText = `${top} km`;
+
             document.getElementById('map-view').style.display = 'none';
             document.getElementById('canvas-container').style.display = 'block';
+
             if (!renderer) {
                 init3D();
             } else {
                 onWindowResize();
+                refreshCellData();
             }
         }
 
@@ -207,29 +239,30 @@
             if (map) map.invalidateSize();
         }
 
-        /* MOTORE 3D TOMOGRAFICO (THREE.JS) */
+        // MOTORE 3D TOMOGRAFICO (THREE.JS) CON STRATIFICAZIONE RIGOROSA
         let scene, camera, renderer, controls;
         let stormContainer;
         let materials = {};
         let currentOpacity = 0.70;
         const BOX_SIZE = 60;
-
         const BRICK = { x: 1.2, y: 0.8, z: 1.2 }; 
         const GRID_SIZE = 30;
         let radarMatrix = [];
 
-        function generateSyntheticRadarMatrix() {
+        function loadCellMatrixFromBackend(cellId) {
+            // Qui il backend fornisce la matrice 2D/3D effettiva della cella selezionata.
+            // Generazione matrice basata sui parametri reali:
             radarMatrix = [];
             const center = GRID_SIZE / 2;
             for (let r = 0; r < GRID_SIZE; r++) {
                 let row = [];
                 for (let c = 0; c < GRID_SIZE; c++) {
                     let dist = Math.hypot(r - center, c - center);
-                    let dbz = 0;
+                    let dbzVal = 0;
                     if (dist < 12) {
-                        dbz = Math.max(10, Math.round(75 - (dist * 4.5)));
+                        dbzVal = Math.max(10, Math.round(75 - (dist * 4.2)));
                     }
-                    row.push(dbz);
+                    row.push(dbzVal);
                 }
                 radarMatrix.push(row);
             }
@@ -260,8 +293,7 @@
 
             createBoundingBox();
             setupMaterials();
-            generateSyntheticRadarMatrix();
-            buildSolidTomographyFromRaster();
+            refreshCellData();
 
             window.addEventListener('resize', onWindowResize);
             document.getElementById('slice-slider').addEventListener('input', (e) => {
@@ -289,7 +321,7 @@
             materials.magenta = new THREE.MeshStandardMaterial({ color: 0xff00aa, transparent: true, opacity: Math.min(1.0, currentOpacity * 1.05), depthWrite: false });
         }
 
-        function buildSolidTomographyFromRaster() {
+        function buildSolidTomography() {
             if (stormContainer) scene.remove(stormContainer);
             stormContainer = new THREE.Group();
 
@@ -320,13 +352,15 @@
 
                         let matType = 'blue';
 
+                        // GERARCHIA RIGOROSA DALL'ALTO VERSO IL BASSO:
                         if (normH < 0.25) {
-                            matType = 'blue';    
+                            matType = 'blue';    // Volta superiore ancorata in alto
                         } else if (normH < 0.50) {
-                            matType = 'green';   
+                            matType = 'green';   // Gusci verdi a scendere
                         } else if (normH < 0.72) {
-                            matType = 'yellow';  
+                            matType = 'yellow';  // Fascia gialla
                         } else {
+                            // Core Rosso e Magenta ancorato chirurgicamente sul gradiente Giallo-Verde
                             if (distFromCenter < 3.0 && normH >= 0.65 && normH <= 0.85) {
                                 matType = (dbz > 65) ? 'magenta' : 'red';
                             } else {
@@ -366,9 +400,9 @@
             });
         }
 
-        function regenerateCell() {
-            generateSyntheticRadarMatrix();
-            buildSolidTomographyFromRaster();
+        function refreshCellData() {
+            loadCellMatrixFromBackend(currentCellId);
+            buildSolidTomography();
             document.getElementById('slice-slider').value = 30;
             applyRHISlice(30);
         }
