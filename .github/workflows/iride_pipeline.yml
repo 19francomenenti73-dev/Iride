@@ -1,12 +1,14 @@
 
-name: IRIDE Radar Pipeline
+name: IRIDE - Radar Acquisition and Processing
 
 on:
   workflow_dispatch:
 
   push:
     paths:
-      - 'backend/**'
+      - 'acquire_opera.py'
+      - 'decode_opera.py'
+      - 'engine.py'
       - 'data/iride_database.json'
       - '.github/workflows/iride.yml'
 
@@ -17,129 +19,125 @@ permissions:
   contents: write
 
 concurrency:
-  group: iride-radar-pipeline
+  group: iride-main
   cancel-in-progress: false
 
 jobs:
-  radar-pipeline:
-    name: Acquire, Decode, Track and Publish
+  iride:
+    name: Acquire, Decode and Process
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout repository
+      - name: Checkout main
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
-          fetch-depth: 0
+          ref: main
+
+      - name: Verify repository structure
+        shell: bash
+        run: |
+          set -e
+
+          echo "Repository root:"
+          pwd
+
+          echo "Checking required files..."
+
+          test -f acquire_opera.py || {
+            echo "::error::Manca acquire_opera.py nella radice di main"
+            exit 1
+          }
+
+          test -f decode_opera.py || {
+            echo "::error::Manca decode_opera.py nella radice di main"
+            exit 1
+          }
+
+          test -f engine.py || {
+            echo "::error::Manca engine.py nella radice di main"
+            exit 1
+          }
+
+          echo "File Python trovati."
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install processing dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install numpy h5py pyproj
 
-      - name: Verify required files
+      - name: Create required directories
         run: |
-          test -f backend/acquire_opera.py || {
-            echo "::error::Manca backend/acquire_opera.py"
-            exit 1
-          }
+          mkdir -p data
+          mkdir -p data/raw
+          mkdir -p docs/data
 
-          test -f backend/decode_opera.py || {
-            echo "::error::Manca backend/decode_opera.py"
-            exit 1
-          }
+      - name: Acquire OPERA radar data
+        run: python -u acquire_opera.py
 
-          test -f backend/engine.py || {
-            echo "::error::Manca backend/engine.py"
-            exit 1
-          }
+      - name: Decode radar data
+        run: python -u decode_opera.py
 
-          mkdir -p data/raw docs/data
+      - name: Process observations and calculate vectors
+        run: python -u engine.py
 
-      - name: Acquire OPERA radar product
-        id: acquire
-        run: python backend/acquire_opera.py
-
-      - name: Decode ODIM HDF5
-        id: decode
-        run: python backend/decode_opera.py
-
-      - name: Verify decoded database
+      - name: Validate generated data
+        shell: bash
         run: |
+          set -e
+
+          echo "Checking generated files..."
+
+          test -s data/iride_database.json || {
+            echo "::error::Manca data/iride_database.json o il file è vuoto"
+            exit 1
+          }
+
+          test -s data/iride_history.json || {
+            echo "::error::Manca data/iride_history.json o il file è vuoto"
+            exit 1
+          }
+
+          test -s data/iride_output.json || {
+            echo "::error::Manca data/iride_output.json o il file è vuoto"
+            exit 1
+          }
+
+          test -s docs/data/iride.json || {
+            echo "::error::Manca docs/data/iride.json o il file è vuoto"
+            exit 1
+          }
+
           python - <<'PY'
           import json
           from pathlib import Path
 
-          path = Path("data/iride_database.json")
-
-          if not path.is_file():
-              raise SystemExit("Database decodificato assente")
-
-          with path.open(encoding="utf-8") as f:
-              data = json.load(f)
-
-          if not isinstance(data, dict):
-              raise SystemExit("Il database non è un oggetto JSON")
-
-          if not isinstance(data.get("cells"), list):
-              raise SystemExit("Il database non contiene cells")
-
-          timestamp = data.get("timestamp")
-          if not timestamp:
-              raise SystemExit("Timestamp del prodotto assente")
-
-          print("Database decodificato valido")
-          print("Timestamp:", timestamp)
-          print("Celle individuate:", len(data["cells"]))
-          PY
-
-      - name: Run tracking engine
-        id: engine
-        run: python backend/engine.py
-
-      - name: Validate public output
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          required = [
-              Path("data/iride_output.json"),
+          files = [
+              Path("data/iride_database.json"),
               Path("data/iride_history.json"),
+              Path("data/iride_output.json"),
               Path("docs/data/iride.json"),
           ]
 
-          for path in required:
-              if not path.is_file():
-                  raise SystemExit(f"File di output mancante: {path}")
+          for path in files:
+              with path.open("r", encoding="utf-8") as f:
+                  json.load(f)
+              print(f"JSON valido: {path}")
 
-              with path.open(encoding="utf-8") as f:
-                  payload = json.load(f)
-
-              if not isinstance(payload, dict):
-                  raise SystemExit(f"JSON non valido: {path}")
-
-          with Path("docs/data/iride.json").open(encoding="utf-8") as f:
-              public = json.load(f)
-
-          if not isinstance(public.get("cells"), list):
-              raise SystemExit("Output pubblico privo di cells")
-
-          print("Output pubblico valido")
-          print("Timestamp:", public.get("timestamp"))
-          print("Celle pubblicate:", len(public["cells"]))
+          print("Controllo JSON completato.")
           PY
 
-      - name: Publish generated JSON
-        env:
-          BRANCH_NAME: ${{ github.ref_name }}
+      - name: Commit updated data
+        shell: bash
         run: |
+          set -e
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -150,27 +148,36 @@ jobs:
             docs/data/iride.json
 
           if git diff --cached --quiet; then
-            echo "Nessuna modifica da pubblicare."
-            exit 0
+            echo "Nessuna variazione nei dati: commit non necessario."
+          else
+            git commit -m "Update IRIDE radar observations"
+            git push origin HEAD:main
           fi
 
-          git commit -m "Update IRIDE radar data"
-          git push origin "HEAD:${BRANCH_NAME}"
-
-      - name: Pipeline summary
+      - name: Workflow summary
         if: always()
-        env:
-          ACQUIRE_RESULT: ${{ steps.acquire.outcome }}
-          DECODE_RESULT: ${{ steps.decode.outcome }}
-          ENGINE_RESULT: ${{ steps.engine.outcome }}
+        shell: bash
         run: |
           {
-            echo "## I.R.I.D.E. — Pipeline report"
+            echo "## IRIDE - Execution summary"
             echo ""
-            echo "- Acquisizione: ${ACQUIRE_RESULT}"
-            echo "- Decoder: ${DECODE_RESULT}"
-            echo "- Motore: ${ENGINE_RESULT}"
+            echo "- Branch: main"
+            echo "- Acquisition script: acquire_opera.py"
+            echo "- Decoder script: decode_opera.py"
+            echo "- Processing engine: engine.py"
             echo ""
-            echo "Un'esecuzione riuscita non certifica da sola la qualità meteorologica dei risultati."
+            echo "### Generated files"
+            for file in \
+              data/iride_database.json \
+              data/iride_history.json \
+              data/iride_output.json \
+              docs/data/iride.json
+            do
+              if test -s "$file"; then
+                echo "- OK: $file"
+              else
+                echo "- MISSING OR EMPTY: $file"
+              fi
+            done
           } >> "$GITHUB_STEP_SUMMARY"
           
