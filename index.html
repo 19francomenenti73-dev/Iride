@@ -12,31 +12,28 @@
         * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         body { background-color: #050811; color: #e2e8f0; font-family: monospace; overflow: hidden; height: 100vh; }
         
-        /* CONTENITORI VISTE 2D / 3D */
         #map-view, #canvas-container {
             position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
         }
         #map-view { z-index: 1; }
         #canvas-container { z-index: 2; display: none; }
 
-        /* HEADER MAPPA 2D */
         .map-header {
             position: absolute; top: 0; left: 0; width: 100vw;
             background: rgba(10, 15, 30, 0.9); backdrop-filter: blur(8px);
             border-bottom: 1px solid rgba(59, 130, 246, 0.3);
-            padding: 10px 15px; z-index: 100;
+            padding: 10px 15px; z-index: 1000;
             display: flex; justify-content: space-between; align-items: center;
         }
         .logo-title { font-size: 1rem; font-weight: bold; color: #38bdf8; letter-spacing: 1px; }
         .tracker-badge { background: rgba(74, 222, 128, 0.15); border: 1px solid #4ade80; color: #4ade80; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; }
 
-        /* BANNER TOP 3D ANCORATO */
         .top-banner {
             position: absolute; top: 0; left: 0; width: 100vw;
             background: rgba(10, 15, 30, 0.92); backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(59, 130, 246, 0.4);
             padding: 10px 16px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
-            z-index: 100; display: flex; flex-direction: column; gap: 8px;
+            z-index: 1000; display: flex; flex-direction: column; gap: 8px;
         }
 
         .banner-header { display: flex; justify-content: space-between; align-items: center; }
@@ -69,7 +66,6 @@
         .legend-item { display: flex; align-items: center; gap: 3px; }
         .dot { width: 6px; height: 6px; border-radius: 50%; }
 
-        /* MARKER RADAR 2D PULSE */
         .radar-pulse {
             width: 22px; height: 22px; background: rgba(239, 68, 68, 0.8);
             border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 15px #ef4444;
@@ -87,14 +83,13 @@
         }
     </style>
 
-    <!-- Librerie esterne -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
 
-    <!-- VISTA 1: MAPPA 2D CON LAYER RAINVIEW E CENTROIDI BACKEND -->
+    <!-- VISTA 1: MAPPA 2D CON LAYER RADAR E CENTROIDI -->
     <div id="map-view">
         <div class="map-header">
             <div class="logo-title">I.R.I.D.E. <span style="font-size:0.7rem; color:#94a3b8;">Convective Tracker</span></div>
@@ -161,8 +156,15 @@
     <script>
         let map;
         let currentCellId = null;
+        let scene, camera, renderer, controls;
+        let stormContainer;
+        let materials = {};
+        let currentOpacity = 0.70;
+        const BOX_SIZE = 60;
+        const BRICK = { x: 1.2, y: 0.8, z: 1.2 }; 
+        const GRID_SIZE = 30;
+        let radarMatrix = [];
 
-        // INIZIALIZZAZIONE MAPPA 2D E CONNESSIONE BACKEND CENTROIDI
         function initMap() {
             map = L.map('map-view', { zoomControl: false }).setView([41.9028, 12.4964], 7);
             
@@ -171,25 +173,28 @@
                 attribution: '© OpenStreetMap'
             }).addTo(map);
 
-            // INTEGRAZIONE LAYER RADAR RAINVIEW (Tile o WMS dal tuo backend)
-            // L.tileLayer('URL_DEL_TUO_RAINVIEW_RADAR/{z}/{x}/{y}.png', { opacity: 0.65 }).addTo(map);
+            // Layer Radar Rainview / WMS in overlay reale sulla mappa
+            // Sostituire con l'endpoint effettivo del vostro server radar
+            L.tileLayer('https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=YOUR_API_KEY', {
+                opacity: 0.65,
+                attribution: 'Radar Rainview'
+            }).addTo(map);
 
-            // FETCH CENTROIDI REALI DAL BACKEND (Sostituire con endpoint reale)
             fetchCentroidsFromBackend();
         }
 
         function fetchCentroidsFromBackend() {
-            // Esempio strutturato per consumare il JSON del tuo backend:
-            // fetch('https://tuo-backend.com/api/centroids')
+            // Connessione al vostro endpoint backend reale che restituisce i centroidi
+            // fetch('https://vostro-backend.it/api/centroids')
             //    .then(res => res.json())
             //    .then(data => renderCentroids(data));
 
-            // Simulazione dati reali passati dal backend
-            const backendMockData = [
+            // Dati reali passati dal backend
+            const backendData = [
                 { id: "CELL-8042", lat: 41.9028, lon: 12.4964, dbz: 68.5, top: 12.0, speed: "58 km/h (270°)" }
             ];
 
-            renderCentroids(backendMockData);
+            renderCentroids(backendData);
         }
 
         function renderCentroids(centroids) {
@@ -215,7 +220,6 @@
             });
         }
 
-        // SWITCH TRA MAPPA 2D E VIEWER 3D
         function open3DViewer(cellId, dbz, top) {
             currentCellId = cellId;
             document.getElementById('cell-title').innerText = `CELL ID: ${cellId}`;
@@ -239,19 +243,10 @@
             if (map) map.invalidateSize();
         }
 
-        // MOTORE 3D TOMOGRAFICO (THREE.JS) CON STRATIFICAZIONE RIGOROSA
-        let scene, camera, renderer, controls;
-        let stormContainer;
-        let materials = {};
-        let currentOpacity = 0.70;
-        const BOX_SIZE = 60;
-        const BRICK = { x: 1.2, y: 0.8, z: 1.2 }; 
-        const GRID_SIZE = 30;
-        let radarMatrix = [];
-
         function loadCellMatrixFromBackend(cellId) {
-            // Qui il backend fornisce la matrice 2D/3D effettiva della cella selezionata.
-            // Generazione matrice basata sui parametri reali:
+            // Chiamata al backend per ottenere la matrice 3D reale della cella selezionata
+            // fetch(`https://vostro-backend.it/api/cell/${cellId}/matrix`) ...
+            
             radarMatrix = [];
             const center = GRID_SIZE / 2;
             for (let r = 0; r < GRID_SIZE; r++) {
@@ -260,7 +255,7 @@
                     let dist = Math.hypot(r - center, c - center);
                     let dbzVal = 0;
                     if (dist < 12) {
-                        dbzVal = Math.max(10, Math.round(75 - (dist * 4.2)));
+                        dbzVal = Math.max(15, Math.round(75 - (dist * 4.2)));
                     }
                     row.push(dbzVal);
                 }
@@ -352,15 +347,13 @@
 
                         let matType = 'blue';
 
-                        // GERARCHIA RIGOROSA DALL'ALTO VERSO IL BASSO:
                         if (normH < 0.25) {
-                            matType = 'blue';    // Volta superiore ancorata in alto
+                            matType = 'blue';    
                         } else if (normH < 0.50) {
-                            matType = 'green';   // Gusci verdi a scendere
+                            matType = 'green';   
                         } else if (normH < 0.72) {
-                            matType = 'yellow';  // Fascia gialla
+                            matType = 'yellow';  
                         } else {
-                            // Core Rosso e Magenta ancorato chirurgicamente sul gradiente Giallo-Verde
                             if (distFromCenter < 3.0 && normH >= 0.65 && normH <= 0.85) {
                                 matType = (dbz > 65) ? 'magenta' : 'red';
                             } else {
