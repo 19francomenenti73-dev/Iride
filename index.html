@@ -325,9 +325,9 @@ Math.min(2.5,zoom*(e.deltaY>0?.92:1.08))
 draw();
 
 },{passive:false});/* =====================================================
-   RENDERER 3D MORFOLOGICO A PARALLELEPIPEDI
-   Usa esclusivamente la matrice DBZH della cella.
-   Non modifica dati, centroidi, selezione o vettori.
+   RENDERER 3D MORFOLOGICO A FUNGO
+   Gambo convettivo + cappello espanso.
+   Base DBZH originale conservata.
    ===================================================== */
 
 function draw(){
@@ -365,7 +365,7 @@ return;
 
 const mode=$('mode').value;
 
-/* Lettura e normalizzazione della matrice */
+/* Lettura della matrice DBZH */
 
 const values=raw.map(row=>
 Array.from({length:cols},(_,x)=>{
@@ -395,47 +395,54 @@ return;
 }
 
 /*
-La quota è una trasformazione grafica:
-DBZH debole = più livelli;
-DBZH intenso = meno livelli.
-Non rappresenta l'altezza fisica della nube.
+MODELLO MORFOLOGICO:
+
+- DBZH >=35: gambo convettivo ascendente.
+- DBZH 30-34: parte alta del gambo e transizione.
+- DBZH 25-29: espansione verde del cappello.
+- DBZH 15-24: cappello ciano più ampio.
+- DBZH 8-14: margine azzurro diffuso.
+
+La forma è pseudo-volume, non quota misurata.
 */
 
-const MIN_DBZ=8;
-const MAX_DBZ=Math.max(55,observedMax);
+const MAX_HEIGHT=15;
+const layerStep=.47;
+const block=.82;
+const half=block*.5;
 
-function layerCount(v){
+const levels=values.map(row=>
+row.map(v=>{
 
 if(v<=0)return 0;
 
-const n=Math.max(0,Math.min(1,
-(v-MIN_DBZ)/(MAX_DBZ-MIN_DBZ)
-));
+if(v>=45)return 15;
+if(v>=40)return 14;
+if(v>=35)return 12;
+if(v>=30)return 10;
+if(v>=25)return 9;
+if(v>=15)return 8;
+return 6;
 
-/* Da 6 livelli per eco debole a 2 per nucleo intenso */
-return Math.round(6-n*4);
-}
-
-/* Numero di livelli per ogni colonna */
-
-const levels=values.map(row=>
-row.map(v=>layerCount(v))
+})
 );
 
-/* Dimensione e posizione della scena */
+/*
+Ogni pixel conserva la propria posizione.
+La quota dipende dalla classe DBZH.
+Il cappello si espande attraverso gli echi deboli
+effettivamente presenti nella matrice.
+*/
 
 const scale=Math.min(
 w/(cols+rows*.72),
-h/(rows*.85+cols*.32)
-)*zoom*.94;
+h/(rows*.85+MAX_HEIGHT*.75)
+)*zoom*.91;
 
 const ox=w*.5;
-const oy=h*.69;
+const oy=h*.79;
 
-/*
-Proiezione pseudo-isometrica.
-La componente z è separata dal piano radar.
-*/
+/* Proiezione tridimensionale */
 
 function project(x,y,z){
 
@@ -452,35 +459,35 @@ return{
 x:ox+(A-C*.48)*scale,
 y:oy+(A*.22+C*.7-D)*scale
 };
+
 }
 
-/*
-Ondulazione deterministica:
-varia nello spazio e segue la matrice.
-Non sposta la cella sulla mappa e non altera i vettori.
-*/
+/* Ondulazione spaziale del volume */
 
 function wave(x,y,k){
 
 return(
-Math.sin(x*.43+y*.19+k*.31)*.105+
-Math.cos(y*.37-x*.16+k*.22)*.075
+Math.sin(x*.43+y*.19+k*.24)*.16+
+Math.cos(y*.37-x*.16+k*.18)*.12
 );
 }
 
-/* Colori e trasparenza in funzione del DBZH */
+/* Trasparenza */
 
 function alphaFor(v){
 
 if(mode==='holo'){
-return .36+Math.min(1,v/55)*.48;
+return .30+Math.min(1,v/55)*.48;
 }
 
-if(mode==='surface'){
-return .96;
-}
+if(mode==='surface')return .96;
 
-return .48+Math.min(1,v/55)*.48;
+if(v>=35)return .96;
+if(v>=30)return .88;
+if(v>=25)return .70;
+if(v>=15)return .52;
+return .38;
+
 }
 
 function shade(hex,factor){
@@ -493,13 +500,14 @@ const gg=Math.min(255,Math.round(((n>>8)&255)*factor));
 const bb=Math.min(255,Math.round((n&255)*factor));
 
 return `rgb(${rr},${gg},${bb})`;
+
 }
 
-/* Vertici dei parallelepipedi */
+/* Accumulo delle facce */
 
 const faces=[];
 
-function addFace(points,fill,alpha,depthOffset=0){
+function face(points,fill,alpha,depthOffset=0){
 
 const depth=
 points.reduce((sum,p)=>sum+p.y,0)/points.length+
@@ -511,24 +519,19 @@ fill,
 alpha,
 depth
 });
+
 }
-
-function face(points,fill,alpha,depthOffset=0){
-
-addFace(points,fill,alpha,depthOffset);
-}
-
-/* Dimensioni dei piccoli elementi */
-
-const block=.84;
-const half=block*.5;
-const layerStep=.43;
-const waveScale=.22;
 
 /*
-Costruzione delle colonne:
-ogni campione radar genera una colonna
-di piccoli parallelepipedi.
+PROFILO VERTICALE:
+
+Il gambo è costruito dai pixel intensi.
+Il cappello è costruito dagli echi deboli
+e medi della matrice, che si trovano
+a quote grafiche superiori.
+
+Le colonne sono continue dalla base:
+non vengono creati dischi sospesi.
 */
 
 for(let y=0;y<rows;y++){
@@ -543,24 +546,20 @@ if(v<=0||count<=0)continue;
 const colour=col(v);
 const alpha=alphaFor(v);
 
-const x0=x+(.5-half);
-const x1=x+(.5+half);
-const y0=y+(.5-half);
-const y1=y+(.5+half);
+const x0=x+.5-half;
+const x1=x+.5+half;
+const y0=y+.5-half;
+const y1=y+.5+half;
 
-/*
-La forma ondula anche in verticale.
-Ogni colonna mantiene la propria altezza,
-determinata dal valore DBZH locale.
-*/
+/* Altezza individuale della colonna */
 
 for(let k=0;k<count;k++){
 
 const z0=k*layerStep;
-const z1=z0+layerStep*.88;
+const z1=(k+1)*layerStep;
 
-const w0=wave(x,y,k)*waveScale;
-const w1=wave(x,y,k+1)*waveScale;
+const w0=wave(x,y,k)*.20;
+const w1=wave(x,y,k+1)*.20;
 
 const p000=project(x0,y0,z0+w0);
 const p100=project(x1,y0,z0+w0);
@@ -572,7 +571,7 @@ const p101=project(x1,y0,z1+w1);
 const p111=project(x1,y1,z1+w1);
 const p011=project(x0,y1,z1+w1);
 
-/* Faccia superiore: solo sul livello più alto */
+/* Faccia superiore */
 
 if(k===count-1){
 
@@ -584,32 +583,28 @@ alpha
 
 }
 
-/*
-Facce laterali esposte.
-Se una colonna vicina è più alta,
-la parete interna viene nascosta.
-*/
+/* Pareti laterali esposte */
 
 const neighbours=[
 {
 dx:0,dy:-1,
 points:[p000,p100,p101,p001],
-factor:.68
+factor:.70
 },
 {
 dx:1,dy:0,
 points:[p100,p110,p111,p101],
-factor:.52
+factor:.53
 },
 {
 dx:0,dy:1,
 points:[p010,p110,p111,p011],
-factor:.62
+factor:.64
 },
 {
 dx:-1,dy:0,
 points:[p000,p010,p011,p001],
-factor:.43
+factor:.44
 }
 ];
 
@@ -636,8 +631,9 @@ mode==='holo'?alpha*.72:alpha*.94
 
 }
 
-}/* Ordinamento per profondità:
-le facce posteriori vengono disegnate prima. */
+}
+
+/* Ordinamento per profondità */
 
 faces.sort((a,b)=>a.depth-b.depth);
 
@@ -645,6 +641,7 @@ for(const f of faces){
 
 ctx.globalAlpha=f.alpha;
 ctx.fillStyle=f.fill;
+
 ctx.strokeStyle=mode==='holo'?
 'rgba(170,225,255,.58)':
 'rgba(3,12,22,.55)';
@@ -674,9 +671,10 @@ if(mode==='holo'){
 ctx.stroke();
 }
 
-}
-
-/* Reticolo superiore: mantiene visibili i piccoli blocchi */
+ }/*
+RETICOLO DELLA SOMMITÀ:
+rende leggibili i singoli parallelepipedi.
+*/
 
 if(mode!=='surface'){
 
@@ -688,19 +686,19 @@ for(let y=0;y<rows;y++){
 
 for(let x=0;x<cols;x++){
 
-if(levels[y][x]<=0)continue;
-
-const v=values[y][x];
 const count=levels[y][x];
+
+if(count<=0)continue;
+
 const k=count-1;
 
-const z=k*layerStep+layerStep*.88+
-wave(x,y,k+1)*waveScale;
+const z=(k+1)*layerStep+
+wave(x,y,k+1)*.20;
 
-const x0=x+(.5-half);
-const x1=x+(.5+half);
-const y0=y+(.5-half);
-const y1=y+(.5+half);
+const x0=x+.5-half;
+const x1=x+.5+half;
+const y0=y+.5-half;
+const y1=y+.5+half;
 
 const p=[
 project(x0,y0,z),
@@ -725,7 +723,7 @@ ctx.stroke();
 
 }
 
-/* Informazioni tecniche della ricostruzione */
+/* Informazioni tecniche */
 
 ctx.globalAlpha=1;
 
@@ -743,18 +741,18 @@ ctx.fillStyle='#a9bfd3';
 ctx.font='11px system-ui';
 
 ctx.fillText(
-'Campioni attivi: '+occupied+
-' · livelli morfologici: 2–6',
+'Campioni DBZH: '+occupied+
+' · sviluppo verticale: '+MAX_HEIGHT+' livelli',
 12,38
 );
 
 ctx.fillText(
-'DBZH debole: struttura alta e diffusa · DBZH intenso: nuclei bassi',
+'Gambo: nuclei ≥35 dBZ · cappello: echi ≤29 dBZ',
 12,h-30
 );
 
 ctx.fillText(
-'Pseudo-volume da composito 2D · nessuna quota verticale misurata',
+'Pseudo-volume morfologico da composito DBZH 2D',
 12,h-14
 );
 
