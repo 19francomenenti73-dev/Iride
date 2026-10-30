@@ -1,138 +1,212 @@
 
-name: IRIDE - Radar Acquisition and Processing
+name: IRIDE - OPERA diagnostic
 
 on:
   workflow_dispatch:
-
   push:
+    branches:
+      - main
     paths:
-      - 'backend/**'
-      - 'data/iride_database.json'
-      - '.github/workflows/iride.yml'
-
+      - "backend/**"
+      - "data/iride_database.json"
+      - ".github/workflows/iride.yml"
   schedule:
-    - cron: '7,27,47 * * * *'
+    - cron: "7,27,47 * * * *"
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
-  group: iride-main
+  group: iride-opera
   cancel-in-progress: false
 
 jobs:
   iride:
-    name: Acquire, Decode and Process
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
-      - name: Checkout main
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: main
 
-      - name: Verify repository structure
-        shell: bash
-        run: |
-          set -e
-
-          echo "Repository root:"
-          pwd
-
-          echo "Checking required files..."
-
-          test -f backend/acquire_opera.py || {
-            echo "::error::Manca backend/acquire_opera.py"
-            exit 1
-          }
-
-          test -f backend/decode_opera.py || {
-            echo "::error::Manca backend/decode_opera.py"
-            exit 1
-          }
-
-          test -f backend/iride_engine.py || {
-            echo "::error::Manca backend/iride_engine.py"
-            exit 1
-          }
-
-          echo "Tutti e tre gli script sono presenti."
-
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install numpy h5py pyproj
 
-      - name: Create output directories
-        run: |
-          mkdir -p data/raw
-          mkdir -p docs/data
-
-      - name: Acquire OPERA radar data
-        run: python -u backend/acquire_opera.py
-
-      - name: Decode radar data
-        run: python -u backend/decode_opera.py
-
-      - name: Process observations
-        run: python -u backend/iride_engine.py
-
-      - name: Validate generated JSON
+      - name: Check required files
         shell: bash
         run: |
           set -e
-
-          for file in \
-            data/iride_database.json \
-            data/iride_history.json \
-            data/iride_output.json \
-            docs/data/iride.json
+          echo "Repository root: $GITHUB_WORKSPACE"
+          for f in \
+            backend/acquire_opera.py \
+            backend/decode_opera.py \
+            backend/iride_engine.py
           do
-            if [ ! -s "$file" ]; then
-              echo "::error::File mancante o vuoto: $file"
+            if [ ! -f "$f" ]; then
+              echo "::error::File mancante: $f"
               exit 1
             fi
-
-            python -m json.tool "$file" > /dev/null
-            echo "JSON valido: $file"
+            echo "OK: $f"
           done
 
-      - name: Commit updated data
-        shell: bash
+      - name: Create data directories
         run: |
-          set -e
+          mkdir -p data/raw data docs/data
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Acquire OPERA radar
+        run: |
+          python -u backend/acquire_opera.py
 
-          git add \
-            data/iride_database.json \
-            data/iride_history.json \
-            data/iride_output.json \
-            docs/data/iride.json
-
-          if git diff --cached --quiet; then
-            echo "Nessuna variazione nei dati."
-          else
-            git commit -m "Update IRIDE radar observations"
-            git push origin HEAD:main
-          fi
-
-      - name: Execution summary
+      - name: Inspect HDF5 structure
         if: always()
         shell: bash
         run: |
-          {
-            echo "## IRIDE execution"
-            echo ""
-            echo "Branch: main"
-            echo "Scripts directory: backend/"
-            echo "Engine: iride_engine.py"
-          } >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY'
+          import os
+          import glob
+          import h5py
+          import numpy as np
+
+          os.makedirs("data/raw", exist_ok=True)
+          report_path = "data/raw/hdf5_structure_report.txt"
+
+          def show_value(value):
+              if isinstance(value, bytes):
+                  return value.decode("utf-8", errors="replace")
+              if isinstance(value, np.ndarray):
+                  if value.size > 30:
+                      return f"array shape={value.shape}, dtype={value.dtype}"
+                  return repr(value.tolist())
+              if isinstance(value, np.generic):
+                  return repr(value.item())
+              return repr(value)
+
+          files = sorted(glob.glob("data/raw/*.h5"))
+
+          with open(report_path, "w", encoding="utf-8") as out:
+              out.write("IRIDE - OPERA HDF5 STRUCTURE REPORT\n")
+              out.write("=" * 60 + "\n\n")
+
+              if not files:
+                  out.write("NESSUN FILE HDF5 TROVATO IN data/raw/\n")
+              else:
+                  for filename in files:
+                      out.write(f"\nFILE: {filename}\n")
+                      out.write(f"SIZE: {os.path.getsize(filename)} bytes\n")
+                      out.write("-" * 60 + "\n")
+
+                      try:
+                          with h5py.File(filename, "r") as h5:
+                              out.write("\nROOT ATTRIBUTES:\n")
+                              for key, value in h5.attrs.items():
+                                  out.write(
+                                      f"  {key} = {show_value(value)}\n"
+                                  )
+
+                              def visitor(name, obj):
+                                  out.write(f"\nPATH: /{name}\n")
+
+                                  if isinstance(obj, h5py.Group):
+                                      out.write("TYPE: GROUP\n")
+                                  else:
+                                      out.write("TYPE: DATASET\n")
+                                      out.write(
+                                          f"SHAPE: {obj.shape}\n"
+                                      )
+                                      out.write(
+                                          f"DTYPE: {obj.dtype}\n"
+                                      )
+
+                                  if hasattr(obj, "attrs"):
+                                      for key, value in obj.attrs.items():
+                                          out.write(
+                                              f"  ATTR {key} = "
+                                              f"{show_value(value)}\n"
+                                          )
+
+                              h5.visititems(visitor)
+
+                              out.write("\n\nHDF5 OPEN: SUCCESS\n")
+
+                      except Exception as exc:
+                          out.write(
+                              f"\nHDF5 OPEN ERROR: "
+                              f"{type(exc).__name__}: {exc}\n"
+                          )
+
+          print("Rapporto diagnostico creato:", report_path)
+          with open(report_path, encoding="utf-8") as f:
+              print(f.read()[:12000])
+          PY
+
+      - name: Decode OPERA radar
+        run: |
+          python -u backend/decode_opera.py
+
+      - name: Run IRIDE engine
+        run: |
+          python -u backend/iride_engine.py
+
+      - name: Validate JSON outputs
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          required = [
+              Path("data/iride_database.json"),
+              Path("data/iride_history.json"),
+              Path("data/iride_output.json"),
+              Path("docs/data/iride.json"),
+          ]
+
+          for path in required:
+              if not path.is_file():
+                  raise SystemExit(f"Output mancante: {path}")
+
+              with path.open("r", encoding="utf-8") as f:
+                  json.load(f)
+
+              print(f"JSON valido: {path} ({path.stat().st_size} bytes)")
+          PY
+
+      - name: Upload OPERA diagnostic files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: IRIDE-OPERA-diagnostic
+          path: |
+            data/raw/*.h5
+            data/raw/opera_latest.json
+            data/raw/hdf5_structure_report.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Commit generated data
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add data/iride_database.json
+          git add data/iride_history.json
+          git add data/iride_output.json
+          git add docs/data/iride.json
+
+          if git diff --cached --quiet; then
+            echo "Nessun nuovo dato da salvare."
+          else
+            git commit -m "Update IRIDE radar data"
+            git push origin HEAD:main
+          fi
           
