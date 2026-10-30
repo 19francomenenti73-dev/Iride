@@ -52,8 +52,8 @@ jobs:
             exit 1
           }
 
-          test -f backend/engine.py || {
-            echo "::error::Manca backend/engine.py"
+          test -f backend/Iride_engine.py || {
+            echo "::error::Manca backend/Iride_engine.py"
             exit 1
           }
 
@@ -81,7 +81,7 @@ jobs:
         run: python -u backend/decode_opera.py
 
       - name: Process observations
-        run: python -u backend/engine.py
+        run: python -u backend/Iride_engine.py
 
       - name: Validate generated JSON
         shell: bash
@@ -126,8 +126,13 @@ jobs:
 
       - name: Execution summary
         if: always()
+        shell: bash
         run: |
-          echo "## IRIDE execution" >> "$GITHUB_STEP_SUMMARY"
-          echo "Scripts directory: backend/" >> "$GITHUB_STEP_SUMMARY"
-          echo "Branch: main" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## IRIDE execution"
+            echo ""
+            echo "Branch: main"
+            echo "Scripts directory: backend/"
+            echo "Engine: Iride_engine.py"
+          } >> "$GITHUB_STEP_SUMMARY"
           
