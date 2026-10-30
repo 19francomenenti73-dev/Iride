@@ -324,12 +324,10 @@ Math.min(2.5,zoom*(e.deltaY>0?.92:1.08))
 
 draw();
 
-},{passive:false});
-
-
-/* =====================================================
-   RENDERER 3D A SUPERFICIE CONTINUA
-   Non modifica dati, centroidi o vettori.
+},{passive:false});/* =====================================================
+   RENDERER 3D MORFOLOGICO A PARALLELEPIPEDI
+   Usa esclusivamente la matrice DBZH della cella.
+   Non modifica dati, centroidi, selezione o vettori.
    ===================================================== */
 
 function draw(){
@@ -340,44 +338,104 @@ const r=canvas.getBoundingClientRect();
 const w=r.width;
 const h=r.height;
 
+if(w<2||h<2)return;
+
 ctx.clearRect(0,0,w,h);
 
-ctx.fillStyle='#061321';
+const bg=ctx.createLinearGradient(0,0,0,h);
+bg.addColorStop(0,'#071a2c');
+bg.addColorStop(.55,'#061321');
+bg.addColorStop(1,'#02070d');
+
+ctx.fillStyle=bg;
 ctx.fillRect(0,0,w,h);
 
-const a=active.grid_matrix||[];
-const rows=a.length;
-const cols=Math.max(0,...a.map(row=>row.length));
+const raw=active.grid_matrix||[];
+const rows=raw.length;
+const cols=Math.max(0,...raw.map(row=>
+Array.isArray(row)?row.length:0
+));
 
-if(!rows||!cols)return;
+if(!rows||!cols){
+ctx.fillStyle='#fff';
+ctx.font='14px system-ui';
+ctx.fillText('Matrice DBZH non disponibile',18,30);
+return;
+}
 
 const mode=$('mode').value;
 
-const s=Math.min(
-w/(cols+rows*.65),
-h/(rows*.75+cols*.25)
-)*zoom*.95;
+/* Lettura e normalizzazione della matrice */
 
-const ox=w/2;
-const oy=h*.67;
-
-const values=a.map(row=>
+const values=raw.map(row=>
 Array.from({length:cols},(_,x)=>{
-const v=Number(row[x]);
-return Number.isFinite(v)&&v>0?v:0;
+const v=Number(Array.isArray(row)?row[x]:0);
+return Number.isFinite(v)&&v>=8?v:0;
 })
 );
 
-const max=Math.max(1,...values.flat());
+let observedMax=0;
+let occupied=0;
 
-function heightFor(v){
+for(let y=0;y<rows;y++){
+for(let x=0;x<cols;x++){
+const v=values[y][x];
+if(v>0){
+observedMax=Math.max(observedMax,v);
+occupied++;
+}
+}
+}
+
+if(!occupied){
+ctx.fillStyle='#fff';
+ctx.font='14px system-ui';
+ctx.fillText('Nessun campione DBZH utile nella matrice',18,30);
+return;
+}
+
+/*
+La quota è una trasformazione grafica:
+DBZH debole = più livelli;
+DBZH intenso = meno livelli.
+Non rappresenta l'altezza fisica della nube.
+*/
+
+const MIN_DBZ=8;
+const MAX_DBZ=Math.max(55,observedMax);
+
+function layerCount(v){
 
 if(v<=0)return 0;
 
-const n=Math.max(0,Math.min(1,v/max));
+const n=Math.max(0,Math.min(1,
+(v-MIN_DBZ)/(MAX_DBZ-MIN_DBZ)
+));
 
-return .35+(1-n)*2.4;
+/* Da 6 livelli per eco debole a 2 per nucleo intenso */
+return Math.round(6-n*4);
 }
+
+/* Numero di livelli per ogni colonna */
+
+const levels=values.map(row=>
+row.map(v=>layerCount(v))
+);
+
+/* Dimensione e posizione della scena */
+
+const scale=Math.min(
+w/(cols+rows*.72),
+h/(rows*.85+cols*.32)
+)*zoom*.94;
+
+const ox=w*.5;
+const oy=h*.69;
+
+/*
+Proiezione pseudo-isometrica.
+La componente z è separata dal piano radar.
+*/
 
 function project(x,y,z){
 
@@ -390,10 +448,39 @@ const B=X*Math.sin(yaw)+Y*Math.cos(yaw);
 const C=B*Math.cos(pitch)-z*Math.sin(pitch);
 const D=B*Math.sin(pitch)+z*Math.cos(pitch);
 
-return {
-x:ox+(A-C*.48)*s,
-y:oy+(A*.22+C*.7-D)*s
+return{
+x:ox+(A-C*.48)*scale,
+y:oy+(A*.22+C*.7-D)*scale
 };
+}
+
+/*
+Ondulazione deterministica:
+varia nello spazio e segue la matrice.
+Non sposta la cella sulla mappa e non altera i vettori.
+*/
+
+function wave(x,y,k){
+
+return(
+Math.sin(x*.43+y*.19+k*.31)*.105+
+Math.cos(y*.37-x*.16+k*.22)*.075
+);
+}
+
+/* Colori e trasparenza in funzione del DBZH */
+
+function alphaFor(v){
+
+if(mode==='holo'){
+return .36+Math.min(1,v/55)*.48;
+}
+
+if(mode==='surface'){
+return .96;
+}
+
+return .48+Math.min(1,v/55)*.48;
 }
 
 function shade(hex,factor){
@@ -408,171 +495,174 @@ const bb=Math.min(255,Math.round((n&255)*factor));
 return `rgb(${rr},${gg},${bb})`;
 }
 
-const vertices=[];
-
-for(let y=0;y<=rows;y++){
-
-vertices[y]=[];
-
-for(let x=0;x<=cols;x++){
-
-const samples=[
-[y-1,x-1],
-[y-1,x],
-[y,x-1],
-[y,x]
-];
-
-let sum=0;
-let count=0;
-
-for(const [yy,xx] of samples){
-
-if(yy>=0&&yy<rows&&xx>=0&&xx<cols){
-
-const v=values[yy][xx];
-
-if(v>0){
-sum+=v;
-count++;
-}
-
-}
-}
-
-const v=count?sum/count:0;
-
-vertices[y][x]={
-value:v,
-z:heightFor(v),
-base:project(x,y,0)
-};
-
-vertices[y][x].top=project(
-x,y,vertices[y][x].z
-);
-
-}
-}
+/* Vertici dei parallelepipedi */
 
 const faces=[];
 
-function addFace(points,fill,alpha){
+function addFace(points,fill,alpha,depthOffset=0){
 
 const depth=
-points.reduce((n,p)=>n+p.y,0)/points.length;
+points.reduce((sum,p)=>sum+p.y,0)/points.length+
+depthOffset;
 
-faces.push({points,fill,alpha,depth});
+faces.push({
+points,
+fill,
+alpha,
+depth
+});
 }
 
-function quad(p1,p2,p3,p4,fill,alpha=1){
+function face(points,fill,alpha,depthOffset=0){
 
-addFace([p1,p2,p3,p4],fill,alpha);
+addFace(points,fill,alpha,depthOffset);
 }
+
+/* Dimensioni dei piccoli elementi */
+
+const block=.84;
+const half=block*.5;
+const layerStep=.43;
+const waveScale=.22;
+
+/*
+Costruzione delle colonne:
+ogni campione radar genera una colonna
+di piccoli parallelepipedi.
+*/
 
 for(let y=0;y<rows;y++){
 
 for(let x=0;x<cols;x++){
 
 const v=values[y][x];
+const count=levels[y][x];
 
-if(v<=0)continue;
+if(v<=0||count<=0)continue;
 
-const v00=vertices[y][x];
-const v10=vertices[y][x+1];
-const v11=vertices[y+1][x+1];
-const v01=vertices[y+1][x];
+const colour=col(v);
+const alpha=alphaFor(v);
 
-const c=col(v);
+const x0=x+(.5-half);
+const x1=x+(.5+half);
+const y0=y+(.5-half);
+const y1=y+(.5+half);
 
-const alpha=
-mode==='holo'?.48:
-mode==='surface'?.96:
-.78;
+/*
+La forma ondula anche in verticale.
+Ogni colonna mantiene la propria altezza,
+determinata dal valore DBZH locale.
+*/
 
-quad(
-v00.top,
-v10.top,
-v11.top,
-v01.top,
-c,
+for(let k=0;k<count;k++){
+
+const z0=k*layerStep;
+const z1=z0+layerStep*.88;
+
+const w0=wave(x,y,k)*waveScale;
+const w1=wave(x,y,k+1)*waveScale;
+
+const p000=project(x0,y0,z0+w0);
+const p100=project(x1,y0,z0+w0);
+const p110=project(x1,y1,z0+w0);
+const p010=project(x0,y1,z0+w0);
+
+const p001=project(x0,y0,z1+w1);
+const p101=project(x1,y0,z1+w1);
+const p111=project(x1,y1,z1+w1);
+const p011=project(x0,y1,z1+w1);
+
+/* Faccia superiore: solo sul livello più alto */
+
+if(k===count-1){
+
+face(
+[p001,p101,p111,p011],
+colour,
 alpha
 );
 
-const sides=[
-
-{
-nx:x,ny:y-1,
-p1:v00,p2:v10,
-factor:.68
-},
-
-{
-nx:x+1,ny:y,
-p1:v10,p2:v11,
-factor:.52
-},
-
-{
-nx:x,ny:y+1,
-p1:v01,p2:v11,
-factor:.62
-},
-
-{
-nx:x-1,ny:y,
-p1:v00,p2:v01,
-factor:.43
 }
 
+/*
+Facce laterali esposte.
+Se una colonna vicina è più alta,
+la parete interna viene nascosta.
+*/
+
+const neighbours=[
+{
+dx:0,dy:-1,
+points:[p000,p100,p101,p001],
+factor:.68
+},
+{
+dx:1,dy:0,
+points:[p100,p110,p111,p101],
+factor:.52
+},
+{
+dx:0,dy:1,
+points:[p010,p110,p111,p011],
+factor:.62
+},
+{
+dx:-1,dy:0,
+points:[p000,p010,p011,p001],
+factor:.43
+}
 ];
 
-for(const side of sides){
+for(const n of neighbours){
 
-const outside=
-side.nx<0||side.nx>=cols||
-side.ny<0||side.ny>=rows;
+const nx=x+n.dx;
+const ny=y+n.dy;
 
-const empty=outside||
-values[side.ny][side.nx]<=0;
+const neighbourHeight=
+ny>=0&&ny<rows&&nx>=0&&nx<cols?
+levels[ny][nx]:0;
 
-if(!empty)continue;
+if(neighbourHeight>k)continue;
 
-quad(
-side.p1.top,
-side.p2.top,
-side.p2.base,
-side.p1.base,
-shade(c,side.factor),
-mode==='holo'?.38:.88
+face(
+n.points,
+shade(colour,n.factor),
+mode==='holo'?alpha*.72:alpha*.94
 );
 
 }
 
 }
+
 }
+
+}/* Ordinamento per profondità:
+le facce posteriori vengono disegnate prima. */
 
 faces.sort((a,b)=>a.depth-b.depth);
 
-for(const face of faces){
+for(const f of faces){
 
-ctx.globalAlpha=face.alpha;
-ctx.fillStyle=face.fill;
-ctx.strokeStyle=face.fill;
-ctx.lineWidth=.45;
+ctx.globalAlpha=f.alpha;
+ctx.fillStyle=f.fill;
+ctx.strokeStyle=mode==='holo'?
+'rgba(170,225,255,.58)':
+'rgba(3,12,22,.55)';
+
+ctx.lineWidth=mode==='holo'?.65:.45;
 
 ctx.beginPath();
 
 ctx.moveTo(
-face.points[0].x,
-face.points[0].y
+f.points[0].x,
+f.points[0].y
 );
 
-for(let i=1;i<face.points.length;i++){
+for(let i=1;i<f.points.length;i++){
 
 ctx.lineTo(
-face.points[i].x,
-face.points[i].y
+f.points[i].x,
+f.points[i].y
 );
 
 }
@@ -586,26 +676,40 @@ ctx.stroke();
 
 }
 
-ctx.globalAlpha=1;
+/* Reticolo superiore: mantiene visibili i piccoli blocchi */
 
-ctx.strokeStyle='rgba(220,245,255,.75)';
-ctx.lineWidth=1.2;
+if(mode!=='surface'){
+
+ctx.globalAlpha=mode==='holo'?.62:.34;
+ctx.strokeStyle='rgba(220,245,255,.72)';
+ctx.lineWidth=.42;
 
 for(let y=0;y<rows;y++){
 
 for(let x=0;x<cols;x++){
 
-if(values[y][x]<=0)continue;
+if(levels[y][x]<=0)continue;
+
+const v=values[y][x];
+const count=levels[y][x];
+const k=count-1;
+
+const z=k*layerStep+layerStep*.88+
+wave(x,y,k+1)*waveScale;
+
+const x0=x+(.5-half);
+const x1=x+(.5+half);
+const y0=y+(.5-half);
+const y1=y+(.5+half);
 
 const p=[
-vertices[y][x].top,
-vertices[y][x+1].top,
-vertices[y+1][x+1].top,
-vertices[y+1][x].top
+project(x0,y0,z),
+project(x1,y0,z),
+project(x1,y1,z),
+project(x0,y1,z)
 ];
 
 ctx.beginPath();
-
 ctx.moveTo(p[0].x,p[0].y);
 
 for(let i=1;i<p.length;i++){
@@ -616,17 +720,45 @@ ctx.closePath();
 ctx.stroke();
 
 }
+
 }
 
-ctx.fillStyle='#fff';
+}
+
+/* Informazioni tecniche della ricostruzione */
+
+ctx.globalAlpha=1;
+
+ctx.fillStyle='#f0f7ff';
 ctx.font='12px system-ui';
 
 ctx.fillText(
 active.id+
-' · '+rows+'×'+cols+
-' campioni · '+fmt(active.max_dbz)+' dBZ',
+' · matrice '+rows+'×'+cols+
+' · max '+fmt(active.max_dbz)+' dBZ',
 12,20
 );
+
+ctx.fillStyle='#a9bfd3';
+ctx.font='11px system-ui';
+
+ctx.fillText(
+'Campioni attivi: '+occupied+
+' · livelli morfologici: 2–6',
+12,38
+);
+
+ctx.fillText(
+'DBZH debole: struttura alta e diffusa · DBZH intenso: nuclei bassi',
+12,h-30
+);
+
+ctx.fillText(
+'Pseudo-volume da composito 2D · nessuna quota verticale misurata',
+12,h-14
+);
+
+ctx.globalAlpha=1;
 
 }
 
