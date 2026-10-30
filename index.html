@@ -47,12 +47,10 @@ button,select{background:#182b40;color:#fff;border:1px solid #38516b;border-radi
 <div class="layout">
 <main><div id="map"></div></main>
 <aside>
-
 <section class="panel">
 <h2>Stato</h2>
 <div id="status" class="status">Caricamento…</div>
 </section>
-
 <section class="panel">
 <h2>Riflettività</h2>
 <div class="fine">
@@ -60,12 +58,10 @@ Ciano 15–24 · verde 25–29 · giallo 30–34 ·
 arancio 35–39 · rosso 40–44 · magenta ≥45 dBZ
 </div>
 </section>
-
 <section class="panel">
 <h2>Centroidi e celle</h2>
 <div id="cells">Nessun dato.</div>
 </section>
-
 <section class="panel">
 <h2>Limiti</h2>
 <p class="fine">
@@ -75,7 +71,6 @@ Vettori +30/+60 min: estrapolazioni sperimentali
 da due osservazioni distinte.
 </p>
 </section>
-
 </aside>
 </div>
 
@@ -84,8 +79,8 @@ da due osservazioni distinte.
 <b id="vtitle">Cella</b>
 <div>
 <select id="mode">
-<option value="volume">Pseudo-volume</option>
-<option value="surface">Superficie</option>
+<option value="volume">Voxel 3D</option>
+<option value="surface">Iso-superficie</option>
 <option value="holo">Holographic</option>
 </select>
 <button id="reset">Reset</button>
@@ -94,7 +89,8 @@ da due osservazioni distinte.
 </div>
 <canvas id="scene"></canvas>
 <div class="fine" style="padding:8px">
-Trascina per ruotare · rotella per zoom · pseudo-3D, non quota misurata.
+Trascina per ruotare · rotella per zoom ·
+quota e spessore incudine: STIMA parametrica, non misurata.
 </div>
 </div>
 
@@ -166,7 +162,6 @@ fillOpacity:.9
 }).addTo(marks);
 
 m.bindTooltip(c.id+' · '+fmt(c.max_dbz)+' dBZ');
-
 m.on('click',()=>open(c.id));
 
 if(c.vectors){
@@ -176,7 +171,6 @@ poly(c.vectors.predictive_60m,'#ff8b4b','3 7');
 }
 
 const b=document.createElement('button');
-
 b.className='cellBtn';
 b.textContent=c.id+' · '+fmt(c.max_dbz)+' dBZ · '+c.area_pixels+' px';
 
@@ -199,7 +193,6 @@ $('status').textContent=
 async function load(){
 
 try{
-
 $('status').textContent='Caricamento…';
 
 const r=await fetch('docs/data/iride.json?t='+Date.now(),{
@@ -217,9 +210,7 @@ throw Error('JSON non valido');
 render(d);
 
 }catch(e){
-
 $('status').textContent='Dati non disponibili: '+e.message;
-
 }
 }
 
@@ -240,28 +231,22 @@ const ctx=canvas.getContext('2d');
 
 let yaw=-.55;
 let pitch=.58;
-let zoom=1;
+let zoom=1.30;
 let drag=null;
 
 function resize(){
-
 const r=canvas.getBoundingClientRect();
 const d=Math.min(devicePixelRatio||1,2);
-
 canvas.width=r.width*d;
 canvas.height=r.height*d;
-
 ctx.setTransform(d,0,0,d,0,0);
 }
 
 function open(id){
-
 active=cells.find(c=>c.id===id);
-
 if(!active)return;
 
 viewer.classList.add('open');
-
 $('vtitle').textContent=
 active.id+' · '+fmt(active.max_dbz)+' dBZ';
 
@@ -276,7 +261,7 @@ viewer.classList.remove('open');
 $('reset').onclick=()=>{
 yaw=-.55;
 pitch=.58;
-zoom=1;
+zoom=1.30;
 draw();
 };
 
@@ -295,18 +280,15 @@ canvas.setPointerCapture(e.pointerId);
 };
 
 canvas.onpointermove=e=>{
-
 if(!drag)return;
 
 yaw+=(e.clientX-drag[0])*.008;
-
 pitch=Math.max(
 -.1,
 Math.min(1.35,pitch+(e.clientY-drag[1])*.008)
 );
 
 drag=[e.clientX,e.clientY];
-
 draw();
 };
 
@@ -314,30 +296,24 @@ canvas.onpointerup=()=>drag=null;
 canvas.onpointercancel=()=>drag=null;
 
 canvas.addEventListener('wheel',e=>{
-
 e.preventDefault();
-
 zoom=Math.max(
 .5,
 Math.min(2.5,zoom*(e.deltaY>0?.92:1.08))
 );
-
 draw();
-
 },{passive:false});/* =====================================================
-   RENDERER 3D MORFOLOGICO A DOPPIA SUPERFICIE
+   RENDERER 3D MORFOLOGICO INCUDINE + GAMBO
 
-   SUPERFICIE SUPERIORE:
-   matrice DBZH originale, con colori e morfologia.
+   Il piano radar conserva i campioni DBZH originali.
 
-   SUPERFICIE INFERIORE:
-   replica piatta della matrice radar.
+   Il gambo viene costruito sui nuclei >=35 dBZ.
 
-   COLONNE:
-   collegamento verticale tra le due superfici
-   nei nuclei intensi.
+   L'incudine utilizza i campioni circostanti realmente
+   presenti nella matrice. Non vengono assegnati valori
+   DBZH inventati ai pixel senza osservazione.
 
-   Modello pseudo-3D, non quota misurata.
+   QUOTE VERTICALI: STIMA PARAMETRICA.
    ===================================================== */
 
 function draw(){
@@ -375,7 +351,7 @@ return;
 
 const mode=$('mode').value;
 
-/* Lettura della matrice DBZH */
+/* Lettura e pulizia dei campioni DBZH */
 
 const values=raw.map(row=>
 Array.from({length:cols},(_,x)=>{
@@ -404,17 +380,160 @@ ctx.fillText('Nessun campione DBZH utile nella matrice',18,30);
 return;
 }
 
-/*
-Altezza grafica della superficie superiore.
-I valori sono livelli visuali, non altitudini.
-*/
+/* =====================================================
+   PARAMETRI VERTICALI: STIMA
 
-const MAX_HEIGHT=15;
-const layerStep=.47;
-const block=.82;
-const half=block*.5;
+   Quota superiore incudine: 8.500 m STIMA.
+   Intervallo configurabile: 8.000–9.000 m.
+   Spessore incudine: 4.500 m STIMA.
 
-const levels=values.map(row=>
+   Sono parametri grafici di letteratura, non misure
+   ricavate dal composito radar bidimensionale.
+   ===================================================== */
+
+const ANVIL_TOP_KM=8.5;
+const ANVIL_THICKNESS_KM=4.5;
+const ANVIL_BASE_KM=ANVIL_TOP_KM-ANVIL_THICKNESS_KM;
+
+/* Scala verticale normalizzata */
+
+const VERTICAL_UNITS=15;
+const STEM_TOP=VERTICAL_UNITS*.76;
+const ANVIL_TOP=VERTICAL_UNITS;
+const ANVIL_BASE=ANVIL_TOP-
+(ANVIL_THICKNESS_KM/ANVIL_TOP_KM)*VERTICAL_UNITS;
+
+const baseZ=-.8;
+const cellSize=.82;
+const half=cellSize*.5;
+
+/* =====================================================
+   Individuazione dei nuclei convettivi.
+
+   Si usa il massimo DBZH della matrice e la soglia
+   >=35 dBZ. Non si inventano centroidi aggiuntivi.
+   ===================================================== */
+
+const coreMask=values.map(row=>
+row.map(v=>v>=35?1:0)
+);
+
+let corePixels=0;
+let coreX=0;
+let coreY=0;
+
+for(let y=0;y<rows;y++){
+for(let x=0;x<cols;x++){
+if(coreMask[y][x]){
+corePixels++;
+coreX+=x;
+coreY+=y;
+}
+}
+}
+
+if(corePixels){
+coreX/=corePixels;
+coreY/=corePixels;
+}else{
+coreX=cols*.5;
+coreY=rows*.5;
+}
+
+/* =====================================================
+   Campo di influenza dell'incudine.
+
+   L'estensione è vincolata alla presenza di echi reali.
+   I campioni deboli circostanti possono contribuire
+   alla forma dell'incudine, ma non generano nuovi
+   pixel radar o nuovi valori DBZH.
+   ===================================================== */
+
+const anvilField=values.map((row,y)=>
+row.map((v,x)=>{
+
+if(v<15)return 0;
+
+/* Distanza dal nucleo convettivo */
+
+const dx=x-coreX;
+const dy=y-coreY;
+const distance=Math.sqrt(dx*dx+dy*dy);
+
+/* Gradiente di influenza del nucleo */
+
+const influence=Math.max(
+0,
+1-distance/Math.max(8,Math.min(rows,cols)*.42)
+);
+
+/* Echi deboli e intermedi: contributo all'incudine */
+
+if(v<25)return influence*.55;
+if(v<35)return influence*.78;
+
+return influence;
+})
+);
+
+/* Ricerca della regione di eco collegata al nucleo */
+
+const anvilMask=values.map((row,y)=>
+row.map((v,x)=>{
+
+if(v<15)return 0;
+
+const dx=x-coreX;
+const dy=y-coreY;
+const distance=Math.sqrt(dx*dx+dy*dy);
+
+const nearCore=distance<=Math.max(
+8,
+Math.min(rows,cols)*.42
+);
+
+return nearCore?1:0;
+})
+);
+
+/* =====================================================
+   Gambo: campo continuo basato sui pixel intensi.
+
+   Ogni pixel intenso contribuisce alla larghezza.
+   La continuità viene ottenuta con interpolazione
+   spaziale, non con colonne quadrate isolate.
+   ===================================================== */
+
+function smoothCore(x,y){
+
+let sum=0;
+let weight=0;
+
+for(let yy=Math.max(0,Math.floor(y)-2);
+yy<=Math.min(rows-1,Math.ceil(y)+2);yy++){
+
+for(let xx=Math.max(0,Math.floor(x)-2);
+xx<=Math.min(cols-1,Math.ceil(x)+2);xx++){
+
+if(values[yy][xx]<35)continue;
+
+const dx=xx-x;
+const dy=yy-y;
+const d2=dx*dx+dy*dy;
+
+const q=Math.exp(-d2/2.2);
+
+sum+=q;
+weight+=q;
+}
+}
+
+return weight>0?Math.min(1,sum/1.8):0;
+}
+
+/* Superficie superiore: altezza derivata da DBZH */
+
+const radarHeight=values.map(row=>
 row.map(v=>{
 
 if(v<=0)return 0;
@@ -425,36 +544,22 @@ if(v>=35)return 12;
 if(v>=30)return 10;
 if(v>=25)return 9;
 if(v>=15)return 8;
-return 6;
 
+return 0;
 })
 );
 
-/*
-La superficie inferiore conserva la matrice
-e i colori DBZH, ma rimane su un piano piatto.
-*/
-
-const baseZ=-1.2;
-
-/*
-Colonne di collegamento:
-nuclei >=35 dBZ.
-La soglia non inventa dati: seleziona pixel
-effettivamente presenti nella matrice.
-*/
-
-const supportThreshold=35;
+/* =====================================================
+   Proiezione 3D
+   ===================================================== */
 
 const scale=Math.min(
 w/(cols+rows*.72),
-h/(rows*.85+MAX_HEIGHT*.75+3)
-)*zoom*.91;
+h/(rows*.85+VERTICAL_UNITS*.75+3)
+)*zoom*1.05;
 
 const ox=w*.5;
 const oy=h*.78;
-
-/* Proiezione tridimensionale */
 
 function project(x,y,z){
 
@@ -471,10 +576,7 @@ return{
 x:ox+(A-C*.48)*scale,
 y:oy+(A*.22+C*.7-D)*scale
 };
-
 }
-
-/* Ondulazione controllata della superficie superiore */
 
 function wave(x,y,k){
 
@@ -482,25 +584,6 @@ return(
 Math.sin(x*.43+y*.19+k*.24)*.16+
 Math.cos(y*.37-x*.16+k*.18)*.12
 );
-
-}
-
-/* Trasparenza per modalità */
-
-function alphaFor(v){
-
-if(mode==='holo'){
-return .30+Math.min(1,v/55)*.48;
-}
-
-if(mode==='surface')return .96;
-
-if(v>=35)return .96;
-if(v>=30)return .88;
-if(v>=25)return .70;
-if(v>=15)return .52;
-return .38;
-
 }
 
 function shade(hex,factor){
@@ -513,34 +596,38 @@ const gg=Math.min(255,Math.round(((n>>8)&255)*factor));
 const bb=Math.min(255,Math.round((n&255)*factor));
 
 return `rgb(${rr},${gg},${bb})`;
-
 }
 
-/* Raccolta facce da disegnare */
+function alphaFor(v){
+
+if(mode==='holo')return .32+Math.min(1,v/55)*.40;
+if(mode==='surface')return .94;
+
+if(v>=35)return .96;
+if(v>=30)return .85;
+if(v>=25)return .72;
+
+return .48;
+}
+
+/* Raccolta facce con ordinamento di profondità */
 
 const faces=[];
 
-function face(points,fill,alpha,depthOffset=0){
+function face(points,fill,alpha,stroke){
 
 const depth=
-points.reduce((sum,p)=>sum+p.y,0)/points.length+
-depthOffset;
+points.reduce((sum,p)=>sum+p.depth,0)/points.length;
 
-faces.push({
-points,
-fill,
-alpha,
-depth
-});
-
+faces.push({points,fill,alpha,depth,stroke});
 }
 
 function drawFace(points,fill,alpha,stroke){
 
 ctx.globalAlpha=alpha;
 ctx.fillStyle=fill;
-ctx.strokeStyle=stroke||'rgba(3,12,22,.55)';
-ctx.lineWidth=mode==='holo'?.65:.45;
+ctx.strokeStyle=stroke||'rgba(3,12,22,.48)';
+ctx.lineWidth=mode==='holo'?.7:.35;
 
 ctx.beginPath();
 ctx.moveTo(points[0].x,points[0].y);
@@ -550,19 +637,23 @@ ctx.lineTo(points[i].x,points[i].y);
 }
 
 ctx.closePath();
-ctx.fill();
 
-if(mode==='holo'||stroke){
-ctx.stroke();
+if(mode!=='holo')ctx.fill();
+
+if(mode==='holo'||stroke)ctx.stroke();
 }
 
+/* Proietta un punto e conserva la profondità */
+
+function P(x,y,z){
+const p=project(x,y,z);
+return{x:p.x,y:p.y,depth:p.y};
 }
 
 /* =====================================================
-   1. SUPERFICIE INFERIORE PIATTA
+   1. PIANO RADAR INFERIORE
 
-   Ogni pixel radar mantiene il proprio colore.
-   Questa è la replica planare della cella.
+   Distribuzione e colori originali DBZH.
    ===================================================== */
 
 for(let y=0;y<rows;y++){
@@ -570,12 +661,7 @@ for(let y=0;y<rows;y++){
 for(let x=0;x<cols;x++){
 
 const v=values[y][x];
-
 if(v<=0)continue;
-
-const colour=col(v);
-const alpha=mode==='holo'?.34:
-mode==='surface'?.96:.78;
 
 const x0=x+.5-half;
 const x1=x+.5+half;
@@ -583,68 +669,175 @@ const y0=y+.5-half;
 const y1=y+.5+half;
 
 const p=[
-project(x0,y0,baseZ),
-project(x1,y0,baseZ),
-project(x1,y1,baseZ),
-project(x0,y1,baseZ)
+P(x0,y0,baseZ),
+P(x1,y0,baseZ),
+P(x1,y1,baseZ),
+P(x0,y1,baseZ)
 ];
 
 face(
 p,
-shade(colour,.72),
-alpha,
--0.01
+shade(col(v),.70),
+mode==='holo'?.30:.78
 );
-
 }
-
 }
 
 /* =====================================================
-   2. SUPERFICIE SUPERIORE
+   2. GAMBO CONVETTIVO CONTINUO
 
-   Mantiene la matrice originale e la distribuzione
-   delle riflettività. La forma superiore è ondulata.
+   Il gambo si sviluppa dai pixel >=35 dBZ.
+   La sua sezione viene interpolata nello spazio.
    ===================================================== */
+
+const stemSegments=18;
+const stemSides=12;
+
+for(let s=0;s<stemSegments;s++){
+
+const t0=s/stemSegments;
+const t1=(s+1)/stemSegments;
+
+const z0=baseZ+(STEM_TOP-baseZ)*t0;
+const z1=baseZ+(STEM_TOP-baseZ)*t1;
 
 for(let y=0;y<rows;y++){
 
 for(let x=0;x<cols;x++){
 
-const v=values[y][x];
-const count=levels[y][x];
+if(values[y][x]<35)continue;
 
-if(v<=0||count<=0)continue;
+const intensity=values[y][x];
+const colour=col(intensity);
 
-const colour=col(v);
-const alpha=alphaFor(v);
+const radius0=.20+.34*(1-t0);
+const radius1=.20+.34*(1-t1);
 
-const x0=x+.5-half;
-const x1=x+.5+half;
-const y0=y+.5-half;
-const y1=y+.5+half;
+const bend0=Math.sin(t0*Math.PI*1.2+x*.13)*.10;
+const bend1=Math.sin(t1*Math.PI*1.2+x*.13)*.10;
 
-const z=count*layerStep;
-const und=wave(x,y,count)*.20;
+for(let side=0;side<stemSides;side++){
+
+const a0=side/stemSides*Math.PI*2;
+const a1=(side+1)/stemSides*Math.PI*2;
 
 const p=[
-project(x0,y0,z+und),
-project(x1,y0,z+und),
-project(x1,y1,z+und),
-project(x0,y1,z+und)
+P(x+.5+bend0+Math.cos(a0)*radius0,
+y+.5+Math.sin(a0)*radius0,z0),
+
+P(x+.5+bend0+Math.cos(a1)*radius0,
+y+.5+Math.sin(a1)*radius0,z0),
+
+P(x+.5+bend1+Math.cos(a1)*radius1,
+y+.5+Math.sin(a1)*radius1,z1),
+
+P(x+.5+bend1+Math.cos(a0)*radius1,
+y+.5+Math.sin(a0)*radius1,z1)
 ];
 
-face(p,colour,alpha);
-
+face(
+p,
+shade(colour,.72+.18*Math.abs(Math.cos(a0))),
+mode==='holo'?.34:.88
+);
 }
-
+}
+}
 }
 
 /* =====================================================
-   3. PARETI PERIMETRALI DELLA SUPERFICIE SUPERIORE
+   3. INCUDINE: SUPERFICIE AMPIA E IRREGOLARE
 
-   Mostrano lo spessore tra il piano inferiore
-   e il profilo superiore della cella.
+   Si utilizzano solo pixel con eco >=15 dBZ e
+   appartenenti alla regione spaziale collegata
+   al nucleo convettivo.
+
+   La quota è parametrica: STIMA.
+   ===================================================== */
+
+const capGrid=values.map((row,y)=>
+row.map((v,x)=>{
+
+if(!anvilMask[y][x])return 0;
+
+/* La parte più intensa resta sotto il cappello */
+
+if(v>=35)return 0;
+
+/* Profilo verticale del cappello */
+
+const influence=anvilField[y][x];
+
+return influence;
+})
+);
+
+const capHeight=ANVIL_BASE;
+const capThickness=ANVIL_TOP-ANVIL_BASE;
+
+function capZ(x,y){
+
+const field=capGrid[y]?.[x]||0;
+if(field<=0)return 0;
+
+const undulation=
+Math.sin(x*.37+y*.21)*.20+
+Math.cos(y*.31-x*.17)*.14+
+Math.sin(x*.13-y*.29)*.12;
+
+return capHeight+
+field*capThickness*.30+
+undulation;
+}
+
+for(let y=0;y<rows-1;y++){
+
+for(let x=0;x<cols-1;x++){
+
+const v00=values[y][x];
+const v10=values[y][x+1];
+const v11=values[y+1][x+1];
+const v01=values[y+1][x];
+
+const c00=capGrid[y][x];
+const c10=capGrid[y][x+1];
+const c11=capGrid[y+1][x+1];
+const c01=capGrid[y+1][x];
+
+if(c00<=0&&c10<=0&&c11<=0&&c01<=0)continue;
+
+const z00=capZ(x,y);
+const z10=capZ(x+1,y);
+const z11=capZ(x+1,y+1);
+const z01=capZ(x,y+1);
+
+/* Valore DBZH medio dei campioni reali */
+
+const samples=[v00,v10,v11,v01].filter(v=>v>=15);
+if(!samples.length)continue;
+
+const mean=samples.reduce((a,b)=>a+b,0)/samples.length;
+const colour=col(mean);
+
+const p=[
+P(x+.5,y+.5,z00),
+P(x+1.5,y+.5,z10),
+P(x+1.5,y+1.5,z11),
+P(x+.5,y+1.5,z01)
+];
+
+face(
+p,
+colour,
+mode==='holo'?.48:
+mode==='surface'?.96:.88
+);
+}
+   }/* =====================================================
+   4. BORDO IRREGOLARE DELL'INCUDINE
+
+   I bordi seguono la distribuzione degli echi reali.
+   Non viene costruito un cilindro o un disco artificiale.
    ===================================================== */
 
 for(let y=0;y<rows;y++){
@@ -652,37 +845,28 @@ for(let y=0;y<rows;y++){
 for(let x=0;x<cols;x++){
 
 const v=values[y][x];
-const count=levels[y][x];
+if(v<15||!anvilMask[y][x]||v>=35)continue;
 
-if(v<=0||count<=0)continue;
-
-const x0=x+.5-half;
-const x1=x+.5+half;
-const y0=y+.5-half;
-const y1=y+.5+half;
-
-const z=count*layerStep;
-const und=wave(x,y,count)*.20;
-
-const top=[
-project(x0,y0,z+und),
-project(x1,y0,z+und),
-project(x1,y1,z+und),
-project(x0,y1,z+und)
-];
-
-const bottom=[
-project(x0,y0,baseZ),
-project(x1,y0,baseZ),
-project(x1,y1,baseZ),
-project(x0,y1,baseZ)
-];
+const z=capZ(x,y);
+const colour=col(v);
 
 const neighbours=[
 {dx:0,dy:-1,a:0,b:1,f:.70},
 {dx:1,dy:0,a:1,b:2,f:.53},
 {dx:0,dy:1,a:2,b:3,f:.64},
 {dx:-1,dy:0,a:3,b:0,f:.44}
+];
+
+const x0=x+.5-half;
+const x1=x+.5+half;
+const y0=y+.5-half;
+const y1=y+.5+half;
+
+const top=[
+P(x0,y0,z),
+P(x1,y0,z),
+P(x1,y1,z),
+P(x0,y1,z)
 ];
 
 for(const n of neighbours){
@@ -692,9 +876,18 @@ const ny=y+n.dy;
 
 const neighbour=
 ny>=0&&ny<rows&&nx>=0&&nx<cols?
-levels[ny][nx]:0;
+capGrid[ny][nx]:0;
 
 if(neighbour>0)continue;
+
+const bottomZ=Math.max(baseZ,z-capThickness*.35);
+
+const bottom=[
+P(x0,y0,bottomZ),
+P(x1,y0,bottomZ),
+P(x1,y1,bottomZ),
+P(x0,y1,bottomZ)
+];
 
 face(
 [
@@ -703,118 +896,21 @@ bottom[n.b],
 top[n.b],
 top[n.a]
 ],
-shade(col(v),n.f),
-mode==='holo'?.50:.88
+shade(colour,n.f),
+mode==='holo'?.28:.62
 );
-
 }
-
 }
-
 }
 
 /* =====================================================
-   4. COLONNE CONVETTIVE DI COLLEGAMENTO
+   5. RETICOLO E CONTORNI
 
-   Solo i pixel intensi selezionati dalla matrice
-   generano i sostegni tra le due superfici.
-
-   Le colonne sono leggermente sinuose.
-   ===================================================== */
-
-const supportStep=.55;
-
-for(let y=0;y<rows;y++){
-
-for(let x=0;x<cols;x++){
-
-const v=values[y][x];
-const count=levels[y][x];
-
-if(v<supportThreshold||count<=0)continue;
-
-const colour=col(v);
-const alpha=mode==='holo'?.48:
-mode==='surface'?.92:.86;
-
-const x0=x+.5-half*.72;
-const x1=x+.5+half*.72;
-const y0=y+.5-half*.72;
-const y1=y+.5+half*.72;
-
-const topZ=count*layerStep;
-const bottom=baseZ;
-
-/*
-Suddivisione verticale delle colonne.
-La lieve variazione laterale crea l'effetto
-di gambo convettivo senza deformare la superficie.
-*/
-
-const segments=Math.max(
-4,
-Math.ceil((topZ-bottom)/supportStep)
-);
-
-for(let s=0;s<segments;s++){
-
-const t0=s/segments;
-const t1=(s+1)/segments;
-
-const z0=bottom+(topZ-bottom)*t0;
-const z1=bottom+(topZ-bottom)*t1;
-
-const bend0=wave(x,y,s)*.18;
-const bend1=wave(x,y,s+1)*.18;
-
-const a0=project(x0+bend0,y0,z0);
-const b0=project(x1+bend0,y0,z0);
-const c0=project(x1+bend0,y1,z0);
-const d0=project(x0+bend0,y1,z0);
-
-const a1=project(x0+bend1,y0,z1);
-const b1=project(x1+bend1,y0,z1);
-const c1=project(x1+bend1,y1,z1);
-const d1=project(x0+bend1,y1,z1);
-
-const walls=[
-{p:[a0,b0,b1,a1],f:.70},
-{p:[b0,c0,c1,b1],f:.53},
-{p:[c0,d0,d1,c1],f:.64},
-{p:[d0,a0,a1,d1],f:.44}
-];
-
-for(const wall of walls){
-
-face(
-wall.p,
-shade(colour,wall.f),
-alpha
-);
-
-}
-
-}
-
-}
-
-}
-
-/* Ordinamento delle facce per profondità */
-
-faces.sort((a,b)=>a.depth-b.depth);
-
-for(const f of faces){
-drawFace(f.points,f.fill,f.alpha);
-   }/* =====================================================
-   5. RETICOLO DELLA SUPERFICIE SUPERIORE
-
-   Rende leggibili i singoli campioni DBZH.
    ===================================================== */
 
 if(mode!=='surface'){
 
-ctx.globalAlpha=mode==='holo'?.62:.34;
+ctx.globalAlpha=mode==='holo'?.68:.30;
 ctx.strokeStyle='rgba(220,245,255,.72)';
 ctx.lineWidth=.42;
 
@@ -822,23 +918,16 @@ for(let y=0;y<rows;y++){
 
 for(let x=0;x<cols;x++){
 
-const count=levels[y][x];
+if(values[y][x]<=0)continue;
 
-if(count<=0)continue;
-
-const z=count*layerStep+
-wave(x,y,count)*.20;
-
-const x0=x+.5-half;
-const x1=x+.5+half;
-const y0=y+.5-half;
-const y1=y+.5+half;
+const z=radarHeight[y][x]*.47;
+if(z<=0)continue;
 
 const p=[
-project(x0,y0,z),
-project(x1,y0,z),
-project(x1,y1,z),
-project(x0,y1,z)
+P(x+.5-half,y+.5-half,z),
+P(x+.5+half,y+.5-half,z),
+P(x+.5+half,y+.5+half,z),
+P(x+.5-half,y+.5+half,z)
 ];
 
 ctx.beginPath();
@@ -850,60 +939,84 @@ ctx.lineTo(p[i].x,p[i].y);
 
 ctx.closePath();
 ctx.stroke();
-
 }
-
 }
-
 }
 
 /* =====================================================
-   6. RETICOLO DELLA SUPERFICIE INFERIORE
+   6. RENDERING DELLE FACCE
 
-   Evidenzia la replica piatta della matrice.
+   Tutte le modalità utilizzano la stessa geometria.
+   ===================================================== */
+
+faces.sort((a,b)=>a.depth-b.depth);
+
+for(const f of faces){
+drawFace(f.points,f.fill,f.alpha,f.stroke);
+}
+
+/* =====================================================
+   7. INDICATORE DEL NUCLEO CONVETTIVO
+   ===================================================== */
+
+if(corePixels){
+
+const center=P(coreX+.5,coreY+.5,STEM_TOP);
+
+ctx.globalAlpha=.95;
+ctx.strokeStyle='#ffffff';
+ctx.lineWidth=1.3;
+
+ctx.beginPath();
+ctx.arc(center.x,center.y,5,0,Math.PI*2);
+ctx.stroke();
+
+ctx.beginPath();
+ctx.moveTo(center.x-9,center.y);
+ctx.lineTo(center.x+9,center.y);
+ctx.moveTo(center.x,center.y-9);
+ctx.lineTo(center.x,center.y+9);
+ctx.stroke();
+}
+
+/* =====================================================
+   8. RETICOLO HOLOGRAPHIC
    ===================================================== */
 
 if(mode==='holo'){
 
-ctx.globalAlpha=.38;
-ctx.strokeStyle='rgba(120,210,255,.58)';
-ctx.lineWidth=.35;
+ctx.globalAlpha=.58;
+ctx.strokeStyle='rgba(100,210,255,.8)';
+ctx.lineWidth=.6;
 
-for(let y=0;y<rows;y++){
+const step=Math.max(2,Math.floor(Math.min(rows,cols)/18));
 
-for(let x=0;x<cols;x++){
+for(let y=0;y<rows;y+=step){
 
-if(values[y][x]<=0)continue;
-
-const x0=x+.5-half;
-const x1=x+.5+half;
-const y0=y+.5-half;
-const y1=y+.5+half;
-
-const p=[
-project(x0,y0,baseZ),
-project(x1,y0,baseZ),
-project(x1,y1,baseZ),
-project(x0,y1,baseZ)
-];
+const a=P(.5,y+.5,baseZ);
+const b=P(cols-.5,y+.5,baseZ);
 
 ctx.beginPath();
-ctx.moveTo(p[0].x,p[0].y);
-
-for(let i=1;i<p.length;i++){
-ctx.lineTo(p[i].x,p[i].y);
-}
-
-ctx.closePath();
+ctx.moveTo(a.x,a.y);
+ctx.lineTo(b.x,b.y);
 ctx.stroke();
-
 }
 
+for(let x=0;x<cols;x+=step){
+
+const a=P(x+.5,.5,baseZ);
+const b=P(x+.5,rows-.5,baseZ);
+
+ctx.beginPath();
+ctx.moveTo(a.x,a.y);
+ctx.lineTo(b.x,b.y);
+ctx.stroke();
+}
 }
 
-}
-
-/* Informazioni tecniche */
+/* =====================================================
+   9. INFORMAZIONI E PARAMETRI STIMATI
+   ===================================================== */
 
 ctx.globalAlpha=1;
 
@@ -922,17 +1035,18 @@ ctx.font='11px system-ui';
 
 ctx.fillText(
 'Campioni DBZH: '+occupied+
-' · sviluppo grafico: '+MAX_HEIGHT+' livelli',
+' · nuclei ≥35 dBZ: '+corePixels,
 12,38
 );
 
 ctx.fillText(
-'Superficie superiore + replica inferiore · colonne ≥35 dBZ',
+'Incudine: quota superiore STIMA '+ANVIL_TOP_KM.toFixed(1)+
+' km · spessore STIMA '+ANVIL_THICKNESS_KM.toFixed(1)+' km',
 12,h-30
 );
 
 ctx.fillText(
-'Pseudo-volume morfologico da composito DBZH 2D',
+'Gambo convettivo e incudine: morfologia pseudo-3D da DBZH 2D',
 12,h-14
 );
 
