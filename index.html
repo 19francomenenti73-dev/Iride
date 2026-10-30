@@ -325,9 +325,19 @@ Math.min(2.5,zoom*(e.deltaY>0?.92:1.08))
 draw();
 
 },{passive:false});/* =====================================================
-   RENDERER 3D MORFOLOGICO A FUNGO
-   Gambo convettivo + cappello espanso.
-   Base DBZH originale conservata.
+   RENDERER 3D MORFOLOGICO A DOPPIA SUPERFICIE
+
+   SUPERFICIE SUPERIORE:
+   matrice DBZH originale, con colori e morfologia.
+
+   SUPERFICIE INFERIORE:
+   replica piatta della matrice radar.
+
+   COLONNE:
+   collegamento verticale tra le due superfici
+   nei nuclei intensi.
+
+   Modello pseudo-3D, non quota misurata.
    ===================================================== */
 
 function draw(){
@@ -395,15 +405,8 @@ return;
 }
 
 /*
-MODELLO MORFOLOGICO:
-
-- DBZH >=35: gambo convettivo ascendente.
-- DBZH 30-34: parte alta del gambo e transizione.
-- DBZH 25-29: espansione verde del cappello.
-- DBZH 15-24: cappello ciano più ampio.
-- DBZH 8-14: margine azzurro diffuso.
-
-La forma è pseudo-volume, non quota misurata.
+Altezza grafica della superficie superiore.
+I valori sono livelli visuali, non altitudini.
 */
 
 const MAX_HEIGHT=15;
@@ -428,19 +431,28 @@ return 6;
 );
 
 /*
-Ogni pixel conserva la propria posizione.
-La quota dipende dalla classe DBZH.
-Il cappello si espande attraverso gli echi deboli
+La superficie inferiore conserva la matrice
+e i colori DBZH, ma rimane su un piano piatto.
+*/
+
+const baseZ=-1.2;
+
+/*
+Colonne di collegamento:
+nuclei >=35 dBZ.
+La soglia non inventa dati: seleziona pixel
 effettivamente presenti nella matrice.
 */
 
+const supportThreshold=35;
+
 const scale=Math.min(
 w/(cols+rows*.72),
-h/(rows*.85+MAX_HEIGHT*.75)
+h/(rows*.85+MAX_HEIGHT*.75+3)
 )*zoom*.91;
 
 const ox=w*.5;
-const oy=h*.79;
+const oy=h*.78;
 
 /* Proiezione tridimensionale */
 
@@ -462,7 +474,7 @@ y:oy+(A*.22+C*.7-D)*scale
 
 }
 
-/* Ondulazione spaziale del volume */
+/* Ondulazione controllata della superficie superiore */
 
 function wave(x,y,k){
 
@@ -470,9 +482,10 @@ return(
 Math.sin(x*.43+y*.19+k*.24)*.16+
 Math.cos(y*.37-x*.16+k*.18)*.12
 );
+
 }
 
-/* Trasparenza */
+/* Trasparenza per modalità */
 
 function alphaFor(v){
 
@@ -503,7 +516,7 @@ return `rgb(${rr},${gg},${bb})`;
 
 }
 
-/* Accumulo delle facce */
+/* Raccolta facce da disegnare */
 
 const faces=[];
 
@@ -522,17 +535,77 @@ depth
 
 }
 
-/*
-PROFILO VERTICALE:
+function drawFace(points,fill,alpha,stroke){
 
-Il gambo è costruito dai pixel intensi.
-Il cappello è costruito dagli echi deboli
-e medi della matrice, che si trovano
-a quote grafiche superiori.
+ctx.globalAlpha=alpha;
+ctx.fillStyle=fill;
+ctx.strokeStyle=stroke||'rgba(3,12,22,.55)';
+ctx.lineWidth=mode==='holo'?.65:.45;
 
-Le colonne sono continue dalla base:
-non vengono creati dischi sospesi.
-*/
+ctx.beginPath();
+ctx.moveTo(points[0].x,points[0].y);
+
+for(let i=1;i<points.length;i++){
+ctx.lineTo(points[i].x,points[i].y);
+}
+
+ctx.closePath();
+ctx.fill();
+
+if(mode==='holo'||stroke){
+ctx.stroke();
+}
+
+}
+
+/* =====================================================
+   1. SUPERFICIE INFERIORE PIATTA
+
+   Ogni pixel radar mantiene il proprio colore.
+   Questa è la replica planare della cella.
+   ===================================================== */
+
+for(let y=0;y<rows;y++){
+
+for(let x=0;x<cols;x++){
+
+const v=values[y][x];
+
+if(v<=0)continue;
+
+const colour=col(v);
+const alpha=mode==='holo'?.34:
+mode==='surface'?.96:.78;
+
+const x0=x+.5-half;
+const x1=x+.5+half;
+const y0=y+.5-half;
+const y1=y+.5+half;
+
+const p=[
+project(x0,y0,baseZ),
+project(x1,y0,baseZ),
+project(x1,y1,baseZ),
+project(x0,y1,baseZ)
+];
+
+face(
+p,
+shade(colour,.72),
+alpha,
+-0.01
+);
+
+}
+
+}
+
+/* =====================================================
+   2. SUPERFICIE SUPERIORE
+
+   Mantiene la matrice originale e la distribuzione
+   delle riflettività. La forma superiore è ondulata.
+   ===================================================== */
 
 for(let y=0;y<rows;y++){
 
@@ -551,61 +624,65 @@ const x1=x+.5+half;
 const y0=y+.5-half;
 const y1=y+.5+half;
 
-/* Altezza individuale della colonna */
+const z=count*layerStep;
+const und=wave(x,y,count)*.20;
 
-for(let k=0;k<count;k++){
+const p=[
+project(x0,y0,z+und),
+project(x1,y0,z+und),
+project(x1,y1,z+und),
+project(x0,y1,z+und)
+];
 
-const z0=k*layerStep;
-const z1=(k+1)*layerStep;
-
-const w0=wave(x,y,k)*.20;
-const w1=wave(x,y,k+1)*.20;
-
-const p000=project(x0,y0,z0+w0);
-const p100=project(x1,y0,z0+w0);
-const p110=project(x1,y1,z0+w0);
-const p010=project(x0,y1,z0+w0);
-
-const p001=project(x0,y0,z1+w1);
-const p101=project(x1,y0,z1+w1);
-const p111=project(x1,y1,z1+w1);
-const p011=project(x0,y1,z1+w1);
-
-/* Faccia superiore */
-
-if(k===count-1){
-
-face(
-[p001,p101,p111,p011],
-colour,
-alpha
-);
+face(p,colour,alpha);
 
 }
 
-/* Pareti laterali esposte */
+}
+
+/* =====================================================
+   3. PARETI PERIMETRALI DELLA SUPERFICIE SUPERIORE
+
+   Mostrano lo spessore tra il piano inferiore
+   e il profilo superiore della cella.
+   ===================================================== */
+
+for(let y=0;y<rows;y++){
+
+for(let x=0;x<cols;x++){
+
+const v=values[y][x];
+const count=levels[y][x];
+
+if(v<=0||count<=0)continue;
+
+const x0=x+.5-half;
+const x1=x+.5+half;
+const y0=y+.5-half;
+const y1=y+.5+half;
+
+const z=count*layerStep;
+const und=wave(x,y,count)*.20;
+
+const top=[
+project(x0,y0,z+und),
+project(x1,y0,z+und),
+project(x1,y1,z+und),
+project(x0,y1,z+und)
+];
+
+const bottom=[
+project(x0,y0,baseZ),
+project(x1,y0,baseZ),
+project(x1,y1,baseZ),
+project(x0,y1,baseZ)
+];
 
 const neighbours=[
-{
-dx:0,dy:-1,
-points:[p000,p100,p101,p001],
-factor:.70
-},
-{
-dx:1,dy:0,
-points:[p100,p110,p111,p101],
-factor:.53
-},
-{
-dx:0,dy:1,
-points:[p010,p110,p111,p011],
-factor:.64
-},
-{
-dx:-1,dy:0,
-points:[p000,p010,p011,p001],
-factor:.44
-}
+{dx:0,dy:-1,a:0,b:1,f:.70},
+{dx:1,dy:0,a:1,b:2,f:.53},
+{dx:0,dy:1,a:2,b:3,f:.64},
+{dx:-1,dy:0,a:3,b:0,f:.44}
 ];
 
 for(const n of neighbours){
@@ -613,16 +690,106 @@ for(const n of neighbours){
 const nx=x+n.dx;
 const ny=y+n.dy;
 
-const neighbourHeight=
+const neighbour=
 ny>=0&&ny<rows&&nx>=0&&nx<cols?
 levels[ny][nx]:0;
 
-if(neighbourHeight>k)continue;
+if(neighbour>0)continue;
 
 face(
-n.points,
-shade(colour,n.factor),
-mode==='holo'?alpha*.72:alpha*.94
+[
+bottom[n.a],
+bottom[n.b],
+top[n.b],
+top[n.a]
+],
+shade(col(v),n.f),
+mode==='holo'?.50:.88
+);
+
+}
+
+}
+
+}
+
+/* =====================================================
+   4. COLONNE CONVETTIVE DI COLLEGAMENTO
+
+   Solo i pixel intensi selezionati dalla matrice
+   generano i sostegni tra le due superfici.
+
+   Le colonne sono leggermente sinuose.
+   ===================================================== */
+
+const supportStep=.55;
+
+for(let y=0;y<rows;y++){
+
+for(let x=0;x<cols;x++){
+
+const v=values[y][x];
+const count=levels[y][x];
+
+if(v<supportThreshold||count<=0)continue;
+
+const colour=col(v);
+const alpha=mode==='holo'?.48:
+mode==='surface'?.92:.86;
+
+const x0=x+.5-half*.72;
+const x1=x+.5+half*.72;
+const y0=y+.5-half*.72;
+const y1=y+.5+half*.72;
+
+const topZ=count*layerStep;
+const bottom=baseZ;
+
+/*
+Suddivisione verticale delle colonne.
+La lieve variazione laterale crea l'effetto
+di gambo convettivo senza deformare la superficie.
+*/
+
+const segments=Math.max(
+4,
+Math.ceil((topZ-bottom)/supportStep)
+);
+
+for(let s=0;s<segments;s++){
+
+const t0=s/segments;
+const t1=(s+1)/segments;
+
+const z0=bottom+(topZ-bottom)*t0;
+const z1=bottom+(topZ-bottom)*t1;
+
+const bend0=wave(x,y,s)*.18;
+const bend1=wave(x,y,s+1)*.18;
+
+const a0=project(x0+bend0,y0,z0);
+const b0=project(x1+bend0,y0,z0);
+const c0=project(x1+bend0,y1,z0);
+const d0=project(x0+bend0,y1,z0);
+
+const a1=project(x0+bend1,y0,z1);
+const b1=project(x1+bend1,y0,z1);
+const c1=project(x1+bend1,y1,z1);
+const d1=project(x0+bend1,y1,z1);
+
+const walls=[
+{p:[a0,b0,b1,a1],f:.70},
+{p:[b0,c0,c1,b1],f:.53},
+{p:[c0,d0,d1,c1],f:.64},
+{p:[d0,a0,a1,d1],f:.44}
+];
+
+for(const wall of walls){
+
+face(
+wall.p,
+shade(colour,wall.f),
+alpha
 );
 
 }
@@ -633,48 +800,17 @@ mode==='holo'?alpha*.72:alpha*.94
 
 }
 
-/* Ordinamento per profondità */
+/* Ordinamento delle facce per profondità */
 
 faces.sort((a,b)=>a.depth-b.depth);
 
 for(const f of faces){
+drawFace(f.points,f.fill,f.alpha);
+   }/* =====================================================
+   5. RETICOLO DELLA SUPERFICIE SUPERIORE
 
-ctx.globalAlpha=f.alpha;
-ctx.fillStyle=f.fill;
-
-ctx.strokeStyle=mode==='holo'?
-'rgba(170,225,255,.58)':
-'rgba(3,12,22,.55)';
-
-ctx.lineWidth=mode==='holo'?.65:.45;
-
-ctx.beginPath();
-
-ctx.moveTo(
-f.points[0].x,
-f.points[0].y
-);
-
-for(let i=1;i<f.points.length;i++){
-
-ctx.lineTo(
-f.points[i].x,
-f.points[i].y
-);
-
-}
-
-ctx.closePath();
-ctx.fill();
-
-if(mode==='holo'){
-ctx.stroke();
-}
-
- }/*
-RETICOLO DELLA SOMMITÀ:
-rende leggibili i singoli parallelepipedi.
-*/
+   Rende leggibili i singoli campioni DBZH.
+   ===================================================== */
 
 if(mode!=='surface'){
 
@@ -690,10 +826,8 @@ const count=levels[y][x];
 
 if(count<=0)continue;
 
-const k=count-1;
-
-const z=(k+1)*layerStep+
-wave(x,y,k+1)*.20;
+const z=count*layerStep+
+wave(x,y,count)*.20;
 
 const x0=x+.5-half;
 const x1=x+.5+half;
@@ -705,6 +839,52 @@ project(x0,y0,z),
 project(x1,y0,z),
 project(x1,y1,z),
 project(x0,y1,z)
+];
+
+ctx.beginPath();
+ctx.moveTo(p[0].x,p[0].y);
+
+for(let i=1;i<p.length;i++){
+ctx.lineTo(p[i].x,p[i].y);
+}
+
+ctx.closePath();
+ctx.stroke();
+
+}
+
+}
+
+}
+
+/* =====================================================
+   6. RETICOLO DELLA SUPERFICIE INFERIORE
+
+   Evidenzia la replica piatta della matrice.
+   ===================================================== */
+
+if(mode==='holo'){
+
+ctx.globalAlpha=.38;
+ctx.strokeStyle='rgba(120,210,255,.58)';
+ctx.lineWidth=.35;
+
+for(let y=0;y<rows;y++){
+
+for(let x=0;x<cols;x++){
+
+if(values[y][x]<=0)continue;
+
+const x0=x+.5-half;
+const x1=x+.5+half;
+const y0=y+.5-half;
+const y1=y+.5+half;
+
+const p=[
+project(x0,y0,baseZ),
+project(x1,y0,baseZ),
+project(x1,y1,baseZ),
+project(x0,y1,baseZ)
 ];
 
 ctx.beginPath();
@@ -742,12 +922,12 @@ ctx.font='11px system-ui';
 
 ctx.fillText(
 'Campioni DBZH: '+occupied+
-' · sviluppo verticale: '+MAX_HEIGHT+' livelli',
+' · sviluppo grafico: '+MAX_HEIGHT+' livelli',
 12,38
 );
 
 ctx.fillText(
-'Gambo: nuclei ≥35 dBZ · cappello: echi ≤29 dBZ',
+'Superficie superiore + replica inferiore · colonne ≥35 dBZ',
 12,h-30
 );
 
