@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""I.R.I.D.E. — OPERA DBZH detection and contextual radar matrices."""
+"""I.R.I.D.E. — OPERA radar pipeline."""
 
 from __future__ import annotations
 
@@ -7,10 +7,11 @@ import json
 import re
 import sys
 import traceback
+import xml.etree.ElementTree as ET
+
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
-import xml.etree.ElementTree as ET
 
 import h5py
 import numpy as np
@@ -28,73 +29,83 @@ S3 = "https://s3.waw3-1.cloudferro.com"
 BUCKET = "openradar-24h"
 PREFIX = "OPERA/COMP"
 
-TIMEOUT = 35
+TIMEOUT = 45
 MAX_BYTES = 250_000_000
 
-THRESHOLD = float(__import__("os").getenv("MIN_DBZ", "35"))
-MIN_PIXELS = int(__import__("os").getenv("MIN_CELL_PIXELS", "8"))
+THRESHOLD = 25.0
+MIN_PIXELS = 8
 
 MAX_CELLS = 100
+MAX_3D_CELLS = 30
 
 MATRIX_SIDE = 72
-MATRIX_FLOOR_DBZ = 8.0
-
+MATRIX_FLOOR = 8.0
 CONTEXT_FACTOR = 2.4
-MIN_CONTEXT_PIXELS = 48
-MAX_CONTEXT_PIXELS = 360
+MIN_CONTEXT = 48
+MAX_CONTEXT = 360
 
-UA = "IRIDE-experimental-nowcasting/2.0"
+# Area operativa: Mediterraneo e arco alpino.
+REGION = {
+    "west": -12.0,
+    "east": 30.0,
+    "south": 30.0,
+    "north": 50.0
+}
+
+TRACK_MAX_AGE_MIN = 70
+TRACK_MAX_DISTANCE_KM = 100.0
+TRACK_MAX_SPEED_KMH = 140.0
+TRACK_HISTORY_SIZE = 24
+
+UA = "IRIDE-open-radar/3.0"
 
 
 def now():
     return datetime.now(timezone.utc)
 
 
-def stamp(d):
-    return d.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+def stamp(value):
+    return value.astimezone(timezone.utc).isoformat().replace(
+        "+00:00", "Z"
+    )
 
 
 def attr(group, key, default=None):
     if group is None or key not in group.attrs:
         return default
-
     value = group.attrs[key]
-
-    if isinstance(value, bytes):
-        return value.decode("utf-8", "replace")
-
     if isinstance(value, np.ndarray) and value.shape == ():
         value = value.item()
-
     if isinstance(value, bytes):
         return value.decode("utf-8", "replace")
-
     return value
 
 
 def number(value, default=None):
     try:
-        x = float(np.asarray(value).item())
-        return x if np.isfinite(x) else default
+        result = float(np.asarray(value).item())
+        return result if np.isfinite(result) else default
     except Exception:
         return default
 
 
 def save(path, obj):
     path.parent.mkdir(parents=True, exist_ok=True)
-
-    tmp = path.with_suffix(path.suffix + ".tmp")
-
-    tmp.write_text(
-        json.dumps(
-            obj,
-            ensure_ascii=False,
-            separators=(",", ":")
-        ) + "\n",
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_text(
+        json.dumps(obj, ensure_ascii=False, separators=(",", ":")) + "\n",
         encoding="utf-8"
     )
+    temp.replace(path)
 
-    tmp.replace(path)
+
+def parse_product_time(key):
+    match = re.search(r"OPERA@(\d{8}T\d{4})@0@DBZH\.h5$", key)
+    if not match:
+        return None
+    return datetime.strptime(
+        match.group(1), "%Y%m%dT%H%M"
+    ).replace(tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------
@@ -102,301 +113,170 @@ def save(path, obj):
 # ---------------------------------------------------------
 
 def list_day(day):
-
     prefix = f"{day:%Y/%m/%d}/{PREFIX}/"
-
-    response = requests.get(
-        f"{S3}/{BUCKET}/",
-        params={
-            "list-type": "2",
-            "prefix": prefix
-        },
-        timeout=TIMEOUT,
-        headers={"User-Agent": UA}
-    )
-
-    response.raise_for_status()
-
-    root = ET.fromstring(response.content)
-
-    ns = {
-        "s": "http://s3.amazonaws.com/doc/2006-03-01/"
-    }
-
+    token = None
     results = []
 
-    for item in root.findall("s:Contents", ns):
+    while True:
+        params = {"list-type": "2", "prefix": prefix}
+        if token:
+            params["continuation-token"] = token
 
-        key = item.findtext(
-            "s:Key",
-            default="",
-            namespaces=ns
+        response = requests.get(
+            f"{S3}/{BUCKET}/",
+            params=params,
+            timeout=TIMEOUT,
+            headers={"User-Agent": UA}
         )
+        response.raise_for_status()
 
-        size = int(
-            item.findtext(
-                "s:Size",
-                default="0",
-                namespaces=ns
-            )
-        )
+        root = ET.fromstring(response.content)
+        ns = {"s": "http://s3.amazonaws.com/doc/2006-03-01/"}
 
-        if key.endswith("@0@DBZH.h5") and 0 < size <= MAX_BYTES:
-            results.append((key, size))
+        for item in root.findall("s:Contents", ns):
+            key = item.findtext("s:Key", "", ns)
+            size = int(item.findtext("s:Size", "0", ns))
+
+            if (
+                key.endswith("@0@DBZH.h5")
+                and 0 < size <= MAX_BYTES
+                and parse_product_time(key)
+            ):
+                results.append((key, size))
+
+        truncated = root.findtext("s:IsTruncated", "false", ns)
+        if truncated.lower() != "true":
+            break
+
+        token = root.findtext("s:NextContinuationToken", None, ns)
+        if not token:
+            raise RuntimeError("Paginazione archivio OPERA incompleta.")
 
     return results
 
 
 def latest():
-
     current = now()
-    items = []
+    products = []
 
     for offset in range(3):
-
         day = (current - timedelta(days=offset)).date()
-
         try:
-            items.extend(
-                list_day(
-                    datetime(
-                        day.year,
-                        day.month,
-                        day.day,
-                        tzinfo=timezone.utc
-                    )
-                )
-            )
+            products.extend(list_day(datetime(
+                day.year, day.month, day.day, tzinfo=timezone.utc
+            )))
+        except Exception as exc:
+            print(f"Archivio {day}: {exc}", file=sys.stderr)
 
-        except Exception as error:
-            print(
-                "Listing",
-                day,
-                error,
-                file=sys.stderr
-            )
+    if not products:
+        raise RuntimeError("Nessun prodotto OPERA DBZH trovato.")
 
-    if not items:
-        raise RuntimeError(
-            "Nessun OPERA DBZH trovato negli ultimi tre giorni UTC."
-        )
-
-    def keytime(item):
-
-        match = re.search(
-            r"OPERA@(\d{8}T\d{4})@0@DBZH\.h5$",
-            item[0]
-        )
-
-        return match.group(1) if match else item[0]
-
-    return max(items, key=keytime)
+    return max(products, key=lambda item: parse_product_time(item[0]))
 
 
-def fetch(key, size):
+def fetch(key, expected_size):
+    folder = DATA / "raw"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / "opera_latest.h5"
 
-    path = DATA / "raw" / "opera_latest.h5"
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    url = (
-        f"{S3}/{BUCKET}/"
-        + quote(key, safe="/@")
-    )
-
+    url = f"{S3}/{BUCKET}/" + quote(key, safe="/@")
     total = 0
 
     with requests.get(
-        url,
-        stream=True,
-        timeout=TIMEOUT,
+        url, stream=True, timeout=TIMEOUT,
         headers={"User-Agent": UA}
     ) as response:
-
         response.raise_for_status()
 
-        with path.open("wb") as file:
-
+        with path.open("wb") as output:
             for chunk in response.iter_content(1024 * 1024):
-
                 if not chunk:
                     continue
-
                 total += len(chunk)
-
                 if total > MAX_BYTES:
-                    raise RuntimeError(
-                        "Download oltre il limite di sicurezza."
-                    )
+                    raise RuntimeError("File OPERA oltre il limite consentito.")
+                output.write(chunk)
 
-                file.write(chunk)
-
-    if size and total != size:
+    if expected_size and total != expected_size:
+        path.unlink(missing_ok=True)
         raise RuntimeError(
-            f"Download incompleto: {total}/{size} byte."
+            f"Download incompleto: {total}/{expected_size} byte."
         )
 
     return path, url
 
 
 # ---------------------------------------------------------
-# DECODIFICA HDF5 ODIM
+# DECODIFICA ODIM HDF5
 # ---------------------------------------------------------
 
 def decode(path):
-
     with h5py.File(path, "r") as h:
+        data_path = "dataset1/data1/data"
+        if data_path not in h:
+            raise RuntimeError("Dataset DBZH ODIM assente.")
 
-        if "dataset1/data1/data" not in h:
-            raise RuntimeError(
-                "Dataset /dataset1/data1/data assente."
-            )
-
-        raw = h["dataset1/data1/data"][()]
-
+        raw = h[data_path][()]
         parameter = h.get("dataset1/data1/what")
 
-        quantity = str(
-            attr(parameter, "quantity", "")
-        )
+        quantity = str(attr(parameter, "quantity", "")).upper()
+        if quantity != "DBZH":
+            raise RuntimeError(f"Prodotto non DBZH: {quantity}")
 
-        if quantity.upper() != "DBZH":
-            raise RuntimeError(
-                f"quantity non è DBZH: {quantity!r}"
-            )
-
-        gain = number(attr(parameter, "gain"), 1)
-        offset = number(attr(parameter, "offset"), 0)
-
+        gain = number(attr(parameter, "gain"), 1.0)
+        offset = number(attr(parameter, "offset"), 0.0)
         nodata = number(attr(parameter, "nodata"))
         undetect = number(attr(parameter, "undetect"))
 
-        z = raw.astype(np.float32) * gain + offset
-
-        invalid = ~np.isfinite(z)
+        radar = raw.astype(np.float32) * gain + offset
+        invalid = ~np.isfinite(radar)
 
         if nodata is not None:
             invalid |= raw == nodata
-
         if undetect is not None:
             invalid |= raw == undetect
 
-        z[invalid] = np.nan
+        radar[invalid] = np.nan
 
         where = h.get("where")
-
         if where is None:
-            raise RuntimeError(
-                "Gruppo /where assente."
-            )
+            raise RuntimeError("Metadati geografici ODIM assenti.")
 
         projection = attr(where, "projdef")
-
         xscale = number(attr(where, "xscale"))
         yscale = number(attr(where, "yscale"))
-
-        nx = int(
-            number(
-                attr(where, "xsize"),
-                z.shape[1]
-            )
-        )
-
-        ny = int(
-            number(
-                attr(where, "ysize"),
-                z.shape[0]
-            )
-        )
+        nx = int(number(attr(where, "xsize"), radar.shape[1]))
+        ny = int(number(attr(where, "ysize"), radar.shape[0]))
 
         if (
-            not projection
-            or not xscale
-            or not yscale
-            or z.shape != (ny, nx)
+            not projection or not xscale or not yscale
+            or radar.shape != (ny, nx)
         ):
-            raise RuntimeError(
-                "Metadati griglia incompleti o dimensioni incoerenti."
-            )
+            raise RuntimeError("Griglia ODIM incoerente.")
 
-        llon = number(attr(where, "LL_lon"))
-        llat = number(attr(where, "LL_lat"))
-
-        if llon is None or llat is None:
-            raise RuntimeError(
-                "LL_lon/LL_lat assenti."
-            )
+        lon0 = number(attr(where, "LL_lon"))
+        lat0 = number(attr(where, "LL_lat"))
+        if lon0 is None or lat0 is None:
+            raise RuntimeError("Coordinate LL ODIM assenti.")
 
         crs = CRS.from_user_input(str(projection))
+        forward = Transformer.from_crs(4326, crs, always_xy=True)
+        inverse = Transformer.from_crs(crs, 4326, always_xy=True)
 
-        forward = Transformer.from_crs(
-            4326,
-            crs,
-            always_xy=True
-        )
+        x0, y0 = forward.transform(lon0, lat0)
 
-        inverse = Transformer.from_crs(
-            crs,
-            4326,
-            always_xy=True
-        )
-
-        ex, ey = forward.transform(llon, llat)
-
-        xo = ex + xscale / 2
-        yo = ey + yscale / 2
-
-        errors = []
-
-        corners = (
-            ("LL_lon", "LL_lat", 0, ny - 1),
-            ("LR_lon", "LR_lat", nx - 1, ny - 1),
-            ("UL_lon", "UL_lat", 0, 0),
-            ("UR_lon", "UR_lat", nx - 1, 0)
-        )
-
-        for lon_key, lat_key, col, row in corners:
-
-            lon = number(attr(where, lon_key))
-            lat = number(attr(where, lat_key))
-
-            if lon is None or lat is None:
-                continue
-
-            px, py = forward.transform(lon, lat)
-
-            gx = xo + col * xscale - xscale / 2
-
-            gy = (
-                yo
-                + (ny - 1 - row) * yscale
-                - yscale / 2
-            )
-
-            errors.append(
-                float(np.hypot(px - gx, py - gy))
-            )
-
-        if errors and max(errors) > max(
-            abs(xscale),
-            abs(yscale)
-        ) * 3:
-
-            raise RuntimeError(
-                "Controllo georeferenziazione fallito."
-            )
+        # Coordinate del centro del pixel in basso a sinistra.
+        origin_x = x0 + xscale / 2
+        origin_y = y0 + yscale / 2
 
         product = h.get("dataset1/what")
-
         end_date = attr(product, "enddate")
         end_time = attr(product, "endtime")
-
         product_time = None
 
         if end_date and end_time:
-
             product_time = datetime.strptime(
-                str(end_date) + str(end_time),
-                "%Y%m%d%H%M%S"
+                str(end_date) + str(end_time), "%Y%m%d%H%M%S"
             ).replace(tzinfo=timezone.utc)
 
         grid = {
@@ -405,797 +285,445 @@ def decode(path):
             "ysize": ny,
             "xscale_m": xscale,
             "yscale_m": yscale,
-            "corner_check_max_error_m": (
-                round(max(errors), 2)
-                if errors else None
-            ),
-            "license": str(
-                attr(h.get("how"), "license", "")
-            )
+            "license_metadata": str(attr(h.get("how"), "license", ""))
         }
 
-        return z, grid, inverse, (xo, yo), product_time
+        return radar, grid, inverse, (origin_x, origin_y), product_time
 
 
 # ---------------------------------------------------------
-# GEOMETRIA E DISTANZE
+# GEOGRAFIA E MATRICE RADAR
 # ---------------------------------------------------------
 
 def haversine(a, b):
-
     from math import radians, sin, cos, asin, sqrt
 
-    p1 = radians(a["lat"])
-    p2 = radians(b["lat"])
-
+    p1, p2 = radians(a["lat"]), radians(b["lat"])
     dp = radians(b["lat"] - a["lat"])
     dl = radians(b["lon"] - a["lon"])
-
-    q = (
-        sin(dp / 2) ** 2
-        + cos(p1) * cos(p2) * sin(dl / 2) ** 2
-    )
-
-    return 6371 * 2 * asin(min(1, sqrt(q)))
+    q = sin(dp / 2) ** 2 + cos(p1) * cos(p2) * sin(dl / 2) ** 2
+    return 6371.0 * 2 * asin(min(1.0, sqrt(q)))
 
 
-def history_read():
-
-    try:
-        return json.loads(
-            HIST.read_text(encoding="utf-8")
-        )
-
-    except Exception:
-        return {}
-
-
-# ---------------------------------------------------------
-# NUOVA MATRICE RADAR CONTESTUALE 72x72
-# ---------------------------------------------------------
-
-def contextual_matrix(
-    radar,
-    component_slice,
-    centroid_x,
-    centroid_y
-):
-
-    ys, xs = component_slice
-
-    cell_width = xs.stop - xs.start
-    cell_height = ys.stop - ys.start
-
-    largest_dimension = max(
-        cell_width,
-        cell_height
-    )
-
-    context_size = int(
-        np.ceil(
-            largest_dimension * CONTEXT_FACTOR
-        )
-    )
-
-    context_size = max(
-        MIN_CONTEXT_PIXELS,
-        context_size
-    )
-
-    context_size = min(
-        MAX_CONTEXT_PIXELS,
-        context_size
-    )
-
-    half = context_size // 2
-
-    x0 = int(round(centroid_x)) - half
-    y0 = int(round(centroid_y)) - half
-
-    x1 = x0 + context_size
-    y1 = y0 + context_size
-
-    patch = np.full(
-        (context_size, context_size),
-        np.nan,
-        dtype=np.float32
-    )
-
-    source_x0 = max(0, x0)
-    source_y0 = max(0, y0)
-
-    source_x1 = min(radar.shape[1], x1)
-    source_y1 = min(radar.shape[0], y1)
-
-    dest_x0 = source_x0 - x0
-    dest_y0 = source_y0 - y0
-
-    dest_x1 = dest_x0 + (
-        source_x1 - source_x0
-    )
-
-    dest_y1 = dest_y0 + (
-        source_y1 - source_y0
-    )
-
-    patch[
-        dest_y0:dest_y1,
-        dest_x0:dest_x1
-    ] = radar[
-        source_y0:source_y1,
-        source_x0:source_x1
-    ]
-
-    patch[
-        ~np.isfinite(patch)
-        | (patch < MATRIX_FLOOR_DBZ)
-    ] = 0
-
-    output = np.zeros(
-        (MATRIX_SIDE, MATRIX_SIDE),
-        dtype=np.float32
-    )
-
-    for oy in range(MATRIX_SIDE):
-
-        py0 = int(
-            oy * context_size / MATRIX_SIDE
-        )
-
-        py1 = int(
-            (oy + 1) * context_size / MATRIX_SIDE
-        )
-
-        py1 = max(py0 + 1, py1)
-
-        for ox in range(MATRIX_SIDE):
-
-            px0 = int(
-                ox * context_size / MATRIX_SIDE
-            )
-
-            px1 = int(
-                (ox + 1) * context_size / MATRIX_SIDE
-            )
-
-            px1 = max(px0 + 1, px1)
-
-            block = patch[
-                py0:py1,
-                px0:px1
-            ]
-
-            valid = block[
-                np.isfinite(block)
-                & (block >= MATRIX_FLOOR_DBZ)
-            ]
-
-            if valid.size:
-                output[oy, ox] = float(
-                    np.max(valid)
-                )
-
+def inside_region(lat, lon):
     return (
-        np.round(output, 1).tolist(),
-        {
-            "matrix_rows": MATRIX_SIDE,
-            "matrix_cols": MATRIX_SIDE,
-            "context_pixels": context_size,
-            "context_floor_dbz": MATRIX_FLOOR_DBZ,
-            "context_factor": CONTEXT_FACTOR,
-            "pixel_origin_x": x0,
-            "pixel_origin_y": y0,
-            "pixel_end_x": x1,
-            "pixel_end_y": y1,
-            "aggregation": "maximum reflectivity per matrix sample",
-            "contains_weak_echo": True
-        }
-    )# ---------------------------------------------------------
-# RILEVAMENTO CELLE E PERIMETRI
-# ---------------------------------------------------------
-
-def detect(
-    radar,
-    grid,
-    inverse,
-    origin,
-    timestamp,
-    history
-):
-
-    labels, _ = ndimage.label(
-        np.isfinite(radar)
-        & (radar >= THRESHOLD),
-        structure=np.ones(
-            (3, 3),
-            dtype=np.uint8
-        )
+        REGION["south"] <= lat <= REGION["north"]
+        and REGION["west"] <= lon <= REGION["east"]
     )
 
+
+def contextual_matrix(radar, cx, cy, component_slice):
+    ys, xs = component_slice
+    size = int(np.ceil(
+        max(xs.stop - xs.start, ys.stop - ys.start) * CONTEXT_FACTOR
+    ))
+    size = min(MAX_CONTEXT, max(MIN_CONTEXT, size))
+
+    half = size // 2
+    x0, y0 = int(round(cx)) - half, int(round(cy)) - half
+    x1, y1 = x0 + size, y0 + size
+
+    patch = np.zeros((size, size), dtype=np.float32)
+
+    sx0, sy0 = max(0, x0), max(0, y0)
+    sx1, sy1 = min(radar.shape[1], x1), min(radar.shape[0], y1)
+
+    if sx1 > sx0 and sy1 > sy0:
+        dx0, dy0 = sx0 - x0, sy0 - y0
+        patch[dy0:dy0 + sy1 - sy0, dx0:dx0 + sx1 - sx0] = (
+            radar[sy0:sy1, sx0:sx1]
+        )
+
+    patch[~np.isfinite(patch) | (patch < MATRIX_FLOOR)] = 0
+
+    # Ridimensionamento max-pooling: conserva i massimi DBZH.
+    output = np.zeros((MATRIX_SIDE, MATRIX_SIDE), dtype=np.float32)
+    for oy in range(MATRIX_SIDE):
+        py0 = int(oy * size / MATRIX_SIDE)
+        py1 = max(py0 + 1, int((oy + 1) * size / MATRIX_SIDE))
+        for ox in range(MATRIX_SIDE):
+            px0 = int(ox * size / MATRIX_SIDE)
+            px1 = max(px0 + 1, int((ox + 1) * size / MATRIX_SIDE))
+            block = patch[py0:py1, px0:px1]
+            valid = block[block >= MATRIX_FLOOR]
+            if valid.size:
+                output[oy, ox] = float(valid.max())
+
+    info = {
+        "rows": MATRIX_SIDE,
+        "cols": MATRIX_SIDE,
+        "context_pixels": size,
+        "floor_dbz": MATRIX_FLOOR,
+        "aggregation": "maximum_dbzh",
+        "vertical_information": False
+    }
+    return np.round(output, 1).tolist(), info
+
+
+# ---------------------------------------------------------
+# PERIMETRO ORDINATO E CELLE
+# ---------------------------------------------------------
+
+def ordered_perimeter(component, x_start, y_start, grid, inverse, origin):
+    edge = component & ~ndimage.binary_erosion(
+        component, structure=np.ones((3, 3)), border_value=0
+    )
+    yy, xx = np.where(edge)
+    if len(xx) < 3:
+        return []
+
+    # Ordine angolare attorno al centroide del contorno.
+    cx, cy = float(xx.mean()), float(yy.mean())
+    order = np.argsort(np.arctan2(yy - cy, xx - cx))
+    if len(order) > 100:
+        order = order[np.linspace(0, len(order) - 1, 100).astype(int)]
+
+    ox, oy = origin
+    points = []
+
+    for index in order:
+        px = x_start + int(xx[index])
+        py = y_start + int(yy[index])
+
+        gx = ox + px * grid["xscale_m"]
+        gy = oy + (grid["ysize"] - 1 - py) * grid["yscale_m"]
+        lon, lat = inverse.transform(gx, gy)
+
+        if np.isfinite(lat) and np.isfinite(lon):
+            points.append([round(float(lat), 4), round(float(lon), 4)])
+
+    return points
+
+
+def detect(radar, grid, inverse, origin):
+    mask = np.isfinite(radar) & (radar >= THRESHOLD)
+
+    labels, count = ndimage.label(
+        mask, structure=np.ones((3, 3), dtype=np.uint8)
+    )
     objects = ndimage.find_objects(labels)
+    ox, oy = origin
 
     cells = []
 
-    xo, yo = origin
-
     for label_id, sl in enumerate(objects, 1):
-
         if sl is None:
             continue
 
         ys, xs = sl
-
-        component = (
-            labels[sl] == label_id
-        )
-
+        component = labels[sl] == label_id
         area = int(component.sum())
 
         if area < MIN_PIXELS:
             continue
 
-        patch = radar[sl]
-
         yy, xx = np.where(component)
+        values = radar[sl][yy, xx]
 
-        values = patch[yy, xx]
+        weights = np.maximum(values - THRESHOLD + 1, 1)
+        cx = xs.start + float(np.average(xx, weights=weights))
+        cy = ys.start + float(np.average(yy, weights=weights))
 
-        weights = np.maximum(
-            values - THRESHOLD,
-            0.1
-        )
-
-        cx = float(
-            xs.start
-            + np.average(xx, weights=weights)
-        )
-
-        cy = float(
-            ys.start
-            + np.average(yy, weights=weights)
-        )
-
-        gx = xo + cx * grid["xscale_m"]
-
-        gy = (
-            yo
-            + (grid["ysize"] - 1 - cy)
-            * grid["yscale_m"]
-        )
-
+        gx = ox + cx * grid["xscale_m"]
+        gy = oy + (grid["ysize"] - 1 - cy) * grid["yscale_m"]
         lon, lat = inverse.transform(gx, gy)
 
+        if not inside_region(float(lat), float(lon)):
+            continue
+
         matrix, matrix_info = contextual_matrix(
-            radar,
-            sl,
-            cx,
-            cy
+            radar, cx, cy, sl
         )
 
-        edge = component & ~ndimage.binary_erosion(
-            component,
-            structure=np.ones((3, 3)),
-            border_value=0
+        perimeter = ordered_perimeter(
+            component, xs.start, ys.start, grid, inverse, origin
         )
 
-        by, bx = np.where(edge)
-
-        if len(bx) > 80:
-
-            take = np.linspace(
-                0,
-                len(bx) - 1,
-                80
-            ).astype(int)
-
-            bx = bx[take]
-            by = by[take]
-
-        perimeter = []
-
-        for py, px in zip(by, bx):
-
-            x = (
-                xo
-                + (xs.start + int(px))
-                * grid["xscale_m"]
-            )
-
-            y = (
-                yo
-                + (
-                    grid["ysize"]
-                    - 1
-                    - (ys.start + int(py))
-                )
-                * grid["yscale_m"]
-            )
-
-            lo, la = inverse.transform(x, y)
-
-            perimeter.append([
-                round(float(la), 4),
-                round(float(lo), 4)
-            ])
-
-        cells.append({
-
+        cell = {
             "id": f"OPERA-{label_id:05d}",
-
             "lat": round(float(lat), 4),
             "lon": round(float(lon), 4),
-
-            "max_dbz": round(
-                float(values.max()),
-                1
-            ),
-
-            "mean_dbz": round(
-                float(values.mean()),
-                1
-            ),
-
+            "max_dbz": round(float(values.max()), 1),
+            "mean_dbz": round(float(values.mean()), 1),
             "threshold_dbz": THRESHOLD,
-
             "area_pixels": area,
-
             "approx_area_km2": round(
-                area
-                * abs(
-                    grid["xscale_m"]
-                    * grid["yscale_m"]
-                )
-                / 1e6,
-                1
+                area * abs(grid["xscale_m"] * grid["yscale_m"]) / 1e6, 1
             ),
-
-            "bbox_pixels": [
-                xs.start,
-                ys.start,
-                xs.stop,
-                ys.stop
-            ],
-
             "perimeter": perimeter,
-
             "grid_matrix": matrix,
-
             "matrix_sampling": matrix_info,
-
             "matrix_semantics": {
-                "kind": "contextual_2d_radar_reflectivity",
+                "kind": "observed_2d_dbzh_context",
                 "units": "dBZ",
-                "floor_dbz": MATRIX_FLOOR_DBZ,
-                "cell_detection_threshold_dbz": THRESHOLD,
-                "weak_echo_preserved": True,
                 "vertical_information": False
             },
-
             "classification": "unclassified_radar_echo",
-
-            "classification_note":
-                "Il composito DBZH 2D non consente "
-                "di diagnosticare da solo le classi convettive.",
-
             "severity": {
                 "vil": None,
                 "echo_top": None,
                 "rain_mmh": None
             }
-
-        })
+        }
+        cells.append(cell)
 
     cells.sort(
-        key=lambda c: (
-            c["max_dbz"],
-            c["area_pixels"]
-        ),
+        key=lambda c: (c["max_dbz"], c["area_pixels"]),
         reverse=True
     )
+    return cells[:MAX_CELLS]# ---------------------------------------------------------
+# TRACKING: ABBINAMENTO UNO-A-UNO
+# ---------------------------------------------------------
 
-    cells = cells[:MAX_CELLS]
+def read_history():
+    try:
+        old = json.loads(HIST.read_text(encoding="utf-8"))
+        if old.get("schema_version") != 2:
+            return {"schema_version": 2, "tracks": {}}
+        if not isinstance(old.get("tracks"), dict):
+            return {"schema_version": 2, "tracks": {}}
+        return old
+    except Exception:
+        return {"schema_version": 2, "tracks": {}}
 
-    # -----------------------------------------------------
-    # TRACCIAMENTO: logica invariata
-    # -----------------------------------------------------
 
-    used = set()
+def parse_time(value):
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
-    for cell in cells:
 
-        best = None
-        distance = 80
+def track_cells(cells, timestamp, history):
+    tracks = history.setdefault("tracks", {})
 
-        for track_id, track in history.items():
+    # Elimina tracce scadute o con osservazioni non valide.
+    active = {}
+    for track_id, track in tracks.items():
+        observations = track.get("observations", [])
+        if not observations:
+            continue
+        try:
+            age = (timestamp - parse_time(observations[-1]["timestamp"])).total_seconds() / 60
+        except Exception:
+            continue
+        if 0 <= age <= TRACK_MAX_AGE_MIN:
+            active[track_id] = track
 
-            observations = track.get(
-                "observations",
-                []
-            )
-
-            if not observations or track_id in used:
-                continue
-
+    # Tutte le coppie ammissibili vengono ordinate per distanza.
+    candidates = []
+    for cell_index, cell in enumerate(cells):
+        for track_id, track in active.items():
+            last = track["observations"][-1]
             try:
-
-                last = observations[-1]
-
                 age = (
-                    timestamp
-                    - datetime.fromisoformat(
-                        last["timestamp"].replace(
-                            "Z",
-                            "+00:00"
-                        )
-                    )
+                    timestamp - parse_time(last["timestamp"])
                 ).total_seconds() / 60
+                if age <= 0 or age > TRACK_MAX_AGE_MIN:
+                    continue
 
+                distance = haversine(last, cell)
+                speed = distance / (age / 60)
+
+                if (
+                    distance <= TRACK_MAX_DISTANCE_KM
+                    and speed <= TRACK_MAX_SPEED_KMH
+                ):
+                    candidates.append((distance, cell_index, track_id))
             except Exception:
                 continue
 
-            if 0 < age <= 90:
+    candidates.sort(key=lambda item: item[0])
 
-                d = haversine(last, cell)
+    assigned_cells = set()
+    assigned_tracks = set()
+    assignments = {}
 
-                if d < distance:
-                    best = track_id
-                    distance = d
+    for distance, cell_index, track_id in candidates:
+        if cell_index in assigned_cells or track_id in assigned_tracks:
+            continue
+        assignments[cell_index] = track_id
+        assigned_cells.add(cell_index)
+        assigned_tracks.add(track_id)
 
-        track_id = best or cell["id"]
+    current_stamp = stamp(timestamp)
 
-        used.add(track_id)
+    for index, cell in enumerate(cells):
+        track_id = assignments.get(index)
 
-        track = history.setdefault(
-            track_id,
-            {"observations": []}
-        )
+        if track_id is None:
+            track_id = f"IRIDE-{timestamp:%Y%m%dT%H%M}-{index:03d}"
+            while track_id in tracks:
+                track_id += "X"
+            tracks[track_id] = {"observations": []}
 
-        observations = track.setdefault(
-            "observations",
-            []
-        )
+        track = tracks[track_id]
+        observations = track.setdefault("observations", [])
 
-        current_timestamp = stamp(timestamp)
-
-        if (
-            not observations
-            or observations[-1]["timestamp"]
-            != current_timestamp
-        ):
-
+        if not observations or observations[-1]["timestamp"] != current_stamp:
             observations.append({
-
-                "timestamp": current_timestamp,
-
+                "timestamp": current_stamp,
                 "lat": cell["lat"],
                 "lon": cell["lon"],
-
                 "max_dbz": cell["max_dbz"]
-
             })
 
-            del observations[:-24]
+        del observations[:-TRACK_HISTORY_SIZE]
 
         track_data = {
-
             "track_id": track_id,
-
-            "observations": observations[-24:],
-
-            "forecast_status":
-                "insufficient_observations"
-
+            "observations": observations[-TRACK_HISTORY_SIZE:],
+            "forecast_status": "insufficient_observations",
+            "real_vector": None,
+            "forecast_30m": None,
+            "forecast_60m": None,
+            "speed_kmh": None
         }
 
         if len(observations) >= 2:
+            a, b = observations[-2], observations[-1]
+            ta, tb = parse_time(a["timestamp"]), parse_time(b["timestamp"])
+            minutes = (tb - ta).total_seconds() / 60
 
-            a = observations[-2]
-            b = observations[-1]
+            if 0 < minutes <= TRACK_MAX_AGE_MIN:
+                distance = haversine(a, b)
+                speed = distance / (minutes / 60)
 
-            ta = datetime.fromisoformat(
-                a["timestamp"].replace("Z", "+00:00")
-            )
+                if speed <= TRACK_MAX_SPEED_KMH:
+                    def predict(future_minutes):
+                        factor = future_minutes / minutes
+                        return [
+                            round(b["lat"] + (b["lat"] - a["lat"]) * factor, 5),
+                            round(b["lon"] + (b["lon"] - a["lon"]) * factor, 5)
+                        ]
 
-            tb = datetime.fromisoformat(
-                b["timestamp"].replace("Z", "+00:00")
-            )
-
-            minutes = (
-                tb - ta
-            ).total_seconds() / 60
-
-            if minutes > 0:
-
-                def predict(m):
-
-                    factor = m / minutes
-
-                    return [
-                        round(
-                            b["lat"]
-                            + (b["lat"] - a["lat"])
-                            * factor,
-                            5
-                        ),
-
-                        round(
-                            b["lon"]
-                            + (b["lon"] - a["lon"])
-                            * factor,
-                            5
-                        )
-                    ]
-
-                track_data.update({
-
-                    "forecast_status":
-                        "linear_extrapolation_from_two_observations",
-
-                    "real_vector": [
-                        [a["lat"], a["lon"]],
-                        [b["lat"], b["lon"]]
-                    ],
-
-                    "forecast_30m": [
-                        [b["lat"], b["lon"]],
-                        predict(30)
-                    ],
-
-                    "forecast_60m": [
-                        [b["lat"], b["lon"]],
-                        predict(60)
-                    ],
-
-                    "observed_interval_minutes":
-                        round(minutes, 1),
-
-                    "speed_kmh": round(
-                        haversine(a, b) / (minutes / 60),
-                        1
-                    )
-
-                })
-
-        cell["track"] = track_data
+                    track_data.update({
+                        "forecast_status": "experimental_linear_extrapolation",
+                        "real_vector": [
+                            [a["lat"], a["lon"]],
+                            [b["lat"], b["lon"]]
+                        ],
+                        "forecast_30m": [
+                            [b["lat"], b["lon"]], predict(30)
+                        ],
+                        "forecast_60m": [
+                            [b["lat"], b["lon"]], predict(60)
+                        ],
+                        "observed_interval_minutes": round(minutes, 1),
+                        "speed_kmh": round(speed, 1)
+                    })
 
         cell["track_id"] = track_id
-
+        cell["track"] = track_data
         cell["vectors"] = {
-
-            "real": track_data.get("real_vector"),
-
-            "predictive_30m":
-                track_data.get("forecast_30m"),
-
-            "predictive_60m":
-                track_data.get("forecast_60m"),
-
-            "forecast_status":
-                track_data["forecast_status"]
-
+            "real": track_data["real_vector"],
+            "predictive_30m": track_data["forecast_30m"],
+            "predictive_60m": track_data["forecast_60m"],
+            "forecast_status": track_data["forecast_status"]
         }
+
+    history["tracks"] = active | {
+        cell["track_id"]: tracks[cell["track_id"]] for cell in cells
+    }
 
     return cells, history
 
 
 # ---------------------------------------------------------
-# PIPELINE PRINCIPALE
+# PUBBLICAZIONE
 # ---------------------------------------------------------
 
 def main():
-
     started = now()
-
-    source = None
+    source_path = None
 
     try:
-
         key, size = latest()
+        source_path, source_url = fetch(key, size)
 
-        source, url = fetch(key, size)
-
-        radar, grid, inverse, origin, product_time = decode(
-            source
-        )
-
+        radar, grid, inverse, origin, product_time = decode(source_path)
         if product_time is None:
+            product_time = parse_product_time(key)
+        if product_time is None:
+            raise RuntimeError("Timestamp prodotto OPERA non disponibile.")
 
-            match = re.search(
-                r"OPERA@(\d{8}T\d{4})@0@DBZH\.h5$",
-                key
-            )
-
-            if not match:
-                raise RuntimeError(
-                    "Timestamp del prodotto assente."
-                )
-
-            product_time = datetime.strptime(
-                match.group(1),
-                "%Y%m%dT%H%M"
-            ).replace(tzinfo=timezone.utc)
-
-        history = history_read()
-
-        cells, history = detect(
-            radar,
-            grid,
-            inverse,
-            origin,
-            product_time,
-            history
-        )
+        cells = detect(radar, grid, inverse, origin)
 
         if not cells:
-
             raise RuntimeError(
-                f"Nessuna cella ≥{THRESHOLD} dBZ "
-                f"con almeno {MIN_PIXELS} pixel. "
-                "Output precedente conservato."
+                "Nessuna cella nella regione con soglia "
+                f"{THRESHOLD} dBZ e almeno {MIN_PIXELS} pixel. "
+                "Pubblicazione precedente conservata."
             )
 
+        history = read_history()
+        cells, history = track_cells(cells, product_time, history)
+
+        for index, cell in enumerate(cells):
+            cell["3d_available"] = index < MAX_3D_CELLS
+            cell["3d_rank"] = index + 1 if index < MAX_3D_CELLS else None
+
         payload = {
-
-            "schema_version": 4,
-
-            "product":
-                "I.R.I.D.E. — Integrated Radar Imaging & Detection Engine",
-
+            "schema_version": 5,
+            "product": "I.R.I.D.E. — Integrated Radar Imaging & Detection Engine",
             "status": "ok",
-
             "timestamp": stamp(product_time),
-
             "generated_at": stamp(now()),
-
+            "region": REGION,
             "source": {
-
-                "provider":
-                    "EUMETNET OPERA via public CloudFerro object storage",
-
-                "url": url,
-
+                "provider": "EUMETNET OPERA",
+                "archive": "CloudFerro openradar-24h",
+                "url": source_url,
                 "object_key": key,
-
-                "product":
-                    "OPERA CIRRUS maximum reflectivity composite DBZH",
-
-                "license": grid["license"],
-
-                "attribution":
-                    "Radar: EUMETNET OPERA; archivio: CloudFerro; "
-                    "elaborazione: I.R.I.D.E."
-
+                "product": "OPERA DBZH composite",
+                "attribution": (
+                    "Dati radar EUMETNET OPERA, archivio CloudFerro; "
+                    "elaborazione I.R.I.D.E. Licenza e condizioni del "
+                    "prodotto da verificare nella documentazione ufficiale."
+                )
             },
-
             "grid": grid,
-
             "processing": {
-
                 "threshold_dbz": THRESHOLD,
-
                 "minimum_cell_pixels": MIN_PIXELS,
-
-                "cell_count": len(cells),
-
-                "method":
-                    "8-connected threshold segmentation",
-
-                "matrix_size": [
-                    MATRIX_SIDE,
-                    MATRIX_SIDE
-                ],
-
-                "matrix_floor_dbz": MATRIX_FLOOR_DBZ,
-
-                "matrix_context_factor": CONTEXT_FACTOR,
-
-                "matrix_description":
-                    "Contextual radar matrix including weak echoes "
-                    "around each detected convective cell.",
-
-                "forecast_method":
-                    "Linear extrapolation from two distinct observed centroids",
-
-                "limits": [
-
-                    "OPERA MAX DBZH è un composito 2D, "
-                    "non un volume radar 3D.",
-
-                    "La matrice contestuale conserva gli echi "
-                    "circostanti, ma non fornisce quote verticali.",
-
-                    "VIL, echo-top e rain rate non sono ricavati "
-                    "da questo prodotto.",
-
-                    "Le classi MCS/MCC/MCV/squall line/V-shape/"
-                    "comma head/echo hook/supercella non vengono assegnate.",
-
-                    "I vettori +30/+60 minuti sono estrapolazioni "
-                    "sperimentali, non previsioni ufficiali."
-
-                ]
-
+                "maximum_detected_cells": MAX_CELLS,
+                "maximum_3d_cells": MAX_3D_CELLS,
+                "matrix_size": [MATRIX_SIDE, MATRIX_SIDE],
+                "tracking": "one-to-one spatial and temporal association",
+                "forecast": "experimental linear extrapolation after two observations",
+                "vertical_data": "not available from 2D DBZH composite"
             },
-
             "cell_count": len(cells),
-
             "cells": cells
-
         }
 
-        save(
-            DATA / "iride.json",
-            payload
-        )
-
-        save(
-            ROOT / "docs" / "data" / "iride.json",
-            payload
-        )
-
-        save(
-            HIST,
-            history
-        )
-
-        save(
-            DATA / "status.json",
-            {
-
-                "status": "ok",
-
-                "timestamp": payload["timestamp"],
-
-                "cell_count": len(cells),
-
-                "matrix_size": MATRIX_SIDE,
-
-                "source_object": key,
-
-                "elapsed_seconds": round(
-                    (now() - started).total_seconds(),
-                    1
-                )
-
-            }
-        )
+        save(DATA / "iride.json", payload)
+        save(ROOT / "docs" / "data" / "iride.json", payload)
+        save(HIST, history)
+        save(DATA / "status.json", {
+            "status": "ok",
+            "timestamp": payload["timestamp"],
+            "cell_count": len(cells),
+            "cells_3d": min(len(cells), MAX_3D_CELLS),
+            "elapsed_seconds": round((now() - started).total_seconds(), 1)
+        })
 
         print(
             f"IRIDE OK: {len(cells)} celle; "
-            f"matrice {MATRIX_SIDE}x{MATRIX_SIDE}; "
+            f"{min(len(cells), MAX_3D_CELLS)} abilitate 3D; "
             f"{payload['timestamp']}"
         )
 
     except Exception as error:
-
-        save(
-            DATA / "status.json",
-            {
-
-                "status": "error",
-
-                "generated_at": stamp(now()),
-
-                "message": str(error),
-
-                "previous_data_preserved": True
-
-            }
-        )
-
+        save(DATA / "status.json", {
+            "status": "error",
+            "generated_at": stamp(now()),
+            "message": str(error),
+            "previous_data_preserved": True
+        })
         traceback.print_exc()
-
         raise
 
     finally:
-
-        if source:
-
-            try:
-                source.unlink(missing_ok=True)
-
-            except Exception:
-                pass
+        if source_path:
+            source_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
