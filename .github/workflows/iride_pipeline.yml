@@ -3,7 +3,7 @@ name: I.R.I.D.E. radar nowcasting
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/20 * * * *"
+    - cron: "*/15 * * * *"
   push:
     branches: [main]
     paths:
@@ -58,7 +58,7 @@ jobs:
 
           assert data == public, "I JSON pubblici e interni non coincidono"
           assert data["status"] == "ok"
-          assert data["schema_version"] == 5
+          assert data["schema_version"] == 6
           assert status["status"] == "ok"
 
           cells = data["cells"]
@@ -86,23 +86,39 @@ jobs:
                       assert isinstance(value, (int, float))
                       assert math.isfinite(value)
 
+              morphology = cell["morphology"]
+              assert morphology["class"]
+              assert cell["perimeter_semantics"]
+
               if cell["3d_available"]:
                   count_3d += 1
                   assert cell["3d_rank"] is not None
               else:
                   assert cell["3d_rank"] is None
 
-              for vector_name in ("real", "predictive_30m", "predictive_60m"):
+              for vector_name in (
+                  "real",
+                  "predictive_30m",
+                  "predictive_60m",
+                  "predictive_180m"
+              ):
                   vector = cell["vectors"][vector_name]
                   if vector is not None:
                       assert len(vector) == 2
                       for point in vector:
                           assert len(point) == 2
-                          assert all(math.isfinite(float(v)) for v in point)
+                          assert all(
+                              math.isfinite(float(v))
+                              for v in point
+                          )
 
           assert count_3d <= 30
           assert status["cell_count"] == len(cells)
-          print(f"Validazione superata: {len(cells)} celle, {count_3d} 3D")
+
+          print(
+              f"Validazione superata: {len(cells)} celle, "
+              f"{count_3d} abilitate 3D"
+          )
           PY
 
       - name: Commit data and history
