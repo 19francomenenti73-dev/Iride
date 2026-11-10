@@ -391,7 +391,10 @@ def contextual_matrix(radar, cx, cy, component_slice):
         "vertical_information": False
     }
 
-    return np.round(output, 1).tolist(), info# ---------------------------------------------------------
+    return np.round(output, 1).tolist(), info
+
+
+# ---------------------------------------------------------
 # PERIMETRO E RILEVAMENTO CELLE
 # ---------------------------------------------------------
 
@@ -554,8 +557,7 @@ def detect(radar, grid, inverse, origin):
         reverse=True
     )
     return cells[:MAX_CELLS]
-
-
+            
 # ---------------------------------------------------------
 # TRACKING E VETTORI
 # ---------------------------------------------------------
@@ -858,7 +860,10 @@ def track_cells(cells, timestamp, history):
         for cell in cells
     }
 
-    return cells, history# ---------------------------------------------------------
+    return cells, history
+
+
+# ---------------------------------------------------------
 # RASTER DBZH GEORIFERITO PER LA MAPPA LEAFLET
 # ---------------------------------------------------------
 
@@ -871,14 +876,21 @@ def png_chunk(kind, data):
     )
 
 
+# CORREZIONE: scrittura corretta delle righe RGBA.
 def write_png(path, width, height, rgba):
+    rgba = np.asarray(rgba, dtype=np.uint8)
+
+    if rgba.shape != (height, width, 4):
+        raise ValueError(
+            f"Raster RGBA non valido: {rgba.shape}; "
+            f"atteso {(height, width, 4)}"
+        )
+
     raw = bytearray()
-    stride = width * 4
 
     for y in range(height):
         raw.append(0)
-        start = y * stride
-        raw.extend(rgba[start:start + stride])
+        raw.extend(rgba[y].tobytes())
 
     header = struct.pack(">2I", width, height)
     header += bytes([8, 6, 0, 0, 0])
@@ -891,6 +903,7 @@ def write_png(path, width, height, rgba):
     )
 
     path.parent.mkdir(parents=True, exist_ok=True)
+
     temp = path.with_suffix(path.suffix + ".tmp")
     temp.write_bytes(content)
     temp.replace(path)
@@ -999,8 +1012,7 @@ def generate_radar_overlay(radar, grid, origin):
         ),
         "timestamp": None
     }
-
-
+    
 # ---------------------------------------------------------
 # PUBBLICAZIONE
 # ---------------------------------------------------------
@@ -1164,3 +1176,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+                    
