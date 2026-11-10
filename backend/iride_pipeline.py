@@ -47,10 +47,10 @@ MIN_CONTEXT = 48
 MAX_CONTEXT = 360
 
 REGION = {
-    "west": -12.0,
-    "east": 30.0,
+    "west": -15.0,
+    "east": 38.0,
     "south": 30.0,
-    "north": 50.0
+    "north": 72.0
 }
 
 TRACK_MAX_AGE_MIN = 70
@@ -312,7 +312,10 @@ def decode(path):
             except ValueError:
                 product_time = None
 
-        return radar, grid, inverse, (ll_x, ll_y), product_time# ---------------------------------------------------------
+        return radar, grid, inverse, (ll_x, ll_y), product_time
+
+
+# ---------------------------------------------------------
 # GEOGRAFIA E MATRICE RADAR
 # ---------------------------------------------------------
 
@@ -394,9 +397,7 @@ def ordered_perimeter(component, x_start, y_start, grid, inverse, origin):
         component,
         structure=np.ones((3, 3)),
         border_value=0
-    )
-
-    yy, xx = np.where(edge)
+    )    yy, xx = np.where(edge)
     if len(xx) < 3:
         return []
 
@@ -555,7 +556,10 @@ def detect(radar, grid, inverse, origin):
         reverse=True
     )
 
-    return cells[:MAX_CELLS]# ---------------------------------------------------------
+    return cells[:MAX_CELLS]
+
+
+# ---------------------------------------------------------
 # TRACKING
 # ---------------------------------------------------------
 
@@ -580,12 +584,13 @@ def parse_time(value):
 
 
 def track_cells(cells, timestamp, history):
+    from math import asin, atan2, cos, degrees, radians, sin
+
     tracks = history.setdefault("tracks", {})
     active = {}
 
     for track_id, track in tracks.items():
         observations = track.get("observations", [])
-
         if not observations:
             continue
 
@@ -609,69 +614,99 @@ def track_cells(cells, timestamp, history):
                 age = (
                     timestamp - parse_time(last["timestamp"])
                 ).total_seconds() / 60
+                distance = haversine(last, cell)
 
-                if age <= 0 or age > TRACK_MAX_AGE_MIN:
+                if age == 0:
+                    # Riutilizza il track se la stessa scansione viene
+                    # elaborata più di una volta: evita duplicati.
+                    if distance <= 25.0:
+                        candidates.append((distance, cell_index, track_id))
                     continue
 
-                distance = haversine(last, cell)
-                speed = distance / (age / 60)
+                if age < 0 or age > TRACK_MAX_AGE_MIN:
+                    continue
 
+                speed = distance / (age / 60.0)
                 if (
                     distance <= TRACK_MAX_DISTANCE_KM
                     and speed <= TRACK_MAX_SPEED_KMH
                 ):
-                    candidates.append((
-                        distance, cell_index, track_id
-                    ))
+                    candidates.append((distance, cell_index, track_id))
 
             except Exception:
                 continue
 
     candidates.sort(key=lambda item: item[0])
-
     assigned_cells = set()
     assigned_tracks = set()
     assignments = {}
 
     for distance, cell_index, track_id in candidates:
-        if (
-            cell_index in assigned_cells
-            or track_id in assigned_tracks
-        ):
+        if cell_index in assigned_cells or track_id in assigned_tracks:
             continue
-
         assignments[cell_index] = track_id
         assigned_cells.add(cell_index)
         assigned_tracks.add(track_id)
 
     current_stamp = stamp(timestamp)
 
+    def bearing_degrees(a, b):
+        lat1 = radians(float(a["lat"]))
+        lat2 = radians(float(b["lat"]))
+        delta_lon = radians(float(b["lon"]) - float(a["lon"]))
+        y = sin(delta_lon) * cos(lat2)
+        x = (
+            cos(lat1) * sin(lat2)
+            - sin(lat1) * cos(lat2) * cos(delta_lon)
+        )
+        return (degrees(atan2(y, x)) + 360.0) % 360.0
+
+    def angular_difference(a, b):
+        return abs((a - b + 180.0) % 360.0 - 180.0)
+
+    def destination(point, bearing, distance_km):
+        angular = distance_km / 6371.0088
+        direction = radians(bearing)
+        lat1 = radians(float(point["lat"]))
+        lon1 = radians(float(point["lon"]))
+
+        lat2 = asin(
+            sin(lat1) * cos(angular)
+            + cos(lat1) * sin(angular) * cos(direction)
+        )
+        lon2 = lon1 + atan2(
+            sin(direction) * sin(angular) * cos(lat1),
+            cos(angular) - sin(lat1) * sin(lat2)
+        )
+
+        return [
+            round(degrees(lat2), 5),
+            round((degrees(lon2) + 540.0) % 360.0 - 180.0, 5)
+        ]
+
     for index, cell in enumerate(cells):
         track_id = assignments.get(index)
 
         if track_id is None:
-            track_id = (
-                f"IRIDE-{timestamp:%Y%m%dT%H%M}-{index:03d}"
-            )
-
+            track_id = f"IRIDE-{timestamp:%Y%m%dT%H%M}-{index:03d}"
             while track_id in tracks:
                 track_id += "X"
-
             tracks[track_id] = {"observations": []}
 
         track = tracks[track_id]
         observations = track.setdefault("observations", [])
 
-        if (
-            not observations
-            or observations[-1]["timestamp"] != current_stamp
-        ):
-            observations.append({
-                "timestamp": current_stamp,
-                "lat": cell["lat"],
-                "lon": cell["lon"],
-                "max_dbz": cell["max_dbz"]
-            })
+        observation = {
+            "timestamp": current_stamp,
+            "lat": cell["lat"],
+            "lon": cell["lon"],
+            "max_dbz": cell["max_dbz"]
+        }
+
+        if observations and observations[-1]["timestamp"] == current_stamp:
+            observations[-1] = observation
+        else:
+            observations.append(observation)
 
         del observations[:-TRACK_HISTORY_SIZE]
 
@@ -683,66 +718,75 @@ def track_cells(cells, timestamp, history):
             "forecast_30m": None,
             "forecast_60m": None,
             "forecast_180m": None,
-            "speed_kmh": None
+            "speed_kmh": None,
+            "observed_interval_minutes": None,
+            "motion_quality": "insufficient_history"
         }
 
-        if len(observations) >= 2:
-            a, b = observations[-2], observations[-1]
+        # Servono tre posizioni e due intervalli consecutivi coerenti.
+        if len(observations) >= 3:
+            p0, p1, p2 = observations[-3:]
 
-            ta = parse_time(a["timestamp"])
-            tb = parse_time(b["timestamp"])
+            try:
+                t0 = parse_time(p0["timestamp"])
+                t1 = parse_time(p1["timestamp"])
+                t2 = parse_time(p2["timestamp"])
+            except Exception:
+                t0 = t1 = t2 = None
 
-            minutes = (tb - ta).total_seconds() / 60
+            if t0 is not None and t1 is not None and t2 is not None:
+                minutes1 = (t1 - t0).total_seconds() / 60.0
+                minutes2 = (t2 - t1).total_seconds() / 60.0
 
-            if 0 < minutes <= TRACK_MAX_AGE_MIN:
-                distance = haversine(a, b)
-                speed = distance / (minutes / 60)
+                if (
+                    5.0 <= minutes1 <= 45.0
+                    and 5.0 <= minutes2 <= 45.0
+                    and 0.5 <= minutes2 / minutes1 <= 2.0
+                ):
+                    distance1 = haversine(p0, p1)
+                    distance2 = haversine(p1, p2)
+                    speed1 = distance1 / (minutes1 / 60.0)
+                    speed2 = distance2 / (minutes2 / 60.0)
+                    bearing1 = bearing_degrees(p0, p1)
+                    bearing2 = bearing_degrees(p1, p2)
+                    turn = angular_difference(bearing1, bearing2)
 
-                if speed <= TRACK_MAX_SPEED_KMH:
-                    def predict(future_minutes):
-                        factor = future_minutes / minutes
+                    if (
+                        5.0 <= speed1 <= 90.0
+                        and 5.0 <= speed2 <= 90.0
+                        and turn <= 45.0
+                    ):
+                        def predict(future_minutes):
+                            distance = speed2 * future_minutes / 60.0
+                            return destination(p2, bearing2, distance)
 
-                        return [
-                            round(
-                                b["lat"]
-                                + (b["lat"] - a["lat"]) * factor,
-                                5
-                            ),
-                            round(
-                                b["lon"]
-                                + (b["lon"] - a["lon"]) * factor,
-                                5
-                            )
-                        ]
-
-                    track_data.update({
-                        "forecast_status":
-                            "experimental_linear_extrapolation",
-                        "real_vector": [
-                            [a["lat"], a["lon"]],
-                            [b["lat"], b["lon"]]
-                        ],
-                        "forecast_30m": [
-                            [b["lat"], b["lon"]],
-                            predict(30)
-                        ],
-                        "forecast_60m": [
-                            [b["lat"], b["lon"]],
-                            predict(60)
-                        ],
-                        "forecast_180m": [
-                            [b["lat"], b["lon"]],
-                            predict(180)
-                        ],
-                        "observed_interval_minutes": round(
-                            minutes, 1
-                        ),
-                        "speed_kmh": round(speed, 1)
-                    })
+                        track_data.update({
+                            "forecast_status":
+                                "experimental_consistent_motion_extrapolation",
+                            "real_vector": [
+                                [p1["lat"], p1["lon"]],
+                                [p2["lat"], p2["lon"]]
+                            ],
+                            "forecast_30m": [
+                                [p2["lat"], p2["lon"]],
+                                predict(30)
+                            ],
+                            "forecast_60m": [
+                                [p2["lat"], p2["lon"]],
+                                predict(60)
+                            ],
+                            "forecast_180m": [
+                                [p2["lat"], p2["lon"]],
+                                predict(180)
+                            ],
+                            "speed_kmh": round(speed2, 1),
+                            "observed_interval_minutes": round(minutes2, 1),
+                            "motion_quality":
+                                "two_interval_direction_speed_consistency"
+                        })
 
         cell["track_id"] = track_id
         cell["track"] = track_data
-
         cell["vectors"] = {
             "real": track_data["real_vector"],
             "predictive_30m": track_data["forecast_30m"],
@@ -756,10 +800,7 @@ def track_cells(cells, timestamp, history):
         for cell in cells
     }
 
-    return cells, history
-
-
-# ---------------------------------------------------------
+    return cells, history# ---------------------------------------------------------
 # RASTER DBZH GEORIFERITO PER LA MAPPA LEAFLET
 # ---------------------------------------------------------
 
@@ -799,7 +840,7 @@ def write_png(path, width, height, rgba):
 
 def generate_radar_overlay(radar, grid, origin):
     width = 720
-    height = 400
+    height = 1007
 
     west = REGION["west"]
     east = REGION["east"]
@@ -810,9 +851,27 @@ def generate_radar_overlay(radar, grid, origin):
         np.arange(width, dtype=np.float64) + 0.5
     ) * (east - west) / width
 
-    latitudes = north - (
+    mercator_forward = Transformer.from_crs(
+        CRS.from_epsg(4326),
+        CRS.from_epsg(3857),
+        always_xy=True
+    )
+    mercator_inverse = Transformer.from_crs(
+        CRS.from_epsg(3857),
+        CRS.from_epsg(4326),
+        always_xy=True
+    )
+
+    north_y = mercator_forward.transform(0.0, north)[1]
+    south_y = mercator_forward.transform(0.0, south)[1]
+    mercator_y = north_y - (
         np.arange(height, dtype=np.float64) + 0.5
-    ) * (north - south) / height
+    ) * (north_y - south_y) / height
+
+    _, latitudes = mercator_inverse.transform(
+        np.zeros(height, dtype=np.float64),
+        mercator_y
+    )
 
     lon_grid, lat_grid = np.meshgrid(longitudes, latitudes)
 
@@ -889,7 +948,10 @@ def generate_radar_overlay(radar, grid, origin):
         "transparent_below_dbz": 15,
         "georeferencing": "geographic sampling from ODIM projection",
         "timestamp": None
-    }# ---------------------------------------------------------
+    }
+
+
+# ---------------------------------------------------------
 # PUBBLICAZIONE
 # ---------------------------------------------------------
 
@@ -1006,8 +1068,8 @@ def main():
                     "one-to-one spatial and temporal association"
                 ),
                 "forecast": (
-                    "experimental linear extrapolation "
-                    "after two observations"
+                    "experimental geodesic extrapolation after three "
+                    "observations with two coherent motion intervals"
                 ),
                 "vertical_data": (
                     "not available from 2D DBZH composite"
