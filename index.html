@@ -1,1024 +1,1127 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#07111d">
-<title>I.R.I.D.E. | Nowcasting Italia</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>
-:root{
- --bg:#07111d;
- --panel:#0b1928;
- --panel2:#102337;
- --line:#244158;
- --cyan:#00dff5;
- --yellow:#ffd000;
- --orange:#ff762d;
- --red:#ff4057;
- --text:#edf6ff;
- --muted:#91a9bd;
-}
-*{box-sizing:border-box}
-html,body{
- margin:0;width:100%;height:100%;overflow:hidden;
- background:var(--bg);color:var(--text);
- font:14px system-ui,-apple-system,Segoe UI,sans-serif
-}
-button,select{
- background:var(--panel2);color:var(--text);
- border:1px solid var(--line);border-radius:7px;
- padding:9px 11px;font:inherit
-}
-button{cursor:pointer}
-button:active{transform:scale(.98)}
-header{
- height:58px;background:#071321;
- border-bottom:2px solid var(--cyan);
- display:flex;align-items:center;justify-content:space-between;
- padding:0 14px;gap:8px
-}
-.brand{
- font-size:18px;font-weight:900;letter-spacing:1.5px;
- color:#fff
-}
-.brand small{
- display:block;font-size:9px;letter-spacing:2px;
- color:var(--cyan);font-weight:700;margin-top:1px
-}
-#status{
- color:#a7bdcf;font-size:10px;text-align:right;
- line-height:1.4
-}
-.status-dot{
- display:inline-block;width:7px;height:7px;
- border-radius:50%;background:#20d889;margin-right:5px
-}
-#map{
- position:absolute;top:58px;bottom:0;width:100%;
- background:#0a1b2a
-}
-.top-panel{
- position:absolute;z-index:600;top:68px;left:10px;right:10px;
- display:flex;justify-content:space-between;align-items:center;
- gap:8px;pointer-events:none
-}
-.panel-tag{
- pointer-events:auto;background:#071321ed;
- border:1px solid var(--line);border-left:3px solid var(--cyan);
- border-radius:5px;padding:7px 10px;
- font-size:10px;font-weight:800;letter-spacing:1px
-}
-.panel-tag em{font-style:normal;color:var(--cyan)}
-#reload{
- pointer-events:auto;border-color:#1688a5;color:var(--cyan);
- font-weight:800;padding:7px 12px
-}
-.legend{
- position:absolute;z-index:600;bottom:15px;left:10px;right:10px;
- display:flex;align-items:center;justify-content:center;
- flex-wrap:wrap;gap:10px;
- background:#071321ed;border:1px solid var(--line);
- border-radius:7px;padding:9px 8px
-}
-.legend span{
- display:flex;align-items:center;gap:5px;
- color:#d8e6f2;font-size:10px
-}
-.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
-.map-tools{
- position:absolute;z-index:600;right:10px;top:120px;
- display:flex;flex-direction:column;gap:6px
-}
-.map-tools button{font-size:11px;padding:7px 9px}
-.leaflet-popup-content-wrapper{
- background:#0b1b2b;color:#edf6ff;
- border:1px solid #26708a;border-radius:9px
-}
-.leaflet-popup-tip{background:#0b1b2b}
-.leaflet-popup-content{margin:12px;min-width:190px}
-.popup-title{
- color:var(--cyan);font-weight:900;font-size:14px;
- margin-bottom:8px
-}
-.popup-line{font-size:12px;color:#d1e0ec;margin:5px 0}
-.popup-note{
- font-size:10px;color:#91a9bd;margin-top:8px;line-height:1.4
-}
-.popup-action{
- width:100%;margin-top:10px;background:#073c53;
- border-color:var(--cyan);color:white;font-weight:800
-}
-#viewer{
- display:none;position:fixed;inset:0;z-index:2000;
- background:#050c15;flex-direction:column
-}
-#viewer.open{display:flex}
-.vhead{
- min-height:58px;flex-shrink:0;background:#071321;
- border-bottom:2px solid var(--cyan);
- display:flex;align-items:center;justify-content:space-between;
- padding:7px 10px;gap:6px
-}
-#vtitle{font-size:12px;font-weight:900;color:var(--cyan)}
-.vcontrols{display:flex;gap:5px;align-items:center}
-.vcontrols select,.vcontrols button{font-size:11px;padding:8px 7px}
-#mode{border-color:var(--cyan);max-width:145px}
-#reset{color:var(--yellow)}
-#close{color:#ff9a9a}
-#scene{
- display:block;width:100%;height:100%;flex:1;min-height:0;
- touch-action:none
-}
-.vfoot{
- min-height:39px;display:flex;align-items:center;
- padding:0 12px;background:#071321;
- border-top:1px solid var(--line);
- color:var(--muted);font-size:10px
-}
-@media(min-width:700px){
- .top-panel{top:72px;left:18px;right:18px}
- .legend{left:18px;right:auto;bottom:18px}
-}
-@media(max-width:600px){
- header{height:52px;padding:0 10px}
- #map{top:52px}
- .brand{font-size:16px}
- #status{font-size:9px}
- .top-panel{top:61px}
- .panel-tag{font-size:9px;padding:6px 8px}
- .legend{gap:7px;padding:8px 5px}
- .legend span{font-size:9px}
- .map-tools{top:108px}
- .vhead{min-height:54px;padding:6px}
- #vtitle{font-size:10px;max-width:95px}
- .vcontrols{gap:3px}
- .vcontrols select,.vcontrols button{font-size:10px;padding:7px 5px}
- #mode{max-width:125px}
-}
-</style>
-</head>
-<body>
+#!/usr/bin/env python3
+"""I.R.I.D.E. — OPERA radar pipeline."""
 
-<header>
- <div class="brand">
-  I.R.I.D.E.
-  <small>INTEGRATED RADAR IMAGING & DETECTION ENGINE</small>
- </div>
- <div style="display:flex;align-items:center;gap:8px">
-  <div id="status"><span class="status-dot"></span>OPERA · caricamento</div>
- </div>
-</header>
+from __future__ import annotations
 
-<div id="map"></div>
+import json
+import re
+import sys
+import struct
+import zlib
+import traceback
+import xml.etree.ElementTree as ET
 
-<div class="top-panel">
- <div class="panel-tag">NOWCASTING ITALIA <em> / RADAR</em></div>
- <button id="reload">↻ AGGIORNA</button>
-</div>
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from urllib.parse import quote
 
-<div class="map-tools">
- <button id="vectorsToggle">VETTORI: ON</button>
- <button id="cellsToggle">CELLE: ON</button>
-</div>
+import h5py
+import numpy as np
+import requests
 
-<div class="legend">
- <span><i class="dot" style="background:#397ee8"></i>15–24</span>
- <span><i class="dot" style="background:#24bd70"></i>25–29</span>
- <span><i class="dot" style="background:#f4d43e"></i>30–34</span>
- <span><i class="dot" style="background:#f07832"></i>35–44</span>
- <span><i class="dot" style="background:#ed42c8"></i>≥45 dBZ</span>
-</div>
+from pyproj import CRS, Transformer
+from scipy import ndimage
 
-<div id="viewer">
- <div class="vhead">
-  <b id="vtitle">RICOSTRUZIONE RADAR</b>
-  <div class="vcontrols">
-   <select id="mode">
-    <option value="0">Voxel 3D</option>
-    <option value="1">Iso-superficie</option>
-    <option value="2">Holographic</option>
-   </select>
-   <button id="reset">RESET</button>
-   <button id="close">CHIUDI</button>
-  </div>
- </div>
- <canvas id="scene"></canvas>
- <div class="vfoot">
-  ROTAZIONE 360° · INCLINAZIONE · ZOOM · BASE DBZH OSSERVATA · QUOTA MORFOLOGICA STIMATA
- </div>
-</div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-(()=>{
-'use strict';
+ROOT = Path(__file__).resolve().parents[1]
+DATA = ROOT / "data"
+HIST = DATA / "iride_history.json"
 
-const $=id=>document.getElementById(id);
+S3 = "https://s3.waw3-1.cloudferro.com"
+BUCKET = "openradar-24h"
+PREFIX = "OPERA/COMP"
 
-const map=L.map('map',{
- preferCanvas:true,
- zoomControl:true
-}).setView([43,12],5);
+TIMEOUT = 45
+MAX_BYTES = 250_000_000
 
-L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{
- maxZoom:17,
- attribution:'© OpenTopoMap · © OpenStreetMap'
-}).addTo(map);
+THRESHOLD = 25.0
+MIN_PIXELS = 8
 
-const radarLayer=L.layerGroup().addTo(map);
-const cellLayer=L.layerGroup().addTo(map);
-const vectorLayer=L.layerGroup().addTo(map);
+MAX_CELLS = 100
+MAX_3D_CELLS = 30
 
-let radarImage=null;
-let cells=[];
-let showVectors=true;
-let showCells=true;
-let currentData=null;
-let jsonLocation='docs/data/iride.json';
+MATRIX_SIDE = 72
+MATRIX_FLOOR = 8.0
+CONTEXT_FACTOR = 2.4
+MIN_CONTEXT = 48
+MAX_CONTEXT = 360
 
-const color=v=>v>=45?'#ed42c8':
- v>=35?'#f07832':
- v>=30?'#f4d43e':
- v>=25?'#24bd70':
- v>=15?'#397ee8':'#000';
-
-const finite=v=>Number.isFinite(Number(v));
-const fmt=(v,d=1)=>finite(v)?Number(v).toFixed(d):'—';
-
-const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({
- '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-})[c]);
-
-function popupContent(c,index){
- const t=c.track||{};
- const speed=Number(t.speed_kmh);
- const validSpeed=Number.isFinite(speed);
- const area=Number(c.approx_area_km2);
- const morphology=c.morphology?.label||'Non classificata';
-
- return `
- <div class="popup-title">${safe(c.id)}</div>
- <div class="popup-line"><b>${fmt(c.max_dbz)} dBZ</b> · massimo</div>
- <div class="popup-line">Media: ${fmt(c.mean_dbz)} dBZ</div>
- <div class="popup-line">Area eco: ${Number.isFinite(area)?fmt(area)+' km²':'—'}</div>
- <div class="popup-line">Centroide: ${fmt(c.lat,3)}°, ${fmt(c.lon,3)}°</div>
- ${validSpeed?`<div class="popup-line">Velocità osservata: ${fmt(speed)} km/h</div>`:''}
- <div class="popup-line">Morfologia: ${safe(morphology)}</div>
- <div class="popup-note">Il contorno rappresenta il bordo dei pixel DBZH sopra soglia. La morfologia è preliminare.</div>
- ${c['3d_available']===true?`<button class="popup-action" id="open3d-${index}">APRI RICOSTRUZIONE 3D</button>`:''}
- `;
+REGION = {
+    "west": -12.0,
+    "east": 30.0,
+    "south": 30.0,
+    "north": 50.0
 }
 
-/* Vettori: limitiamo la visualizzazione alle celle più intense
-   e a movimenti supportati da due osservazioni valide. */
-function vectorIsUsable(c){
- const v=c.vectors||{};
- const t=c.track||{};
- const speed=Number(t.speed_kmh);
- const interval=Number(t.observed_interval_minutes);
-
- if(!Array.isArray(v.real)||v.real.length!==2)return false;
- if(!Array.isArray(v.predictive_180m)||v.predictive_180m.length!==2)return false;
- if(!Number.isFinite(speed)||speed<3||speed>100)return false;
- if(!Number.isFinite(interval)||interval<4||interval>60)return false;
- if(t.forecast_status!=='experimental_linear_extrapolation')return false;
-
- return true;
-}
-
-function drawVector(c){
- const v=c.vectors;
- const real=v.real;
- const forecast=v.predictive_180m;
-
- L.polyline(real,{
-  color:'#00cfff',weight:3,opacity:.95,
-  lineCap:'round'
- }).addTo(vectorLayer);
-
- L.polyline(forecast,{
-  color:'#ff9b32',weight:2.5,opacity:.95,
-  dashArray:'7 7',lineCap:'round'
- }).addTo(vectorLayer);
-}
-
-function addCell(c,index){
- const stroke=color(c.max_dbz);
-
- const points=Array.isArray(c.perimeter)?c.perimeter.filter(p=>
-  Array.isArray(p)&&p.length>=2&&finite(p[0])&&finite(p[1])
- ):[];
-
- if(points.length>=3){
-  L.polygon(points,{
-   color:stroke,weight:1.4,opacity:.85,
-   fillColor:stroke,fillOpacity:.08,
-   smoothFactor:1
-  }).addTo(cellLayer);
- }
-
- const marker=L.circleMarker([+c.lat,+c.lon],{
-  radius:6,color:'#fff',weight:1.6,
-  fillColor:stroke,fillOpacity:1
- }).addTo(cellLayer);
-
- marker.bindPopup(popupContent(c,index),{maxWidth:270});
-
- marker.on('popupopen',()=>{
-  const button=$('open3d-'+index);
-  if(button)button.onclick=()=>open3D(c);
- });
-
- if(showVectors&&vectorIsUsable(c))drawVector(c);
-}
-
-function overlayUrl(path){
- if(!path)return null;
-
- if(path.startsWith('http://')||path.startsWith('https://'))
-  return path;
-
- if(path.startsWith('docs/'))return path;
-
- if(jsonLocation.startsWith('docs/'))return 'docs/'+path;
-
- return path;
-}
-
-function render(data){
- currentData=data;
- cells=Array.isArray(data.cells)?data.cells:[];
-
- radarLayer.clearLayers();
- cellLayer.clearLayers();
- vectorLayer.clearLayers();
-
- if(radarImage){
-  map.removeLayer(radarImage);
-  radarImage=null;
- }
-
- const overlay=data.radar_overlay;
-
- if(overlay?.image&&Array.isArray(overlay.bounds)){
-  const url=overlayUrl(overlay.image);
-
-  radarImage=L.imageOverlay(
-   url+'?t='+Date.now(),
-   overlay.bounds,
-   {
-    opacity:Math.min(1,Number(overlay.opacity)||.82),
-    interactive:false,
-    crossOrigin:false
-   }
-  ).addTo(radarLayer);
-
-  radarImage.once('load',()=>{
-   console.info('Overlay radar caricato:',url);
-  });
-
-  radarImage.once('error',()=>{
-   console.error('Errore caricamento overlay:',url);
-   $('status').textContent='OPERA · errore raster radar';
-  });
- }
-
- const ordered=cells
-  .map((c,i)=>({c,i}))
-  .filter(x=>finite(x.c.lat)&&finite(x.c.lon))
-  .sort((a,b)=>(Number(b.c.max_dbz)||0)-(Number(a.c.max_dbz)||0));
-
- ordered.forEach(({c,i})=>{
-  if(showCells)addCell(c,i);
-  else if(showVectors&&vectorIsUsable(c))drawVector(c);
- });
-
- $('status').innerHTML=
-  '<span class="status-dot"></span>OPERA · '+
-  safe(data.timestamp||'orario n/d')+' · '+cells.length+' celle';
-
- if(!map._irideCentered&&ordered.length){
-  const bounds=ordered.map(x=>[+x.c.lat,+x.c.lon]);
-  map.fitBounds(bounds,{padding:[25,25],maxZoom:7});
-  map._irideCentered=true;
- }
-}
-
-async function fetchJson(path){
- const response=await fetch(path+'?t='+Date.now(),{
-  cache:'no-store'
- });
-
- if(!response.ok)throw Error('HTTP '+response.status);
-
- const data=await response.json();
-
- if(data.status!=='ok'||!Array.isArray(data.cells))
-  throw Error('Struttura JSON non valida');
-
- return data;
-}
-
-async function load(){
- $('status').textContent='OPERA · aggiornamento';
-
- try{
-  let data;
-
-  try{
-   jsonLocation='docs/data/iride.json';
-   data=await fetchJson(jsonLocation);
-  }catch(firstError){
-   jsonLocation='data/iride.json';
-   data=await fetchJson(jsonLocation);
-  }
-
-  render(data);
-
- }catch(error){
-  $('status').textContent='OPERA · dati non disponibili';
-  console.error(error);
- }
-}
-
-$('reload').onclick=load;
-
-$('vectorsToggle').onclick=()=>{
- showVectors=!showVectors;
- $('vectorsToggle').textContent='VETTORI: '+(showVectors?'ON':'OFF');
- if(currentData)render(currentData);
-};
-
-$('cellsToggle').onclick=()=>{
- showCells=!showCells;
- $('cellsToggle').textContent='CELLE: '+(showCells?'ON':'OFF');
- if(currentData)render(currentData);
-};/* =====================================================
-   RENDERER WEBGL 2 — TRE MODALITÀ DISTINTE
-   La quota è morfologica e stimata, non misurata.
-   ===================================================== */
-
-const viewer=$('viewer');
-const canvas=$('scene');
-
-const gl=canvas.getContext('webgl2',{
- antialias:true,
- alpha:false,
- powerPreference:'high-performance'
-});
-
-if(!gl){
- $('status').textContent='WebGL2 non disponibile';
- return;
-}
-
-const vertexShader=`#version 300 es
-in vec2 position;
-out vec2 uv;
-void main(){
- uv=position*.5+.5;
- gl_Position=vec4(position,0.,1.);
-}`;
-
-const fragmentShader=`#version 300 es
-precision highp float;
-
-in vec2 uv;
-out vec4 outputColor;
-
-uniform vec2 resolution;
-uniform vec3 cameraPosition;
-uniform vec3 cameraRight;
-uniform vec3 cameraUp;
-uniform vec3 cameraForward;
-uniform float fov;
-uniform sampler2D radarTexture;
-uniform int renderMode;
-
-const vec3 BG=vec3(.008,.018,.031);
-
-vec4 radar(vec2 p){
- return texture(radarTexture,clamp(p,vec2(0.),vec2(1.)));
-}
-
-float echoClass(vec3 c){
- if(c.b>c.r*1.22 && c.b>c.g*1.12)return 1.;
- if(c.g>c.r*1.12 && c.g>c.b*1.05)return 2.;
- if(c.r>.65 && c.g>.55 && c.b<.35)return 3.;
- if(c.r>.65 && c.g<.48 && c.b<.35)return 4.;
- if(c.r>.60 && c.b>.35 && c.g<.40)return 5.;
- return 0.;
-}
-
-float echoTop(float k){
- if(k==1.)return 3.0;
- if(k==2.)return 2.65;
- if(k==3.)return 2.15;
- if(k==4.)return 1.7;
- if(k==5.)return 1.25;
- return 0.;
-}
-
-/* Espansione verticale differenziata.
-   Blu e verde più larghi e trasparenti in quota.
-   Giallo, arancio e magenta più compatti. */
-float footprintScale(float k,float h,float top){
- float f=h/max(top,.01);
-
- if(k==1.)return 1.0+.14*f;
- if(k==2.)return 1.0+.11*f;
- if(k==3.)return 1.0-.10*f;
- if(k==4.)return 1.0-.20*f;
- if(k==5.)return 1.0-.30*f;
-
- return 1.;
-}
-
-float densityAt(vec3 p,out vec3 cellColor,out float klass){
- float h=p.y;
-
- if(h<.04||h>3.15)return 0.;
-
- vec2 local=vec2(
-  (p.x+2.25)/4.5,
-  (p.z+1.40)/2.8
- );
-
- vec2 center=vec2(.5);
- vec4 base=radar(local);
-
- klass=echoClass(base.rgb);
- cellColor=base.rgb;
-
- if(base.a<.1||klass<1.)return 0.;
-
- float top=echoTop(klass);
- if(top<=0.||h>top)return 0.;
-
- float scale=footprintScale(klass,h,top);
- vec2 expanded=center+(local-center)/scale;
- vec4 sampleColor=radar(expanded);
-
- float sampleClass=echoClass(sampleColor.rgb);
- if(sampleColor.a<.1||sampleClass<.5)return 0.;
-
- cellColor=sampleColor.rgb;
-
- float vertical=h/top;
- float lower=smoothstep(.025,.24,h);
- float upper=1.-smoothstep(.82,1.0,vertical);
-
- float density=lower*upper;
-
- if(klass==1.)density*=.17;
- if(klass==2.)density*=.23;
- if(klass==3.)density*=.55;
- if(klass==4.)density*=.68;
- if(klass==5.)density*=.78;
-
- /* Voxel: gradini verticali e blocchi definiti. */
- if(renderMode==0){
-  float steps=12.;
-  float stepped=floor(vertical*steps)/steps;
-  density*=smoothstep(0.,.12,stepped);
-  density*=.90;
- }
-
- /* Isosuperficie: parete compatta con bordo luminoso. */
- if(renderMode==1){
-  float shell=smoothstep(.16,.36,density);
-  float edge=1.-smoothstep(.025,.13,abs(density-.36));
-  density=shell*.92+edge*.16;
- }
-
- /* Olografico: strati sottili, linee di scansione. */
- if(renderMode==2){
-  float scan=.62+.38*sin(h*48.);
-  float shell=1.-smoothstep(.025,.10,abs(fract(vertical*8.)-.5));
-  density*=scan;
-  density+=shell*.12;
- }
-
- return density;
-}
-
-bool intersectBox(
- vec3 ro,vec3 rd,out float nearT,out float farT
-){
- vec3 low=vec3(-2.25,.04,-1.40);
- vec3 high=vec3(2.25,3.15,1.40);
-
- vec3 inv=1./rd;
- vec3 a=(low-ro)*inv;
- vec3 b=(high-ro)*inv;
-
- vec3 mn=min(a,b);
- vec3 mx=max(a,b);
-
- nearT=max(max(mn.x,mn.y),mn.z);
- farT=min(min(mx.x,mx.y),mx.z);
-
- return farT>max(nearT,0.);
-}
-
-void main(){
- vec2 screen=uv*2.-1.;
- screen.x*=resolution.x/resolution.y;
-
- vec3 direction=normalize(
-  cameraForward+
-  cameraRight*screen.x*fov+
-  cameraUp*screen.y*fov
- );
-
- float nearT,farT;
- vec3 result=BG;
-
- /* Piano radar: texture DBZH osservata. */
- float floorT=-1.;
-
- if(direction.y<-.0001){
-  floorT=(.04-cameraPosition.y)/direction.y;
- }
-
- if(floorT>0.){
-  vec3 fp=cameraPosition+direction*floorT;
-
-  if(abs(fp.x)<=2.25&&abs(fp.z)<=1.40){
-   vec2 floorUV=vec2(
-    (fp.x+2.25)/4.5,
-    (fp.z+1.40)/2.8
-   );
-
-   vec4 base=radar(floorUV);
-   result=mix(BG,base.rgb,base.a);
-  }
- }
-
- /* Ray marching volume. */
- if(intersectBox(cameraPosition,direction,nearT,farT)){
-  float startT=max(nearT,0.);
-  float endT=farT;
-
-  if(floorT>startT)endT=min(endT,floorT);
-
-  float stepSize=(endT-startT)/190.;
-  float transparency=1.;
-  vec3 volume=vec3(0.);
-
-  for(int i=0;i<190;i++){
-   float t=startT+(float(i)+.5)*stepSize;
-   vec3 p=cameraPosition+direction*t;
-   vec3 cellColor;
-   float klass;
-   float density=densityAt(p,cellColor,klass);
-
-   if(density>.012){
-    float alpha=1.-exp(-density*stepSize*2.8);
-
-    if(renderMode==1)alpha=min(.9,alpha*1.4);
-    if(renderMode==2)alpha=min(.55,alpha*.9);
-
-    volume+=transparency*alpha*cellColor;
-    transparency*=1.-alpha;
-   }
-
-   if(transparency<.018)break;
-  }
-
-  result=volume+transparency*result;
- }
-
- /* Reticolo tecnico molto discreto in modalità olografica. */
- if(renderMode==2){
-  float gridX=abs(fract((uv.x*resolution.x)/48.)-.5);
-  float gridY=abs(fract((uv.y*resolution.y)/48.)-.5);
-  float gridLine=1.-smoothstep(.47,.50,min(gridX,gridY));
-  result+=vec3(.0,.12,.17)*gridLine*.12;
- }
-
- outputColor=vec4(result,1.);
-}`;
-
-function compileShader(type,source){
- const shader=gl.createShader(type);
- gl.shaderSource(shader,source);
- gl.compileShader(shader);
-
- if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS)){
-  const message=gl.getShaderInfoLog(shader);
-  gl.deleteShader(shader);
-  throw Error(message);
- }
-
- return shader;
-}
-
-const program=gl.createProgram();
-
-gl.attachShader(
- program,compileShader(gl.VERTEX_SHADER,vertexShader)
-);
-gl.attachShader(
- program,compileShader(gl.FRAGMENT_SHADER,fragmentShader)
-);
-gl.linkProgram(program);
-
-if(!gl.getProgramParameter(program,gl.LINK_STATUS))
- throw Error(gl.getProgramInfoLog(program));
-
-gl.useProgram(program);
-
-const buffer=gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
-
-gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
- -1,-1,1,-1,-1,1,1,1
-]),gl.STATIC_DRAW);
-
-const position=gl.getAttribLocation(program,'position');
-
-gl.enableVertexAttribArray(position);
-gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
-
-const uniforms={};
-
-[
- 'resolution','cameraPosition','cameraRight','cameraUp',
- 'cameraForward','fov','radarTexture','renderMode'
-].forEach(name=>{
- uniforms[name]=gl.getUniformLocation(program,name);
-});
-
-const texture=gl.createTexture();
-
-gl.activeTexture(gl.TEXTURE0);
-gl.bindTexture(gl.TEXTURE_2D,texture);
-
-gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
-gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
-gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-
-gl.uniform1i(uniforms.radarTexture,0);
-
-function radarColor(dbz){
- if(dbz>=45)return [237,66,200,255];
- if(dbz>=35)return [240,120,50,255];
- if(dbz>=30)return [244,212,62,255];
- if(dbz>=25)return [36,189,112,255];
- if(dbz>=15)return [57,126,232,255];
- return [0,0,0,0];
-}
-
-function uploadRadarMatrix(cell){
- const matrix=cell.grid_matrix;
-
- if(!Array.isArray(matrix)||matrix.length!==72)
-  throw Error('Matrice DBZH 72×72 non disponibile');
-
- const width=72;
- const height=72;
- const pixels=new Uint8Array(width*height*4);
-
- for(let y=0;y<height;y++){
-  const row=matrix[y]||[];
-
-  for(let x=0;x<width;x++){
-   const value=Number(row[x]);
-   const rgba=radarColor(Number.isFinite(value)?value:0);
-   const offset=((height-1-y)*width+x)*4;
-
-   pixels[offset]=rgba[0];
-   pixels[offset+1]=rgba[1];
-   pixels[offset+2]=rgba[2];
-   pixels[offset+3]=rgba[3];
-  }
- }
-
- gl.activeTexture(gl.TEXTURE0);
- gl.bindTexture(gl.TEXTURE_2D,texture);
- gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
-
- gl.texImage2D(
-  gl.TEXTURE_2D,0,gl.RGBA,
-  width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,pixels
- );
- }/* =====================================================
-   CAMERA, ROTAZIONE E INTERAZIONE
-   ===================================================== */
-
-let yaw=-.35;
-let pitch=.34;
-let distance=7.1;
-let activeCell=null;
-let dragging=false;
-let lastX=0;
-let lastY=0;
-let pinchDistance=0;
-
-function normalize(v){
- const length=Math.hypot(v[0],v[1],v[2])||1;
- return v.map(n=>n/length);
-}
-
-function cross(a,b){
- return [
-  a[1]*b[2]-a[2]*b[1],
-  a[2]*b[0]-a[0]*b[2],
-  a[0]*b[1]-a[1]*b[0]
- ];
-}
-
-function resizeCanvas(){
- const rect=canvas.getBoundingClientRect();
- const ratio=Math.min(window.devicePixelRatio||1,2);
-
- canvas.width=Math.max(1,Math.round(rect.width*ratio));
- canvas.height=Math.max(1,Math.round(rect.height*ratio));
-
- gl.viewport(0,0,canvas.width,canvas.height);
-}
-
-function drawScene(){
- if(!activeCell||!viewer.classList.contains('open'))return;
-
- const width=canvas.width;
- const height=canvas.height;
-
- if(!width||!height)return;
-
- const target=[0,.9,0];
- const cp=Math.cos(pitch);
- const sp=Math.sin(pitch);
- const sy=Math.sin(yaw);
- const cy=Math.cos(yaw);
-
- const camera=[
-  distance*cp*sy,
-  target[1]+distance*sp,
-  distance*cp*cy
- ];
-
- const forward=normalize([
-  target[0]-camera[0],
-  target[1]-camera[1],
-  target[2]-camera[2]
- ]);
-
- const right=normalize(cross(forward,[0,1,0]));
- const up=normalize(cross(right,forward));
-
- gl.useProgram(program);
-
- gl.uniform2f(uniforms.resolution,width,height);
- gl.uniform3fv(uniforms.cameraPosition,camera);
- gl.uniform3fv(uniforms.cameraRight,right);
- gl.uniform3fv(uniforms.cameraUp,up);
- gl.uniform3fv(uniforms.cameraForward,forward);
-
- gl.uniform1f(
-  uniforms.fov,
-  Math.tan(32*Math.PI/180)
- );
-
- gl.uniform1i(
-  uniforms.renderMode,
-  Number($('mode').value)||0
- );
-
- gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
-}
-
-function open3D(cell){
- if(cell['3d_available']!==true){
-  alert('Questa cella non è inclusa nelle 30 selezionate per il 3D.');
-  return;
- }
-
- try{
-  activeCell=cell;
-  uploadRadarMatrix(cell);
-
-  $('vtitle').textContent=
-   cell.id+' · '+fmt(cell.max_dbz)+' dBZ';
-
-  yaw=-.35;
-  pitch=.34;
-  distance=7.1;
-
-  viewer.classList.add('open');
-
-  requestAnimationFrame(()=>{
-   resizeCanvas();
-   drawScene();
-  });
-
- }catch(error){
-  console.error(error);
-  alert('Ricostruzione 3D: '+error.message);
- }
-}
-
-$('mode').onchange=drawScene;
-
-$('close').onclick=()=>{
- viewer.classList.remove('open');
- activeCell=null;
-};
-
-$('reset').onclick=()=>{
- yaw=-.35;
- pitch=.34;
- distance=7.1;
- drawScene();
-};
-
-window.addEventListener('resize',()=>{
- if(viewer.classList.contains('open')){
-  resizeCanvas();
-  drawScene();
- }
-});
-
-canvas.addEventListener('pointerdown',event=>{
- dragging=true;
- lastX=event.clientX;
- lastY=event.clientY;
- canvas.setPointerCapture(event.pointerId);
-});
-
-canvas.addEventListener('pointermove',event=>{
- if(!dragging)return;
-
- const dx=event.clientX-lastX;
- const dy=event.clientY-lastY;
-
- yaw-=dx*.006;
- pitch=Math.max(-.12,Math.min(1.12,pitch+dy*.004));
-
- lastX=event.clientX;
- lastY=event.clientY;
-
- drawScene();
-});
-
-canvas.addEventListener('pointerup',()=>dragging=false);
-canvas.addEventListener('pointercancel',()=>dragging=false);
-
-canvas.addEventListener('wheel',event=>{
- event.preventDefault();
-
- distance=Math.max(
-  4.0,
-  Math.min(13,distance+event.deltaY*.008)
- );
-
- drawScene();
-},{passive:false});
-
-/* Zoom pinch a due dita. */
-canvas.addEventListener('touchstart',event=>{
- if(event.touches.length===2){
-  pinchDistance=Math.hypot(
-   event.touches[0].clientX-event.touches[1].clientX,
-   event.touches[0].clientY-event.touches[1].clientY
-  );
- }
-},{passive:true});
-
-canvas.addEventListener('touchmove',event=>{
- if(event.touches.length!==2)return;
-
- event.preventDefault();
-
- const next=Math.hypot(
-  event.touches[0].clientX-event.touches[1].clientX,
-  event.touches[0].clientY-event.touches[1].clientY
- );
-
- if(pinchDistance>0&&next>0){
-  distance=Math.max(
-   4.0,
-   Math.min(13,distance*pinchDistance/next)
-  );
-  drawScene();
- }
-
- pinchDistance=next;
-},{passive:false});
-
-canvas.addEventListener('touchend',()=>{
- pinchDistance=0;
-},{passive:true});
-
-/* Aggiornamento automatico ogni 15 minuti.
-   Nessun aggiornamento del backend da questa pagina. */
-load();
-setInterval(load,15*60*1000);
-
-})();
-</script>
-</body>
-</html>
+TRACK_MAX_AGE_MIN = 70
+TRACK_MAX_DISTANCE_KM = 100.0
+TRACK_MAX_SPEED_KMH = 140.0
+TRACK_HISTORY_SIZE = 24
+
+UA = "IRIDE-open-radar/3.0"
+
+
+def now():
+    return datetime.now(timezone.utc)
+
+
+def stamp(value):
+    return value.astimezone(timezone.utc).isoformat().replace(
+        "+00:00", "Z"
+    )
+
+
+def attr(group, key, default=None):
+    if group is None or key not in group.attrs:
+        return default
+    value = group.attrs[key]
+    if isinstance(value, np.ndarray) and value.shape == ():
+        value = value.item()
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "replace")
+    return value
+
+
+def number(value, default=None):
+    try:
+        result = float(np.asarray(value).item())
+        return result if np.isfinite(result) else default
+    except Exception:
+        return default
+
+
+def save(path, obj):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_text(
+        json.dumps(obj, ensure_ascii=False, separators=(",", ":")) + "\n",
+        encoding="utf-8"
+    )
+    temp.replace(path)
+
+
+def parse_product_time(key):
+    match = re.search(r"OPERA@(\d{8}T\d{4})@0@DBZH\.h5$", key)
+    if not match:
+        return None
+    return datetime.strptime(
+        match.group(1), "%Y%m%dT%H%M"
+    ).replace(tzinfo=timezone.utc)
+
+
+# ---------------------------------------------------------
+# ACQUISIZIONE OPERA
+# ---------------------------------------------------------
+
+def list_day(day):
+    prefix = f"{day:%Y/%m/%d}/{PREFIX}/"
+    token = None
+    results = []
+
+    while True:
+        params = {"list-type": "2", "prefix": prefix}
+        if token:
+            params["continuation-token"] = token
+
+        response = requests.get(
+            f"{S3}/{BUCKET}/",
+            params=params,
+            timeout=TIMEOUT,
+            headers={"User-Agent": UA}
+        )
+        response.raise_for_status()
+
+        root = ET.fromstring(response.content)
+        ns = {"s": "http://s3.amazonaws.com/doc/2006-03-01/"}
+
+        for item in root.findall("s:Contents", ns):
+            key = item.findtext("s:Key", "", ns)
+            size = int(item.findtext("s:Size", "0", ns))
+
+            if (
+                key.endswith("@0@DBZH.h5")
+                and 0 < size <= MAX_BYTES
+                and parse_product_time(key)
+            ):
+                results.append((key, size))
+
+        truncated = root.findtext("s:IsTruncated", "false", ns)
+        if truncated.lower() != "true":
+            break
+
+        token = root.findtext("s:NextContinuationToken", None, ns)
+        if not token:
+            raise RuntimeError("Paginazione archivio OPERA incompleta.")
+
+    return results
+
+
+def latest():
+    current = now()
+    products = []
+
+    for offset in range(3):
+        day = (current - timedelta(days=offset)).date()
+        try:
+            products.extend(list_day(datetime(
+                day.year, day.month, day.day, tzinfo=timezone.utc
+            )))
+        except Exception as exc:
+            print(f"Archivio {day}: {exc}", file=sys.stderr)
+
+    if not products:
+        raise RuntimeError("Nessun prodotto OPERA DBZH trovato.")
+
+    return max(products, key=lambda item: parse_product_time(item[0]))
+
+
+def fetch(key, expected_size):
+    folder = DATA / "raw"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / "opera_latest.h5"
+
+    url = f"{S3}/{BUCKET}/" + quote(key, safe="/@")
+    total = 0
+
+    with requests.get(
+        url,
+        stream=True,
+        timeout=TIMEOUT,
+        headers={"User-Agent": UA}
+    ) as response:
+        response.raise_for_status()
+
+        with path.open("wb") as output:
+            for chunk in response.iter_content(1024 * 1024):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > MAX_BYTES:
+                    raise RuntimeError(
+                        "File OPERA oltre il limite consentito."
+                    )
+                output.write(chunk)
+
+    if expected_size and total != expected_size:
+        path.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Download incompleto: {total}/{expected_size} byte."
+        )
+
+    return path, url
+
+
+# ---------------------------------------------------------
+# DECODIFICA ODIM HDF5
+# ---------------------------------------------------------
+
+def decode(path):
+    with h5py.File(path, "r") as h:
+        data_path = "dataset1/data1/data"
+        if data_path not in h:
+            raise RuntimeError("Dataset DBZH ODIM assente.")
+
+        raw = h[data_path][()]
+        parameter = h.get("dataset1/data1/what")
+
+        quantity = str(attr(parameter, "quantity", "")).upper()
+        if quantity != "DBZH":
+            raise RuntimeError(f"Prodotto non DBZH: {quantity}")
+
+        gain = number(attr(parameter, "gain"), 1.0)
+        offset = number(attr(parameter, "offset"), 0.0)
+        nodata = number(attr(parameter, "nodata"))
+        undetect = number(attr(parameter, "undetect"))
+
+        radar = raw.astype(np.float32) * gain + offset
+        invalid = ~np.isfinite(radar)
+
+        if nodata is not None:
+            invalid |= raw == nodata
+        if undetect is not None:
+            invalid |= raw == undetect
+
+        radar[invalid] = np.nan
+
+        where = h.get("where")
+        if where is None:
+            raise RuntimeError("Metadati geografici ODIM assenti.")
+
+        projection = attr(where, "projdef")
+        xscale = number(attr(where, "xscale"))
+        yscale = number(attr(where, "yscale"))
+        nx = int(number(attr(where, "xsize"), radar.shape[1]))
+        ny = int(number(attr(where, "ysize"), radar.shape[0]))
+
+        if radar.shape != (ny, nx):
+            raise RuntimeError(
+                "Dimensioni raster e metadati ODIM non coerenti."
+            )
+
+        if not projection or xscale is None or yscale is None:
+            raise RuntimeError("Georeferenziazione ODIM incompleta.")
+
+        ll_x = number(attr(where, "LL_x"))
+        ll_y = number(attr(where, "LL_y"))
+
+        if ll_x is None or ll_y is None:
+            ll_lon = number(attr(where, "LL_lon"))
+            ll_lat = number(attr(where, "LL_lat"))
+
+            if ll_lon is None or ll_lat is None:
+                raise RuntimeError(
+                    "Coordinate geografiche LL ODIM mancanti."
+                )
+
+            forward = Transformer.from_crs(
+                CRS.from_epsg(4326),
+                CRS.from_user_input(projection),
+                always_xy=True
+            )
+            ll_x, ll_y = forward.transform(ll_lon, ll_lat)
+
+        if xscale <= 0 or yscale <= 0:
+            raise RuntimeError("Risoluzione spaziale ODIM non valida.")
+
+        inverse = Transformer.from_crs(
+            CRS.from_user_input(projection),
+            CRS.from_epsg(4326),
+            always_xy=True
+        )
+
+        grid = {
+            "xscale_m": xscale,
+            "yscale_m": yscale,
+            "xsize": nx,
+            "ysize": ny,
+            "projection": str(projection)
+        }
+
+        product_time = None
+        product_what = h.get("what")
+
+        date_value = attr(product_what, "date")
+        time_value = attr(product_what, "time")
+
+        if date_value and time_value:
+            try:
+                product_time = datetime.strptime(
+                    f"{date_value}{time_value[:6]}",
+                    "%Y%m%d%H%M%S"
+                ).replace(tzinfo=timezone.utc)
+            except ValueError:
+                product_time = None
+
+        return radar, grid, inverse, (ll_x, ll_y), product_time
+
+
+# ---------------------------------------------------------
+# GEOGRAFIA E MATRICE RADAR
+# ---------------------------------------------------------
+
+def haversine(a, b):
+    from math import radians, sin, cos, asin, sqrt
+
+    p1, p2 = radians(a["lat"]), radians(b["lat"])
+    dp = radians(b["lat"] - a["lat"])
+    dl = radians(b["lon"] - a["lon"])
+    q = sin(dp / 2) ** 2 + cos(p1) * cos(p2) * sin(dl / 2) ** 2
+    return 6371.0 * 2 * asin(min(1.0, sqrt(q)))
+
+
+def inside_region(lat, lon):
+    return (
+        REGION["south"] <= lat <= REGION["north"]
+        and REGION["west"] <= lon <= REGION["east"]
+    )
+
+
+def contextual_matrix(radar, cx, cy, component_slice):
+    ys, xs = component_slice
+    size = int(np.ceil(
+        max(xs.stop - xs.start, ys.stop - ys.start) * CONTEXT_FACTOR
+    ))
+    size = min(MAX_CONTEXT, max(MIN_CONTEXT, size))
+
+    half = size // 2
+    x0, y0 = int(round(cx)) - half, int(round(cy)) - half
+    x1, y1 = x0 + size, y0 + size
+
+    patch = np.zeros((size, size), dtype=np.float32)
+
+    sx0, sy0 = max(0, x0), max(0, y0)
+    sx1, sy1 = min(radar.shape[1], x1), min(radar.shape[0], y1)
+
+    if sx1 > sx0 and sy1 > sy0:
+        dx0, dy0 = sx0 - x0, sy0 - y0
+        patch[dy0:dy0 + sy1 - sy0, dx0:dx0 + sx1 - sx0] = (
+            radar[sy0:sy1, sx0:sx1]
+        )
+
+    patch[~np.isfinite(patch) | (patch < MATRIX_FLOOR)] = 0
+
+    output = np.zeros((MATRIX_SIDE, MATRIX_SIDE), dtype=np.float32)
+
+    for oy in range(MATRIX_SIDE):
+        py0 = int(oy * size / MATRIX_SIDE)
+        py1 = max(py0 + 1, int((oy + 1) * size / MATRIX_SIDE))
+
+        for ox in range(MATRIX_SIDE):
+            px0 = int(ox * size / MATRIX_SIDE)
+            px1 = max(px0 + 1, int((ox + 1) * size / MATRIX_SIDE))
+
+            block = patch[py0:py1, px0:px1]
+            valid = block[block >= MATRIX_FLOOR]
+
+            if valid.size:
+                output[oy, ox] = float(valid.max())
+
+    info = {
+        "rows": MATRIX_SIDE,
+        "cols": MATRIX_SIDE,
+        "context_pixels": size,
+        "floor_dbz": MATRIX_FLOOR,
+        "aggregation": "maximum_dbzh",
+        "vertical_information": False
+    }
+
+    return np.round(output, 1).tolist(), info# ---------------------------------------------------------
+# PERIMETRO E RILEVAMENTO CELLE
+# ---------------------------------------------------------
+
+def ordered_perimeter(component, x_start, y_start, grid, inverse, origin):
+    edge = component & ~ndimage.binary_erosion(
+        component,
+        structure=np.ones((3, 3)),
+        border_value=0
+    )
+
+    yy, xx = np.where(edge)
+    if len(xx) < 3:
+        return []
+
+    cx, cy = float(xx.mean()), float(yy.mean())
+    order = np.argsort(np.arctan2(yy - cy, xx - cx))
+
+    if len(order) > 100:
+        order = order[np.linspace(
+            0, len(order) - 1, 100
+        ).astype(int)]
+
+    ox, oy = origin
+    points = []
+
+    for index in order:
+        px = x_start + int(xx[index])
+        py = y_start + int(yy[index])
+
+        gx = ox + px * grid["xscale_m"]
+        gy = oy + (grid["ysize"] - 1 - py) * grid["yscale_m"]
+
+        lon, lat = inverse.transform(gx, gy)
+
+        if np.isfinite(lat) and np.isfinite(lon):
+            points.append([
+                round(float(lat), 4),
+                round(float(lon), 4)
+            ])
+
+    return points
+
+
+def detect(radar, grid, inverse, origin):
+    mask = np.isfinite(radar) & (radar >= THRESHOLD)
+
+    labels, count = ndimage.label(
+        mask,
+        structure=np.ones((3, 3), dtype=np.uint8)
+    )
+
+    objects = ndimage.find_objects(labels)
+    ox, oy = origin
+    cells = []
+
+    for label_id, sl in enumerate(objects, 1):
+        if sl is None:
+            continue
+
+        ys, xs = sl
+        component = labels[sl] == label_id
+        area = int(component.sum())
+
+        if area < MIN_PIXELS:
+            continue
+
+        yy, xx = np.where(component)
+        values = radar[sl][yy, xx]
+
+        weights = np.maximum(values - THRESHOLD + 1, 1)
+
+        cx = xs.start + float(np.average(xx, weights=weights))
+        cy = ys.start + float(np.average(yy, weights=weights))
+
+        gx = ox + cx * grid["xscale_m"]
+        gy = oy + (grid["ysize"] - 1 - cy) * grid["yscale_m"]
+
+        lon, lat = inverse.transform(gx, gy)
+
+        if not inside_region(float(lat), float(lon)):
+            continue
+
+        matrix, matrix_info = contextual_matrix(
+            radar, cx, cy, sl
+        )
+
+        perimeter = ordered_perimeter(
+            component,
+            xs.start,
+            ys.start,
+            grid,
+            inverse,
+            origin
+        )
+
+        bbox_width = max(1, xs.stop - xs.start)
+        bbox_height = max(1, ys.stop - ys.start)
+        elongation = max(
+            bbox_width / bbox_height,
+            bbox_height / bbox_width
+        )
+        fill_ratio = area / float(bbox_width * bbox_height)
+
+        if area >= 25 and elongation >= 3.0:
+            morphology = "linear_echo_candidate"
+            morphology_label = "Eco lineare candidato"
+        elif area >= 40 and elongation < 3.0:
+            morphology = "clustered_echo"
+            morphology_label = "Eco organizzato / cluster"
+        elif float(values.max()) >= 40 and area < 40:
+            morphology = "isolated_convective_echo"
+            morphology_label = "Eco convettivo isolato"
+        else:
+            morphology = "unclassified_echo"
+            morphology_label = "Eco non classificato"
+
+        cells.append({
+            "id": f"OPERA-{label_id:05d}",
+            "lat": round(float(lat), 4),
+            "lon": round(float(lon), 4),
+            "max_dbz": round(float(values.max()), 1),
+            "mean_dbz": round(float(values.mean()), 1),
+            "threshold_dbz": THRESHOLD,
+            "area_pixels": area,
+            "approx_area_km2": round(
+                area * abs(
+                    grid["xscale_m"] * grid["yscale_m"]
+                ) / 1e6,
+                1
+            ),
+            "perimeter": perimeter,
+            "perimeter_semantics": (
+                "Bordo dei pixel connessi DBZH >= soglia; "
+                "non è un confine mesoscala."
+            ),
+            "morphology": {
+                "class": morphology,
+                "label": morphology_label,
+                "elongation_ratio": round(float(elongation), 2),
+                "fill_ratio": round(float(fill_ratio), 3),
+                "status": "morphological_candidate_not_mcs_diagnosis"
+            },
+            "mesoscale_classification": {
+                "class": "not_confirmed",
+                "reason": (
+                    "Un singolo composito DBZH 2D non conferma "
+                    "MCS, MCC, supercella o squall line."
+                )
+            },
+            "grid_matrix": matrix,
+            "matrix_sampling": matrix_info,
+            "matrix_semantics": {
+                "kind": "observed_2d_dbzh_context",
+                "units": "dBZ",
+                "vertical_information": False
+            },
+            "classification": "unclassified_radar_echo",
+            "severity": {
+                "vil": None,
+                "echo_top": None,
+                "rain_mmh": None
+            }
+        })
+
+    cells.sort(
+        key=lambda c: (c["max_dbz"], c["area_pixels"]),
+        reverse=True
+    )
+
+    return cells[:MAX_CELLS]
+
+
+# ---------------------------------------------------------
+# TRACKING
+# ---------------------------------------------------------
+
+def read_history():
+    try:
+        old = json.loads(HIST.read_text(encoding="utf-8"))
+
+        if old.get("schema_version") != 2:
+            return {"schema_version": 2, "tracks": {}}
+
+        if not isinstance(old.get("tracks"), dict):
+            return {"schema_version": 2, "tracks": {}}
+
+        return old
+
+    except Exception:
+        return {"schema_version": 2, "tracks": {}}
+
+
+def parse_time(value):
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def track_cells(cells, timestamp, history):
+    tracks = history.setdefault("tracks", {})
+    active = {}
+
+    for track_id, track in tracks.items():
+        observations = track.get("observations", [])
+
+        if not observations:
+            continue
+
+        try:
+            age = (
+                timestamp - parse_time(observations[-1]["timestamp"])
+            ).total_seconds() / 60
+        except Exception:
+            continue
+
+        if 0 <= age <= TRACK_MAX_AGE_MIN:
+            active[track_id] = track
+
+    candidates = []
+
+    for cell_index, cell in enumerate(cells):
+        for track_id, track in active.items():
+            last = track["observations"][-1]
+
+            try:
+                age = (
+                    timestamp - parse_time(last["timestamp"])
+                ).total_seconds() / 60
+
+                if age <= 0 or age > TRACK_MAX_AGE_MIN:
+                    continue
+
+                distance = haversine(last, cell)
+                speed = distance / (age / 60)
+
+                if (
+                    distance <= TRACK_MAX_DISTANCE_KM
+                    and speed <= TRACK_MAX_SPEED_KMH
+                ):
+                    candidates.append((
+                        distance, cell_index, track_id
+                    ))
+
+            except Exception:
+                continue
+
+    candidates.sort(key=lambda item: item[0])
+
+    assigned_cells = set()
+    assigned_tracks = set()
+    assignments = {}
+
+    for distance, cell_index, track_id in candidates:
+        if (
+            cell_index in assigned_cells
+            or track_id in assigned_tracks
+        ):
+            continue
+
+        assignments[cell_index] = track_id
+        assigned_cells.add(cell_index)
+        assigned_tracks.add(track_id)
+
+    current_stamp = stamp(timestamp)
+
+    for index, cell in enumerate(cells):
+        track_id = assignments.get(index)
+
+        if track_id is None:
+            track_id = (
+                f"IRIDE-{timestamp:%Y%m%dT%H%M}-{index:03d}"
+            )
+
+            while track_id in tracks:
+                track_id += "X"
+
+            tracks[track_id] = {"observations": []}
+
+        track = tracks[track_id]
+        observations = track.setdefault("observations", [])
+
+        if (
+            not observations
+            or observations[-1]["timestamp"] != current_stamp
+        ):
+            observations.append({
+                "timestamp": current_stamp,
+                "lat": cell["lat"],
+                "lon": cell["lon"],
+                "max_dbz": cell["max_dbz"]
+            })
+
+        del observations[:-TRACK_HISTORY_SIZE]
+
+        track_data = {
+            "track_id": track_id,
+            "observations": observations[-TRACK_HISTORY_SIZE:],
+            "forecast_status": "insufficient_observations",
+            "real_vector": None,
+            "forecast_30m": None,
+            "forecast_60m": None,
+            "forecast_180m": None,
+            "speed_kmh": None,
+            "observed_interval_minutes": None,
+            "motion_quality": "insufficient_history"
+        }
+
+        # La previsione viene abilitata solo con almeno tre posizioni
+        # e due intervalli temporali coerenti. Non si estrapola da un
+        # singolo spostamento, troppo vulnerabile agli errori di tracking.
+        if len(observations) >= 3:
+            recent = observations[-3:]
+            p0, p1, p2 = recent
+            t0, t1, t2 = (
+                parse_time(p0["timestamp"]),
+                parse_time(p1["timestamp"]),
+                parse_time(p2["timestamp"])
+            )
+            dt1 = (t1 - t0).total_seconds() / 60.0
+            dt2 = (t2 - t1).total_seconds() / 60.0
+
+            if 5 <= dt1 <= 45 and 5 <= dt2 <= 45:
+                def displacement(a, b, minutes):
+                    mean_lat = np.radians(
+                        (float(a["lat"]) + float(b["lat"])) / 2.0
+                    )
+                    east_km = (
+                        np.radians(float(b["lon"]) - float(a["lon"]))
+                        * 6371.0 * np.cos(mean_lat)
+                    )
+                    north_km = (
+                        np.radians(float(b["lat"]) - float(a["lat"]))
+                        * 6371.0
+                    )
+                    return (
+                        east_km / (minutes / 60.0),
+                        north_km / (minutes / 60.0)
+                    )
+
+                v1 = displacement(p0, p1, dt1)
+                v2 = displacement(p1, p2, dt2)
+                speed1 = float(np.hypot(*v1))
+                speed2 = float(np.hypot(*v2))
+
+                dot = v1[0] * v2[0] + v1[1] * v2[1]
+                denom = max(speed1 * speed2, 1e-6)
+                direction_cosine = float(np.clip(dot / denom, -1, 1))
+                direction_difference = float(
+                    np.degrees(np.arccos(direction_cosine))
+                )
+
+                speed_ratio = (
+                    max(speed1, speed2) / max(min(speed1, speed2), 1e-6)
+                )
+
+                if (
+                    5 <= speed1 <= 90
+                    and 5 <= speed2 <= 90
+                    and direction_difference <= 55
+                    and speed_ratio <= 2.5
+                ):
+                    # Media temporale delle due velocità osservate.
+                    mean_vx = (v1[0] + v2[0]) / 2.0
+                    mean_vy = (v1[1] + v2[1]) / 2.0
+                    speed = float(np.hypot(mean_vx, mean_vy))
+
+                    def predict(future_minutes):
+                        east = mean_vx * future_minutes / 60.0
+                        north = mean_vy * future_minutes / 60.0
+                        lat = float(p2["lat"]) + np.degrees(
+                            north / 6371.0
+                        )
+                        cos_lat = max(
+                            0.15, abs(np.cos(np.radians(float(p2["lat"]))))
+                        )
+                        lon = float(p2["lon"]) + np.degrees(
+                            east / (6371.0 * cos_lat)
+                        )
+                        return [round(lat, 5), round(lon, 5)]
+
+                    track_data.update({
+                        "forecast_status":
+                            "experimental_consistent_motion_extrapolation",
+                        "real_vector": [
+                            [p1["lat"], p1["lon"]],
+                            [p2["lat"], p2["lon"]]
+                        ],
+                        "forecast_30m": [
+                            [p2["lat"], p2["lon"]], predict(30)
+                        ],
+                        "forecast_60m": [
+                            [p2["lat"], p2["lon"]], predict(60)
+                        ],
+                        "forecast_180m": [
+                            [p2["lat"], p2["lon"]], predict(180)
+                        ],
+                        "observed_interval_minutes": round(dt2, 1),
+                        "speed_kmh": round(speed, 1),
+                        "motion_quality": "two_interval_direction_and_speed_consistency",
+                        "direction_difference_degrees": round(
+                            direction_difference, 1
+                        ),
+                        "speed_ratio": round(speed_ratio, 2)
+                    })
+
+        elif len(observations) == 2:
+            # Conserva la misura del moto, ma non produce previsioni.
+            a, b = observations[-2:]
+            minutes = (
+                parse_time(b["timestamp"]) -
+                parse_time(a["timestamp"])
+            ).total_seconds() / 60.0
+            if 0 < minutes <= TRACK_MAX_AGE_MIN:
+                speed = haversine(a, b) / (minutes / 60.0)
+                if 0 <= speed <= TRACK_MAX_SPEED_KMH:
+                    track_data.update({
+                        "real_vector": [
+                            [a["lat"], a["lon"]],
+                            [b["lat"], b["lon"]]
+                        ],
+                        "speed_kmh": round(speed, 1),
+                        "observed_interval_minutes": round(minutes, 1),
+                        "motion_quality": "single_interval_observation_only"
+                    })
+
+        cell["track_id"] = track_id
+        cell["track"] = track_data
+
+        cell["vectors"] = {
+            "real": track_data["real_vector"],
+            "predictive_30m": track_data["forecast_30m"],
+            "predictive_60m": track_data["forecast_60m"],
+            "predictive_180m": track_data["forecast_180m"],
+            "forecast_status": track_data["forecast_status"]
+        }
+
+    history["tracks"] = active | {
+        cell["track_id"]: tracks[cell["track_id"]]
+        for cell in cells
+    }
+
+    return cells, history# ---------------------------------------------------------
+# RASTER DBZH GEORIFERITO PER LA MAPPA LEAFLET
+# ---------------------------------------------------------
+
+def png_chunk(kind, data):
+    body = kind + data
+    return (
+        struct.pack(">I", len(data))
+        + body
+        + struct.pack(">I", zlib.crc32(body) & 0xffffffff)
+    )
+
+
+def write_png(path, width, height, rgba):
+    raw = bytearray()
+    stride = width * 4
+
+    for y in range(height):
+        raw.append(0)
+        start = y * stride
+        raw.extend(rgba[start:start + stride])
+
+    header = struct.pack(">2I", width, height)
+    header += bytes([8, 6, 0, 0, 0])
+
+    content = (
+        b"\x89PNG\r\n\x1a\n"
+        + png_chunk(b"IHDR", header)
+        + png_chunk(b"IDAT", zlib.compress(bytes(raw), 6))
+        + png_chunk(b"IEND", b"")
+    )
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_bytes(content)
+    temp.replace(path)
+
+
+def generate_radar_overlay(radar, grid, origin):
+    width = 1440
+    height = 800
+
+    west = REGION["west"]
+    east = REGION["east"]
+    south = REGION["south"]
+    north = REGION["north"]
+
+    longitudes = west + (
+        np.arange(width, dtype=np.float64) + 0.5
+    ) * (east - west) / width
+
+    latitudes = north - (
+        np.arange(height, dtype=np.float64) + 0.5
+    ) * (north - south) / height
+
+    lon_grid, lat_grid = np.meshgrid(longitudes, latitudes)
+
+    forward = Transformer.from_crs(
+        CRS.from_epsg(4326),
+        CRS.from_user_input(grid["projection"]),
+        always_xy=True
+    )
+
+    projected_x, projected_y = forward.transform(
+        lon_grid, lat_grid
+    )
+
+    ox, oy = origin
+
+    pixel_x = np.rint(
+        (projected_x - ox) / grid["xscale_m"]
+    ).astype(np.int32)
+
+    pixel_y = np.rint(
+        (grid["ysize"] - 1)
+        - (projected_y - oy) / grid["yscale_m"]
+    ).astype(np.int32)
+
+    valid = (
+        np.isfinite(projected_x)
+        & np.isfinite(projected_y)
+        & (pixel_x >= 0)
+        & (pixel_x < grid["xsize"])
+        & (pixel_y >= 0)
+        & (pixel_y < grid["ysize"])
+    )
+
+    sampled = np.full((height, width), np.nan, dtype=np.float32)
+    sampled[valid] = radar[
+        pixel_y[valid], pixel_x[valid]
+    ]
+
+    rgba = np.zeros((height, width, 4), dtype=np.uint8)
+
+    classes = [
+        (15.0, 25.0, (57, 126, 232)),
+        (25.0, 30.0, (36, 189, 112)),
+        (30.0, 35.0, (244, 212, 62)),
+        (35.0, 45.0, (240, 120, 50)),
+        (45.0, float("inf"), (237, 66, 200))
+    ]
+
+    for lower, upper, rgb in classes:
+        selected = (
+            np.isfinite(sampled)
+            & (sampled >= lower)
+            & (sampled < upper)
+        )
+        rgba[selected, 0] = rgb[0]
+        rgba[selected, 1] = rgb[1]
+        rgba[selected, 2] = rgb[2]
+        rgba[selected, 3] = 178
+
+    path = ROOT / "docs" / "data" / "iride_radar.png"
+    write_png(path, width, height, rgba)
+
+    return {
+        "image": "data/iride_radar.png",
+        "bounds": [
+            [south, west],
+            [north, east]
+        ],
+        "width": width,
+        "height": height,
+        "format": "PNG RGBA",
+        "opacity": 0.82,
+        "minimum_dbz": 15,
+        "transparent_below_dbz": 15,
+        "georeferencing": "geographic sampling from ODIM projection",
+        "timestamp": None
+    }
+
+
+# ---------------------------------------------------------
+# PUBBLICAZIONE
+# ---------------------------------------------------------
+
+def main():
+    started = now()
+    source_path = None
+
+    try:
+        key, size = latest()
+
+        key_time = parse_product_time(key)
+
+        if key_time is None:
+            raise RuntimeError(
+                "Timestamp prodotto OPERA non disponibile."
+            )
+
+        age_minutes = (now() - key_time).total_seconds() / 60
+
+        if age_minutes < -5:
+            raise RuntimeError("Timestamp OPERA nel futuro.")
+
+        if age_minutes > 90:
+            raise RuntimeError(
+                f"Prodotto OPERA obsoleto: {age_minutes:.1f} minuti."
+            )
+
+        source_path, source_url = fetch(key, size)
+
+        radar, grid, inverse, origin, decoded_time = decode(
+            source_path
+        )
+
+        if decoded_time is not None:
+            difference = abs(
+                (decoded_time - key_time).total_seconds()
+            )
+
+            if difference > 120:
+                raise RuntimeError(
+                    "Timestamp ODIM e archivio non coerenti."
+                )
+
+            product_time = decoded_time
+        else:
+            product_time = key_time
+
+        age_minutes = (
+            now() - product_time
+        ).total_seconds() / 60
+
+        if age_minutes < -5 or age_minutes > 90:
+            raise RuntimeError(
+                f"Età prodotto non valida: {age_minutes:.1f} minuti."
+            )
+
+        cells = detect(radar, grid, inverse, origin)
+        radar_overlay = generate_radar_overlay(radar, grid, origin)
+        radar_overlay["timestamp"] = stamp(product_time)
+
+        if not cells:
+            raise RuntimeError(
+                "Nessuna cella rilevata. "
+                "Pubblicazione precedente conservata."
+            )
+
+        history = read_history()
+        cells, history = track_cells(
+            cells, product_time, history
+        )
+
+        for index, cell in enumerate(cells):
+            cell["3d_available"] = index < MAX_3D_CELLS
+            cell["3d_rank"] = (
+                index + 1 if index < MAX_3D_CELLS else None
+            )
+
+        payload = {
+            "schema_version": 6,
+            "product": (
+                "I.R.I.D.E. — Integrated Radar Imaging "
+                "& Detection Engine"
+            ),
+            "status": "ok",
+            "timestamp": stamp(product_time),
+            "generated_at": stamp(now()),
+            "region": REGION,
+            "source": {
+                "provider": "EUMETNET OPERA",
+                "archive": "CloudFerro openradar-24h",
+                "url": source_url,
+                "object_key": key,
+                "product": "OPERA DBZH composite",
+                "attribution": (
+                    "Dati radar EUMETNET OPERA, archivio CloudFerro; "
+                    "elaborazione I.R.I.D.E. Licenza e condizioni del "
+                    "prodotto da verificare nella documentazione "
+                    "ufficiale."
+                )
+            },
+            "grid": grid,
+            "radar_overlay": radar_overlay,
+            "processing": {
+                "threshold_dbz": THRESHOLD,
+                "minimum_cell_pixels": MIN_PIXELS,
+                "maximum_detected_cells": MAX_CELLS,
+                "maximum_3d_cells": MAX_3D_CELLS,
+                "morphology": (
+                    "2D DBZH morphology only; "
+                    "mesoscale classes are not confirmed"
+                ),
+                "matrix_size": [MATRIX_SIDE, MATRIX_SIDE],
+                "tracking": (
+                    "one-to-one spatial and temporal association"
+                ),
+                "forecast": (
+                    "experimental extrapolation after three observations; "
+                    "two consecutive intervals must pass speed and "
+                    "direction consistency checks"
+                ),
+                "vertical_data": (
+                    "not available from 2D DBZH composite"
+                )
+            },
+            "cell_count": len(cells),
+            "cells": cells
+        }
+
+        save(DATA / "iride.json", payload)
+        save(ROOT / "docs" / "data" / "iride.json", payload)
+        save(HIST, history)
+
+        save(DATA / "status.json", {
+            "status": "ok",
+            "timestamp": payload["timestamp"],
+            "cell_count": len(cells),
+            "cells_3d": min(len(cells), MAX_3D_CELLS),
+            "elapsed_seconds": round(
+                (now() - started).total_seconds(), 1
+            )
+        })
+
+        print(
+            f"IRIDE OK: {len(cells)} celle; "
+            f"{min(len(cells), MAX_3D_CELLS)} abilitate 3D; "
+            f"{payload['timestamp']}"
+        )
+
+    except Exception as error:
+        save(DATA / "status.json", {
+            "status": "error",
+            "generated_at": stamp(now()),
+            "message": str(error),
+            "previous_data_preserved": True
+        })
+
+        traceback.print_exc()
+        raise
+
+    finally:
+        if source_path:
+            source_path.unlink(missing_ok=True)
+
+
+if __name__ == "__main__":
+    main()
