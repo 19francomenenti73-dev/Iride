@@ -256,7 +256,9 @@ def decode(path):
         if radar.shape != (ny, nx):
             raise RuntimeError(
                 "Dimensioni raster e metadati ODIM non coerenti."
-         )        if not projection or xscale is None or yscale is None:
+            )
+
+        if not projection or xscale is None or yscale is None:
             raise RuntimeError("Georeferenziazione ODIM incompleta.")
 
         ll_x = number(attr(where, "LL_x"))
@@ -310,10 +312,7 @@ def decode(path):
             except ValueError:
                 product_time = None
 
-        return radar, grid, inverse, (ll_x, ll_y), product_time
-
-
-# ---------------------------------------------------------
+        return radar, grid, inverse, (ll_x, ll_y), product_time# ---------------------------------------------------------
 # GEOGRAFIA E MATRICE RADAR
 # ---------------------------------------------------------
 
@@ -518,7 +517,11 @@ def detect(radar, grid, inverse, origin):
                 1
             ),
             "perimeter": perimeter,
-            "perimeter_semantics": "Bordo dei pixel connessi DBZH >= soglia; non è un confine mesoscala.",            "morphology": {
+            "perimeter_semantics": (
+                "Bordo dei pixel connessi DBZH >= soglia; "
+                "non è un confine mesoscala."
+            ),
+            "morphology": {
                 "class": morphology,
                 "label": morphology_label,
                 "elongation_ratio": round(float(elongation), 2),
@@ -527,7 +530,10 @@ def detect(radar, grid, inverse, origin):
             },
             "mesoscale_classification": {
                 "class": "not_confirmed",
-                "reason": "Un singolo composito DBZH 2D non conferma MCS, MCC, supercella o squall line."
+                "reason": (
+                    "Un singolo composito DBZH 2D non conferma "
+                    "MCS, MCC, supercella o squall line."
+                )
             },
             "grid_matrix": matrix,
             "matrix_sampling": matrix_info,
@@ -549,10 +555,7 @@ def detect(radar, grid, inverse, origin):
         reverse=True
     )
 
-    return cells[:MAX_CELLS]
-
-
-# ---------------------------------------------------------
+    return cells[:MAX_CELLS]# ---------------------------------------------------------
 # TRACKING
 # ---------------------------------------------------------
 
@@ -789,7 +792,8 @@ def write_png(path, width, height, rgba):
     )
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(path.suffix + ".tmp")    temp.write_bytes(content)
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_bytes(content)
     temp.replace(path)
 
 
@@ -885,10 +889,7 @@ def generate_radar_overlay(radar, grid, origin):
         "transparent_below_dbz": 15,
         "georeferencing": "geographic sampling from ODIM projection",
         "timestamp": None
-    }
-
-
-# ---------------------------------------------------------
+    }# ---------------------------------------------------------
 # PUBBLICAZIONE
 # ---------------------------------------------------------
 
@@ -996,7 +997,10 @@ def main():
                 "minimum_cell_pixels": MIN_PIXELS,
                 "maximum_detected_cells": MAX_CELLS,
                 "maximum_3d_cells": MAX_3D_CELLS,
-                "morphology": "2D DBZH morphology only; mesoscale classes are not confirmed",
+                "morphology": (
+                    "2D DBZH morphology only; "
+                    "mesoscale classes are not confirmed"
+                ),
                 "matrix_size": [MATRIX_SIDE, MATRIX_SIDE],
                 "tracking": (
                     "one-to-one spatial and temporal association"
