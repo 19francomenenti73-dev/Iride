@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """I.R.I.D.E. — OPERA radar pipeline."""
 
@@ -38,7 +39,7 @@ MAX_BYTES = 250_000_000
 THRESHOLD = 25.0
 MIN_PIXELS = 8
 
-MAX_CELLS = 100
+MAX_CELLS = 40
 MAX_3D_CELLS = 30
 
 MATRIX_SIDE = 72
@@ -257,7 +258,7 @@ def decode(path):
         yscale = number(attr(where, "yscale"))
         nx = int(number(attr(where, "xsize"), radar.shape[1]))
         ny = int(number(attr(where, "ysize"), radar.shape[0]))
-                
+        
         if radar.shape != (ny, nx):
             raise RuntimeError(
                 "Dimensioni raster e metadati ODIM non coerenti."
@@ -516,8 +517,8 @@ def detect(radar, grid, inverse, origin):
         perimeter, length_km, width_km, oriented_elongation = (
             oriented_geometry(
                 component, xs.start, ys.start, grid, inverse, origin
-        )
-        
+            )
+                
         )
         mesoscala = classify_mesoscale(
             component, radar[sl],
@@ -579,10 +580,24 @@ def detect(radar, grid, inverse, origin):
             }
         })
 
-    cells.sort(
-        key=lambda c: (c["max_dbz"], c["area_pixels"]),
-        reverse=True
-    )
+    # Prioritize intensity, spatial extent and mesoscale structure.
+    # Keep a broader candidate pool through detection; only the 40
+    # highest-ranked objects are published and tracked.
+    def operational_score(cell):
+        intensity = min(float(cell["max_dbz"]), 65.0)
+        area = max(0.0, float(cell["approx_area_km2"]))
+        area_score = min(np.log1p(area), 11.0) * 1.8
+        category = cell["mesoscale_classification"]["class"]
+        structure_score = {
+            "squall_line_candidate": 8.0,
+            "mcs_candidate": 8.0,
+            "linear_echo_candidate": 5.0,
+            "multicell_candidate": 4.0,
+            "isolated_cell_candidate": 2.0,
+        }.get(category, 0.0)
+        return intensity + area_score + structure_score
+
+    cells.sort(key=operational_score, reverse=True)
     return cells[:MAX_CELLS]
 
 
@@ -764,6 +779,7 @@ def track_cells(cells, timestamp, history):
 
         for ti, ci in zip(row_indices, col_indices):
             if costs[ti, ci] < TRACK_COST_REJECT:
+    
                 assignments[int(ci)] = track_ids[int(ti)]
 
     current_stamp = stamp(timestamp)
@@ -778,7 +794,6 @@ def track_cells(cells, timestamp, history):
             while track_id in tracks:
                 suffix += 1
                 track_id = f"{base_id}-{suffix:02d}"
-        
             tracks[track_id] = {"observations": []}
 
         track = tracks[track_id]
@@ -1023,8 +1038,7 @@ def generate_radar_overlay(radar, grid, origin):
     rgba = np.zeros(
         (height, width, 4),
         dtype=np.uint8
-    )
-
+)
     classes = [
         (15.0, 25.0, (57, 126, 232)),
         (25.0, 30.0, (36, 189, 112)),
@@ -1038,8 +1052,7 @@ def generate_radar_overlay(radar, grid, origin):
             np.isfinite(sampled)
             & (sampled >= lower)
             & (sampled < upper)
-            )
-    
+        )
         rgba[selected, 0] = rgb[0]
         rgba[selected, 1] = rgb[1]
         rgba[selected, 2] = rgb[2]
@@ -1255,4 +1268,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+            
