@@ -246,52 +246,7 @@ def decode(path):
         xscale = number(attr(where, "xscale"))
         yscale = number(attr(where, "yscale"))
         nx = int(number(attr(where, "xsize"), radar.shape[1]))
-        ny = int(number(attr(where, "ysize"), radar.shape[0]))
-
-        if (
-            not projection or not xscale or not yscale
-            or radar.shape != (ny, nx)
-        ):
-            raise RuntimeError("Griglia ODIM incoerente.")
-
-        lon0 = number(attr(where, "LL_lon"))
-        lat0 = number(attr(where, "LL_lat"))
-        if lon0 is None or lat0 is None:
-            raise RuntimeError("Coordinate LL ODIM assenti.")
-
-        crs = CRS.from_user_input(str(projection))
-        forward = Transformer.from_crs(4326, crs, always_xy=True)
-        inverse = Transformer.from_crs(crs, 4326, always_xy=True)
-
-        x0, y0 = forward.transform(lon0, lat0)
-
-        # Coordinate del centro del pixel in basso a sinistra.
-        origin_x = x0 + xscale / 2
-        origin_y = y0 + yscale / 2
-
-        product = h.get("dataset1/what")
-        end_date = attr(product, "enddate")
-        end_time = attr(product, "endtime")
-        product_time = None
-
-        if end_date and end_time:
-            product_time = datetime.strptime(
-                str(end_date) + str(end_time), "%Y%m%d%H%M%S"
-            ).replace(tzinfo=timezone.utc)
-
-        grid = {
-            "projection": str(projection),
-            "xsize": nx,
-            "ysize": ny,
-            "xscale_m": xscale,
-            "yscale_m": yscale,
-            "license_metadata": str(attr(h.get("how"), "license", ""))
-        }
-
-        return radar, grid, inverse, (origin_x, origin_y), product_time
-
-
-# ---------------------------------------------------------
+        ny = int(number(attr(where, "ysize"), radar.shape[0]))# ---------------------------------------------------------
 # GEOGRAFIA E MATRICE RADAR
 # ---------------------------------------------------------
 
@@ -336,7 +291,6 @@ def contextual_matrix(radar, cx, cy, component_slice):
 
     patch[~np.isfinite(patch) | (patch < MATRIX_FLOOR)] = 0
 
-    # Ridimensionamento max-pooling: conserva i massimi DBZH.
     output = np.zeros((MATRIX_SIDE, MATRIX_SIDE), dtype=np.float32)
     for oy in range(MATRIX_SIDE):
         py0 = int(oy * size / MATRIX_SIDE)
@@ -361,7 +315,7 @@ def contextual_matrix(radar, cx, cy, component_slice):
 
 
 # ---------------------------------------------------------
-# PERIMETRO ORDINATO E CELLE
+# PERIMETRO E RILEVAMENTO CELLE
 # ---------------------------------------------------------
 
 def ordered_perimeter(component, x_start, y_start, grid, inverse, origin):
@@ -372,7 +326,6 @@ def ordered_perimeter(component, x_start, y_start, grid, inverse, origin):
     if len(xx) < 3:
         return []
 
-    # Ordine angolare attorno al centroide del contorno.
     cx, cy = float(xx.mean()), float(yy.mean())
     order = np.argsort(np.arctan2(yy - cy, xx - cx))
     if len(order) > 100:
@@ -431,15 +384,12 @@ def detect(radar, grid, inverse, origin):
         if not inside_region(float(lat), float(lon)):
             continue
 
-        matrix, matrix_info = contextual_matrix(
-            radar, cx, cy, sl
-        )
-
+        matrix, matrix_info = contextual_matrix(radar, cx, cy, sl)
         perimeter = ordered_perimeter(
             component, xs.start, ys.start, grid, inverse, origin
         )
 
-        cell = {
+        cells.append({
             "id": f"OPERA-{label_id:05d}",
             "lat": round(float(lat), 4),
             "lon": round(float(lon), 4),
@@ -464,15 +414,17 @@ def detect(radar, grid, inverse, origin):
                 "echo_top": None,
                 "rain_mmh": None
             }
-        }
-        cells.append(cell)
+        })
 
     cells.sort(
         key=lambda c: (c["max_dbz"], c["area_pixels"]),
         reverse=True
     )
-    return cells[:MAX_CELLS]# ---------------------------------------------------------
-# TRACKING: ABBINAMENTO UNO-A-UNO
+    return cells[:MAX_CELLS]
+
+
+# ---------------------------------------------------------
+# TRACKING
 # ---------------------------------------------------------
 
 def read_history():
@@ -493,21 +445,21 @@ def parse_time(value):
 
 def track_cells(cells, timestamp, history):
     tracks = history.setdefault("tracks", {})
-
-    # Elimina tracce scadute o con osservazioni non valide.
     active = {}
+
     for track_id, track in tracks.items():
         observations = track.get("observations", [])
         if not observations:
             continue
         try:
-            age = (timestamp - parse_time(observations[-1]["timestamp"])).total_seconds() / 60
+            age = (
+                timestamp - parse_time(observations[-1]["timestamp"])
+            ).total_seconds() / 60
         except Exception:
             continue
         if 0 <= age <= TRACK_MAX_AGE_MIN:
             active[track_id] = track
 
-    # Tutte le coppie ammissibili vengono ordinate per distanza.
     candidates = []
     for cell_index, cell in enumerate(cells):
         for track_id, track in active.items():
@@ -622,10 +574,6 @@ def track_cells(cells, timestamp, history):
     history["tracks"] = active | {
         cell["track_id"]: tracks[cell["track_id"]] for cell in cells
     }
-
-    return cells, history
-
-
 # ---------------------------------------------------------
 # PUBBLICAZIONE
 # ---------------------------------------------------------
@@ -636,21 +584,45 @@ def main():
 
     try:
         key, size = latest()
-        source_path, source_url = fetch(key, size)
 
-        radar, grid, inverse, origin, product_time = decode(source_path)
-        if product_time is None:
-            product_time = parse_product_time(key)
-        if product_time is None:
+        key_time = parse_product_time(key)
+        if key_time is None:
             raise RuntimeError("Timestamp prodotto OPERA non disponibile.")
+
+        age_minutes = (now() - key_time).total_seconds() / 60
+
+        if age_minutes < -5:
+            raise RuntimeError("Timestamp OPERA nel futuro.")
+        if age_minutes > 90:
+            raise RuntimeError(
+                f"Prodotto OPERA obsoleto: {age_minutes:.1f} minuti. "
+                "Limite massimo 90 minuti."
+            )
+
+        source_path, source_url = fetch(key, size)
+        radar, grid, inverse, origin, decoded_time = decode(source_path)
+
+        if decoded_time is not None:
+            difference = abs((decoded_time - key_time).total_seconds())
+            if difference > 120:
+                raise RuntimeError(
+                    "Timestamp ODIM e archivio non coerenti."
+                )
+            product_time = decoded_time
+        else:
+            product_time = key_time
+
+        age_minutes = (now() - product_time).total_seconds() / 60
+        if age_minutes < -5 or age_minutes > 90:
+            raise RuntimeError(
+                f"Età prodotto non valida: {age_minutes:.1f} minuti."
+            )
 
         cells = detect(radar, grid, inverse, origin)
 
         if not cells:
             raise RuntimeError(
-                "Nessuna cella nella regione con soglia "
-                f"{THRESHOLD} dBZ e almeno {MIN_PIXELS} pixel. "
-                "Pubblicazione precedente conservata."
+                "Nessuna cella rilevata. Pubblicazione precedente conservata."
             )
 
         history = read_history()
@@ -728,3 +700,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    return cells, history
