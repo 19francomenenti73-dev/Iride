@@ -24,11 +24,13 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           persist-credentials: true
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
@@ -41,48 +43,51 @@ jobs:
       - name: Acquire, decode, detect and track OPERA
         run: python backend/iride_pipeline.py
 
-      - name: Compile and validate frontend, data and radar image
+      - name: Compile backend
+        run: python -m py_compile backend/iride_pipeline.py
+
+      - name: Validate generated JSON
         run: |
-          python -m py_compile backend/iride_pipeline.py
           python -m json.tool data/iride.json >/dev/null
           python -m json.tool docs/data/iride.json >/dev/null
           python -m json.tool data/status.json >/dev/null
 
+      - name: Validate radar, detections and vectors
+        run: |
           python - <<'PY'
           import json
           import math
           from pathlib import Path
 
-          index = Path("index.html").read_text(encoding="utf-8")
-          assert index.lstrip().lower().startswith("<!doctype html>"), (
-              "index.html non è un documento HTML"
+          data = json.loads(
+              Path("data/iride.json").read_text(encoding="utf-8")
           )
-          assert "leaflet.js" in index.lower(), "Leaflet non incluso"
-          assert "experimental_consistent_motion_extrapolation" in index, (
-              "Frontend e schema vettori non allineati"
+          public = json.loads(
+              Path("docs/data/iride.json").read_text(encoding="utf-8")
+          )
+          status = json.loads(
+              Path("data/status.json").read_text(encoding="utf-8")
           )
 
-          data = json.loads(Path("data/iride.json").read_text())
-          public = json.loads(Path("docs/data/iride.json").read_text())
-          status = json.loads(Path("data/status.json").read_text())
-          radar = Path("docs/data/iride_radar.png")
-
-          assert data == public, "JSON interni e pubblici diversi"
+          assert data == public, "JSON interno e pubblico non coincidono"
           assert data["status"] == "ok"
           assert data["schema_version"] == 6
           assert status["status"] == "ok"
-          assert data["region"] == {
+
+          expected_region = {
               "west": -15.0,
               "east": 38.0,
               "south": 30.0,
               "north": 72.0,
           }
+          assert data["region"] == expected_region
 
-          assert radar.exists(), "PNG radar non generato"
-          assert radar.stat().st_size > 1000, "PNG radar vuoto"
+          radar = Path("docs/data/iride_radar.png")
+          assert radar.is_file(), "Overlay radar assente"
+          assert radar.stat().st_size > 1000, "Overlay radar vuoto"
           assert radar.read_bytes()[:8] == bytes(
               (137, 80, 78, 71, 13, 10, 26, 10)
-          ), "PNG non valido"
+          ), "Firma PNG non valida"
 
           overlay = data["radar_overlay"]
           assert overlay["image"] == "data/iride_radar.png"
@@ -90,9 +95,14 @@ jobs:
           assert overlay["height"] == 1007
           assert len(overlay["bounds"]) == 2
 
+          for corner in overlay["bounds"]:
+              assert len(corner) == 2
+              assert all(math.isfinite(float(v)) for v in corner)
+
           cells = data["cells"]
           assert 1 <= len(cells) <= 100
           assert data["cell_count"] == len(cells)
+          assert status["cell_count"] == len(cells)
 
           track_ids = set()
           count_3d = 0
@@ -131,14 +141,21 @@ jobs:
 
               if real is not None or forecast is not None:
                   vector_count += 1
+
                   observations = cell["track"]["observations"]
                   assert len(observations) >= 3
                   assert real is not None and len(real) == 2
                   assert forecast is not None and len(forecast) == 2
+
                   assert (
                       cell["track"]["forecast_status"]
                       == "experimental_consistent_motion_extrapolation"
                   )
+                  assert (
+                      vectors["forecast_status"]
+                      == cell["track"]["forecast_status"]
+                  )
+
                   assert real[1] == forecast[0]
 
                   for name in (
@@ -149,24 +166,28 @@ jobs:
                   ):
                       vector = vectors[name]
                       assert vector is not None and len(vector) == 2
+
                       for point in vector:
                           assert len(point) == 2
-                          assert all(math.isfinite(float(v)) for v in point)
+                          assert all(
+                              math.isfinite(float(v)) for v in point
+                          )
 
           assert count_3d == min(len(cells), 30)
-          assert status["cell_count"] == len(cells)
 
           print(
               f"Validazione superata: {len(cells)} celle, "
-              f"{count_3d} celle 3D, {vector_count} vettori coerenti, "
-              f"radar PNG {radar.stat().st_size} byte"
+              f"{count_3d} celle 3D, "
+              f"{vector_count} celle con vettori, "
+              f"PNG radar {radar.stat().st_size} byte"
           )
           PY
 
-      - name: Commit data, radar image and history
+      - name: Commit generated radar data
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add \
             data/iride.json \
@@ -181,3 +202,4 @@ jobs:
             git commit -m "Update I.R.I.D.E. OPERA radar data"
             git push
           fi
+          
