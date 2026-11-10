@@ -1,647 +1,636 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="it">
 <head>
-<meta charset="utf-8">
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>I.R.I.D.E. — Radar Nowcasting</title>
+<title>I.R.I.D.E.</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
 *{box-sizing:border-box}
-html,body{margin:0;min-height:100%;background:#07111f;color:#e8f1fb;font:14px system-ui}
-header{padding:12px;background:#0b1726;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
-h1{font-size:18px;margin:0}
-small,.muted{color:#9fb2c8}
-.layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:10px;padding:10px}
-#map{height:calc(100vh - 80px);min-height:420px;background:#0b1726}
-aside{display:flex;flex-direction:column;gap:9px;min-width:0}
-.panel{padding:12px;border:1px solid #263a50;border-radius:10px;background:#101d2d}
-.panel h2{font-size:14px;margin:0 0 8px}
-button,select{background:#182b40;color:#fff;border:1px solid #38516b;border-radius:8px;padding:9px;font:inherit}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07111d;color:#eaf3fc;font:14px system-ui}
+header{height:52px;background:#081321;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid #26384b}
+.brand{font-weight:800;letter-spacing:1px;font-size:17px}
+#status{font-size:11px;color:#9db4c9}
+button,select{background:#172b40;color:#f2f7fc;border:1px solid #38516b;border-radius:8px;padding:8px 11px;font:inherit}
 button{cursor:pointer}
-button:active{background:#294665}
-.status{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.5}
-#cells{display:flex;flex-direction:column;gap:5px;max-height:34vh;overflow:auto}
-.cellBtn{text-align:left;font-size:12px;width:100%}
-.cellBtn.active{border-color:#45d7ff;background:#17384b}
-.fine{font-size:11px;color:#9fb2c8;line-height:1.45}
-.legend{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
-.legend span{font-size:11px;display:flex;align-items:center;gap:4px}
-.swatch{width:10px;height:10px;border-radius:3px;display:inline-block}
-#viewer{display:none;position:fixed;inset:0;z-index:9999;background:#030912;flex-direction:column}
+#map{height:calc(100% - 52px);width:100%;background:#0a1724}
+.legend{position:absolute;z-index:500;bottom:18px;left:12px;background:#071522eF;border:1px solid #34495d;border-radius:9px;padding:8px 10px;display:flex;gap:9px;flex-wrap:wrap;max-width:calc(100% - 24px)}
+.legend span{font-size:10px;display:flex;align-items:center;gap:4px}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.leaflet-popup-content-wrapper{background:#101f30;color:#eef5fc;border:1px solid #38516b;border-radius:10px}
+.leaflet-popup-tip{background:#101f30}
+.leaflet-popup-content{margin:12px;min-width:190px}
+.popup-title{font-weight:800;font-size:14px;margin-bottom:7px}
+.popup-line{font-size:12px;color:#c5d4e2;margin:4px 0}
+.popup-note{font-size:10px;color:#91a9bd;margin-top:8px;line-height:1.4}
+.popup-action{width:100%;margin-top:9px;background:#17415a;border-color:#3281a8}
+#viewer{display:none;position:fixed;inset:0;z-index:2000;background:#03070d;flex-direction:column}
 #viewer.open{display:flex}
-.vhead{padding:9px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;background:#030912}
-#scene{width:100%;height:100%;flex:1;min-height:0;touch-action:none}
-.vfoot{padding:9px 12px;background:#030912}
-.leaflet-popup-content{color:#172536}
-.leaflet-tooltip{background:#101d2d;color:#fff;border:1px solid #38516b}
-.cell-label{font-weight:700}
-@media(max-width:800px){
- .layout{grid-template-columns:1fr;padding:6px}
- #map{height:48vh;min-height:300px}
- #cells{max-height:190px}
+.vhead{height:54px;flex-shrink:0;background:#050b13;display:flex;align-items:center;justify-content:space-between;padding:7px 10px;gap:7px}
+#vtitle{font-size:13px;font-weight:700}
+#scene{display:block;width:100%;height:calc(100% - 96px);flex:1;min-height:0;touch-action:none}
+.vfoot{height:42px;display:flex;align-items:center;padding:0 12px;background:#050b13;color:#8fa5b9;font-size:10px}
+@media(max-width:600px){
+ header{height:48px}
+ #map{height:calc(100% - 48px)}
+ .vhead{height:52px}
+ .vhead button,.vhead select{padding:7px 8px;font-size:12px}
 }
 </style>
 </head>
 <body>
 
 <header>
-<div>
-<h1>I.R.I.D.E.</h1>
-<small>Integrated Radar Imaging &amp; Detection Engine · OPERA DBZH</small>
-</div>
-<div>
-<button id="reload">Aggiorna</button>
-<button id="fit">Centra celle</button>
-</div>
+ <div class="brand">I.R.I.D.E.</div>
+ <div style="display:flex;align-items:center;gap:9px">
+  <span id="status">OPERA · caricamento</span>
+  <button id="reload">↻</button>
+ </div>
 </header>
 
-<div class="layout">
-<main><div id="map"></div></main>
-<aside>
-<section class="panel">
-<h2>Stato</h2>
-<div id="status" class="status">Caricamento dati OPERA…</div>
-</section>
-<section class="panel">
-<h2>Riflettività radar</h2>
+<div id="map"></div>
+
 <div class="legend">
-<span><i class="swatch" style="background:#397ee8"></i>15–24</span>
-<span><i class="swatch" style="background:#24bd70"></i>25–29</span>
-<span><i class="swatch" style="background:#f4d43e"></i>30–34</span>
-<span><i class="swatch" style="background:#f07832"></i>35–44</span>
-<span><i class="swatch" style="background:#ed42c8"></i>≥45 dBZ</span>
-</div>
-</section>
-<section class="panel">
-<h2>Centroidi e celle</h2>
-<div id="cells">Nessun dato.</div>
-</section>
-<section class="panel">
-<h2>Informazioni radar</h2>
-<div id="details" class="fine">Seleziona una cella sulla mappa.</div>
-</section>
-<section class="panel">
-<h2>Limiti osservativi</h2>
-<p class="fine">
-Composito MAX DBZH bidimensionale. Non misura direttamente
-quota, VIL, echo-top o struttura verticale.
-Le quote del modello 3D sono stime morfologiche.
-I vettori sono mostrati solo quando esistono osservazioni
-temporali sufficienti.
-</p>
-</section>
-</aside>
+ <span><i class="dot" style="background:#397ee8"></i>15–24</span>
+ <span><i class="dot" style="background:#24bd70"></i>25–29</span>
+ <span><i class="dot" style="background:#f4d43e"></i>30–34</span>
+ <span><i class="dot" style="background:#f07832"></i>35–44</span>
+ <span><i class="dot" style="background:#ed42c8"></i>≥45 dBZ</span>
 </div>
 
 <div id="viewer">
-<div class="vhead">
-<b id="vtitle">Cella</b>
-<div>
-<select id="mode">
-<option value="volume">Voxel 3D</option>
-<option value="surface">Iso-superficie</option>
-<option value="holo">Holographic</option>
-</select>
-<button id="reset">Reset</button>
-<button id="close">Chiudi</button>
+ <div class="vhead">
+  <b id="vtitle">Cella radar</b>
+  <div style="display:flex;gap:5px">
+   <select id="mode">
+    <option value="0">Voxel 3D</option>
+    <option value="1">Iso-superficie</option>
+    <option value="2">Holographic</option>
+   </select>
+   <button id="reset">Reset</button>
+   <button id="close">Chiudi</button>
+  </div>
+ </div>
+ <canvas id="scene"></canvas>
+ <div class="vfoot">Trascina per ruotare · pizzica per zoom · superficie radar osservata, volume verticale stimato</div>
 </div>
-</div>
-<canvas id="scene"></canvas>
-<div class="vfoot fine">
-Trascina per ruotare · rotella o pizzico per zoom ·
-quote verticali stimate, non misurate.
-</div>
-</div>
-
-<footer class="fine" style="padding:8px 12px">
-Radar: EUMETNET OPERA via CloudFerro.
-Cartografia: OpenTopoMap / OpenStreetMap.
-Nowcasting sperimentale, non servizio di allerta.
-</footer>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (()=>{
 'use strict';
+
 const $=id=>document.getElementById(id);
 const map=L.map('map',{preferCanvas:true}).setView([43,12],5);
+
 L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{
  maxZoom:17,
- attribution:'© OpenTopoMap · © OpenStreetMap contributors'
+ attribution:'© OpenTopoMap · © OpenStreetMap'
 }).addTo(map);
 
-const marks=L.layerGroup().addTo(map);
-const contours=L.layerGroup().addTo(map);
-const lines=L.layerGroup().addTo(map);
+const radarLayer=L.layerGroup().addTo(map);
+const centroidLayer=L.layerGroup().addTo(map);
+
 let cells=[];
-let active=null;
+let selected=null;
 
-const col=v=>v>=45?'#ef39c6':v>=40?'#ff3028':
- v>=35?'#ff7900':v>=30?'#ffcf00':
- v>=25?'#00e58b':v>=15?'#397ee8':'#328cff';
+const color=v=>v>=45?'#ed42c8':
+ v>=35?'#f07832':
+ v>=30?'#f4d43e':
+ v>=25?'#24bd70':
+ v>=15?'#397ee8':'#000000';
 
-const fmt=v=>Number.isFinite(+v)?(+v).toFixed(1):'n/d';
+const number=(v,d=1)=>{
+ const n=Number(v);
+ return Number.isFinite(n)?n.toFixed(d):'—';
+};
 
-function validPoint(p){
- return Array.isArray(p)&&p.length>=2&&
- Number.isFinite(Number(p[0]))&&Number.isFinite(Number(p[1]));
+const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({
+ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+})[c]);
+
+function popupContent(c,index){
+ const track=c.track||{};
+ const speed=Number(track.speed_kmh);
+ const hasSpeed=Number.isFinite(speed);
+ const area=Number(c.approx_area_km2);
+ const areaText=Number.isFinite(area)?number(area)+' km²':'—';
+
+ return `
+ <div class="popup-title">${safe(c.id)}</div>
+ <div class="popup-line"><b>${number(c.max_dbz)} dBZ</b> · massimo</div>
+ <div class="popup-line">Media: ${number(c.mean_dbz)} dBZ</div>
+ <div class="popup-line">Area eco: ${areaText}</div>
+ <div class="popup-line">Centroide: ${number(c.lat,3)}°, ${number(c.lon,3)}°</div>
+ ${hasSpeed?`<div class="popup-line">Velocità track: ${number(speed)} km/h</div>`:''}
+ <div class="popup-note">Perimetro: area connessa con DBZH ≥25 dBZ. Non è una classificazione mesoscala.</div>
+ ${c['3d_available']===true?`<button class="popup-action" id="open3d-${index}">Apri ricostruzione 3D</button>`:''}
+ `;
 }
-function drawLine(points,color,dash){
- if(!Array.isArray(points)||points.length<2||!points.every(validPoint))return;
- L.polyline(points,{color,weight:3,opacity:.9,dashArray:dash||null}).addTo(lines);
-}
-function drawPerimeter(c){
- const p=c.perimeter;
- if(!Array.isArray(p)||p.length<3||!p.every(validPoint))return;
- L.polygon(p,{color:col(c.max_dbz),weight:2,opacity:.95,
- fillColor:col(c.max_dbz),fillOpacity:.10}).addTo(contours);
-}
-function cellDetails(c){
- const t=c.track||{},v=c.vectors||{};
- const rows=[
- '<b>'+c.id+'</b>',
- 'Riflettività massima: '+fmt(c.max_dbz)+' dBZ',
- 'Riflettività media: '+fmt(c.mean_dbz)+' dBZ',
- 'Area: '+fmt(c.approx_area_km2)+' km²',
- 'Pixel: '+(c.area_pixels??'n/d'),
- 'Centroide: '+fmt(c.lat)+'°, '+fmt(c.lon)+'°',
- 'Track: '+(t.track_id||c.track_id||'non assegnato'),
- 'Velocità: '+fmt(t.speed_kmh)+' km/h',
- 'VIL: non disponibile',
- 'Echo-top: non disponibile',
- 'Quota: stima morfologica 3D',
- '3D: '+(c['3d_available']?'disponibile':'non abilitato'),
- 'Vettore osservato: '+(Array.isArray(v.real)?'disponibile':'dati insufficienti'),
- 'Previsione +60 min: '+(Array.isArray(v.predictive_60m)?'disponibile':'non disponibile')
- ];
- $('details').innerHTML=rows.join('<br>');
-}
-function selectCell(c){
- active=c;
- cellDetails(c);
- document.querySelectorAll('.cellBtn').forEach(b=>{
-  b.classList.toggle('active',b.dataset.cell===c.id);
+
+function addCell(c,index){
+ if(!Array.isArray(c.perimeter)||c.perimeter.length<3)return;
+ const points=c.perimeter.filter(p=>
+  Array.isArray(p)&&p.length>=2&&
+  Number.isFinite(+p[0])&&Number.isFinite(+p[1])
+ );
+ if(points.length<3)return;
+
+ const stroke=color(c.max_dbz);
+
+ L.polygon(points,{
+  color:stroke,
+  weight:1.5,
+  opacity:.95,
+  fillColor:stroke,
+  fillOpacity:.27,
+  smoothFactor:0.5
+ }).addTo(radarLayer);
+
+ const marker=L.circleMarker([c.lat,c.lon],{
+  radius:6,
+  color:'#ffffff',
+  weight:1.5,
+  fillColor:stroke,
+  fillOpacity:1
+ }).addTo(centroidLayer);
+
+ marker.bindPopup(popupContent(c,index),{maxWidth:260});
+
+ marker.on('popupopen',()=>{
+  const button=$('open3d-'+index);
+  if(button)button.onclick=()=>open3D(c);
  });
- if(c['3d_available']===true)open(c.id);
 }
-function render(d){
- cells=Array.isArray(d.cells)?d.cells:[];
- marks.clearLayers();contours.clearLayers();lines.clearLayers();
- $('cells').replaceChildren();
 
- for(const c of cells){
-  if(!Number.isFinite(Number(c.lat))||!Number.isFinite(Number(c.lon)))continue;
-  drawPerimeter(c);
-  const marker=L.circleMarker([c.lat,c.lon],{
-   radius:Math.max(5,Math.min(13,4+c.max_dbz/9)),
-   color:'#fff',weight:1,fillColor:col(c.max_dbz),fillOpacity:.9
-  }).addTo(marks);
-  marker.bindTooltip('<b>'+c.id+'</b> · '+fmt(c.max_dbz)+' dBZ');
-  marker.on('click',()=>selectCell(c));
+function render(data){
+ cells=Array.isArray(data.cells)?data.cells:[];
+ radarLayer.clearLayers();
+ centroidLayer.clearLayers();
 
-  const v=c.vectors||{};
-  drawLine(v.real,'#37e7ff');
-  drawLine(v.predictive_30m,'#ffdc54','7 6');
-  drawLine(v.predictive_60m,'#ff8b4b','3 7');
+ cells.forEach((c,i)=>{
+  if(Number.isFinite(+c.lat)&&Number.isFinite(+c.lon))addCell(c,i);
+ });
 
-  const b=document.createElement('button');
-  b.className='cellBtn';b.dataset.cell=c.id;
-  b.textContent=c.id+' · '+fmt(c.max_dbz)+' dBZ · '+
-   (c.area_pixels??'?')+' px'+(c['3d_available']?' · 3D':'');
-  b.onclick=()=>{
-   map.setView([c.lat,c.lon],Math.max(7,map.getZoom()));
-   selectCell(c);
-  };
-  $('cells').appendChild(b);
- }
  $('status').textContent=
-  'Stato: '+(d.status||'n/d')+
-  '\nProdotto UTC: '+(d.timestamp||'n/d')+
-  '\nElaborato UTC: '+(d.generated_at||'n/d')+
-  '\nCelle rilevate: '+cells.length+
-  '\nCelle 3D abilitate: '+cells.filter(c=>c['3d_available']===true).length+
-  '\nSoglia: '+fmt(d.processing?.threshold_dbz)+' dBZ'+
-  '\nFonte: '+(d.source?.provider||'OPERA')+
-  '\nProdotto: '+(d.source?.product||'DBZH');
+  'OPERA · '+(data.timestamp||'orario n/d')+
+  ' · '+cells.length+' celle';
 
  if(cells.length){
-  const bounds=cells.filter(c=>Number.isFinite(+c.lat)&&Number.isFinite(+c.lon))
-   .map(c=>[c.lat,c.lon]);
-  if(bounds.length)map.fitBounds(bounds,{padding:[25,25],maxZoom:6});
+  const bounds=cells
+   .filter(c=>Number.isFinite(+c.lat)&&Number.isFinite(+c.lon))
+   .map(c=>[+c.lat,+c.lon]);
+  if(bounds.length)map.fitBounds(bounds,{padding:[25,25],maxZoom:7});
  }
 }
+
 async function load(){
+ $('status').textContent='OPERA · aggiornamento';
  try{
-  $('status').textContent='Caricamento dati OPERA…';
-  const r=await fetch('docs/data/iride.json?t='+Date.now(),{cache:'no-store'});
-  if(!r.ok)throw Error('HTTP '+r.status);
-  const d=await r.json();
-  if(d.status!=='ok'||!Array.isArray(d.cells))throw Error('Struttura JSON non valida');
-  render(d);
- }catch(e){$('status').textContent='Dati non disponibili: '+e.message;}
+  const response=await fetch('docs/data/iride.json?t='+Date.now(),{
+   cache:'no-store'
+  });
+  if(!response.ok)throw Error('HTTP '+response.status);
+  const data=await response.json();
+  if(data.status!=='ok'||!Array.isArray(data.cells))
+   throw Error('Dati non validi');
+  render(data);
+ }catch(error){
+  $('status').textContent='OPERA · dati non disponibili';
+  console.error(error);
+ }
 }
-$('reload').onclick=load;
-$('fit').onclick=()=>{
- const valid=cells.filter(c=>Number.isFinite(+c.lat)&&Number.isFinite(+c.lon));
- if(valid.length)map.fitBounds(valid.map(c=>[c.lat,c.lon]),{padding:[25,25],maxZoom:7});
-};/* =========================================================
-   RENDERER VOLUMETRICO V11 — WEBGL2
-   Input: matrice DBZH reale 72x72.
-   Blu/verde invariati; giallo -10%, rosso -20%, magenta -30%.
-   ========================================================= */
+
+$('reload').onclick=load;/* =====================================================
+   RENDERER 3D
+   La texture alla base è la matrice DBZH osservata.
+   La quota è una ricostruzione morfologica, non misurata.
+   ===================================================== */
 
 const viewer=$('viewer');
 const canvas=$('scene');
 const gl=canvas.getContext('webgl2',{
- alpha:false,antialias:false,powerPreference:'high-performance'
+ antialias:true,
+ alpha:false,
+ powerPreference:'high-performance'
 });
 
 if(!gl){
- $('status').textContent='WebGL2 non disponibile.';
+ $('status').textContent='WebGL2 non disponibile';
  return;
 }
 
 const vertexShader=`#version 300 es
-in vec2 p;
+in vec2 position;
 out vec2 uv;
 void main(){
- uv=p*.5+.5;
- gl_Position=vec4(p,0.,1.);
+ uv=position*.5+.5;
+ gl_Position=vec4(position,0.,1.);
 }`;
 
 const fragmentShader=`#version 300 es
 precision highp float;
+
 in vec2 uv;
-out vec4 outColor;
+out vec4 outputColor;
+
 uniform vec2 resolution;
-uniform vec3 camPos,camRight,camUp,camForward;
-uniform float tanHalfFov,verticalScale;
-uniform sampler2D mapTex;
+uniform vec3 cameraPosition;
+uniform vec3 cameraRight;
+uniform vec3 cameraUp;
+uniform vec3 cameraForward;
+uniform float fov;
+uniform sampler2D radarTexture;
 uniform int renderMode;
 
-float hash(vec3 p){
- p=fract(p*.3183099+.1);p*=17.;
- return fract(p.x*p.y*p.z*(p.x+p.y+p.z));
-}
-float noise(vec3 x){
- vec3 i=floor(x),f=fract(x);
- f=f*f*(3.-2.*f);
- return mix(
-  mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),
-      mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
-  mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),
-      mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),
-  f.z);
+const vec3 BACKGROUND=vec3(.008,.014,.025);
+
+vec4 radar(vec2 p){
+ return texture(radarTexture,clamp(p,vec2(0.),vec2(1.)));
 }
 
-/* Classi cromatiche ricavate dalla texture radar. */
-vec4 radarClass(vec2 p){
- vec3 c=texture(mapTex,clamp(p,vec2(.002),vec2(.998))).rgb;
- float blue=smoothstep(.12,.30,c.b-c.r)*
-            smoothstep(.035,.16,c.b-c.g)*smoothstep(.28,.48,c.b);
- float green=smoothstep(.10,.24,c.g-c.r)*
-             smoothstep(.015,.10,c.g-c.b)*smoothstep(.22,.40,c.g);
- float yellow=smoothstep(.48,.68,c.r)*smoothstep(.40,.62,c.g)*
-              (1.-smoothstep(.28,.48,c.b));
- float red=smoothstep(.48,.68,c.r)*smoothstep(.18,.42,c.r-c.g)*
-           (1.-smoothstep(.28,.48,c.b));
- float orange=red*smoothstep(.20,.42,c.g);
- float magenta=smoothstep(.42,.65,c.r)*smoothstep(.12,.30,c.b-c.g);
- return vec4(blue,green,yellow,max(max(red,orange),magenta));
-}
-vec3 warmClasses(vec2 p){
- vec3 c=texture(mapTex,clamp(p,vec2(.002),vec2(.998))).rgb;
- float yellow=smoothstep(.48,.68,c.r)*smoothstep(.40,.62,c.g)*
-              (1.-smoothstep(.28,.48,c.b));
- float red=smoothstep(.48,.68,c.r)*smoothstep(.18,.42,c.r-c.g)*
-           (1.-smoothstep(.28,.48,c.b));
- float orange=red*smoothstep(.20,.42,c.g);
- float magenta=smoothstep(.42,.65,c.r)*smoothstep(.12,.30,c.b-c.g);
- return vec3(yellow,max(red,orange),magenta);
+/* Altezza stimata in funzione della classe DBZH. */
+float echoTop(vec3 c){
+ if(c.b>c.r*1.22 && c.b>c.g*1.12)return 3.15;
+ if(c.g>c.r*1.12 && c.g>c.b*1.05)return 2.75;
+ if(c.r>.65 && c.g>.55 && c.b<.35)return 2.15;
+ if(c.r>.65 && c.g<.48 && c.b<.35)return 1.65;
+ if(c.r>.60 && c.b>.35 && c.g<.40)return 1.25;
+ return 0.;
 }
 
-float field(vec3 p,out float dbz){
- vec2 m=vec2((p.x+2.25)/4.50,(p.z+1.40)/2.80);
- float h=clamp(p.y,0.,3.8);
- vec4 d=radarClass(m);
+/* Volume derivato dalla stessa matrice della base. */
+float densityAt(vec3 p,out vec3 cellColor){
+ vec2 q=vec2((p.x+2.25)/4.5,(p.z+1.4)/2.8);
+ vec4 sampleRadar=radar(q);
+ cellColor=sampleRadar.rgb;
 
- /* Espansione in quota delle classi blu e verde. */
- float sb=.010+.105*smoothstep(.25,3.,h);
- float sg=.006+.060*smoothstep(.20,2.5,h);
- float blue=d.r;
- blue=max(blue,radarClass(m+vec2(sb,0.)).r);
- blue=max(blue,radarClass(m-vec2(sb,0.)).r);
- blue=max(blue,radarClass(m+vec2(0.,sb)).r);
- blue=max(blue,radarClass(m-vec2(0.,sb)).r);
- float green=d.g;
- green=max(green,radarClass(m+vec2(sg,0.)).g);
- green=max(green,radarClass(m-vec2(sg,0.)).g);
- green=max(green,radarClass(m+vec2(0.,sg)).g);
- green=max(green,radarClass(m-vec2(0.,sg)).g);
+ if(sampleRadar.a<.08)return 0.;
 
- /* Compattamento V11 delle sole classi calde. */
- vec2 e=vec2(.0026);
- vec3 w0=warmClasses(m);
- vec3 w1=warmClasses(m+vec2(e.x,0.));
- vec3 w2=warmClasses(m-vec2(e.x,0.));
- vec3 w3=warmClasses(m+vec2(0.,e.y));
- vec3 w4=warmClasses(m-vec2(0.,e.y));
- vec3 w5=warmClasses(m+e);
- vec3 w6=warmClasses(m-e);
- vec3 wm=min(min(min(w1,w2),min(w3,w4)),min(w5,w6));
- float yellow=mix(w0.x,wm.x,.10);
- float red=mix(w0.y,wm.y,.20);
- float magenta=mix(w0.z,wm.z,.30);
- float hot=max(red,magenta);
+ float top=echoTop(cellColor);
+ if(top<=0.)return 0.;
 
- /* Profilo verticale stimato: nessuna torre per pixel. */
- float blueBase=blue*exp(-pow((h-.48)/.34,2.));
- float greenBase=green*exp(-pow((h-.72)/.42,2.));
- float blueAnvil=blue*exp(-pow((h-2.55)/.66,2.));
- float greenShoulder=green*exp(-pow((h-1.95)/.62,2.));
- float yellowCore=yellow*exp(-pow((h-1.10)/.48,2.));
- float redCore=hot*exp(-pow((h-1.34)/.43,2.));
+ float h=p.y;
+ if(h<.06||h>top)return 0.;
 
- float density=max(max(blueBase*.42,greenBase*.48),
-                   max(blueAnvil*.74,greenShoulder*.66));
- density=max(density,max(yellowCore*.92,redCore));
- density*=.92+.08*noise(vec3(p.xz*7.,h*2.2));
+ float lower=smoothstep(.04,.22,h);
+ float upper=1.-smoothstep(top*.82,top,h);
 
- if(renderMode==2)density*=1.15;
- dbz=20.+10.*blue+10.*green+15.*yellow+25.*hot;
- return max(density,0.);
+ float taper=1.-.30*(h/top);
+ float density=lower*upper*taper;
+
+ /* Modalità isosuperficie più definita. */
+ if(renderMode==1)density=smoothstep(.35,.65,density);
+
+ /* Holographic: intensità maggiore, senza sfocatura. */
+ if(renderMode==2)density*=1.35;
+
+ return density;
 }
 
-vec3 radarColor(float d){
- if(d<30.)return mix(vec3(.10,.28,.78),vec3(.20,.53,1.),smoothstep(20.,30.,d));
- if(d<40.)return mix(vec3(.10,.53,.30),vec3(.10,.88,.42),smoothstep(30.,40.,d));
- if(d<45.)return mix(vec3(.85,.72,.12),vec3(1.,.91,.20),smoothstep(40.,45.,d));
- if(d<55.)return mix(vec3(.90,.29,.08),vec3(1.,.48,.12),smoothstep(45.,55.,d));
- return vec3(.94,.18,.68);
-}
-
-bool hitBox(vec3 ro,vec3 rd,out float t0,out float t1){
- vec3 lo=vec3(-2.25,.04,-1.40);
- vec3 hi=vec3(2.25,3.75,1.40);
+bool intersectBox(vec3 ro,vec3 rd,out float nearT,out float farT){
+ vec3 low=vec3(-2.25,.05,-1.40);
+ vec3 high=vec3(2.25,3.25,1.40);
  vec3 inv=1./rd;
- vec3 a=(lo-ro)*inv,b=(hi-ro)*inv;
- vec3 mn=min(a,b),mx=max(a,b);
- t0=max(max(mn.x,mn.y),mn.z);
- t1=min(min(mx.x,mx.y),mx.z);
- return t1>max(t0,0.);
+ vec3 a=(low-ro)*inv;
+ vec3 b=(high-ro)*inv;
+ vec3 mn=min(a,b);
+ vec3 mx=max(a,b);
+ nearT=max(max(mn.x,mn.y),mn.z);
+ farT=min(min(mx.x,mx.y),mx.z);
+ return farT>max(nearT,0.);
 }
 
 void main(){
- vec2 q=uv*2.-1.;
- q.x*=resolution.x/resolution.y;
- vec3 rd=normalize(camForward+camRight*q.x*tanHalfFov+
-                   camUp*q.y*tanHalfFov);
- vec3 bg=vec3(.018,.027,.045);
- float t0,t1;
- if(!hitBox(camPos,rd,t0,t1)){
-  outColor=vec4(bg,1.);return;
+ vec2 screen=uv*2.-1.;
+ screen.x*=resolution.x/resolution.y;
+
+ vec3 direction=normalize(
+  cameraForward+
+  cameraRight*screen.x*fov+
+  cameraUp*screen.y*fov
+ );
+
+ float nearT,farT;
+ vec3 result=BACKGROUND;
+
+ /* Intersezione con il piano radar inferiore. */
+ float floorT=-1.;
+ if(direction.y<-.0001){
+  floorT=(.05-cameraPosition.y)/direction.y;
  }
- float stepLen=(t1-t0)/112.;
- float trans=1.;
- vec3 accum=vec3(0.);
- for(int i=0;i<112;i++){
-  float t=t0+(float(i)+.5)*stepLen;
-  vec3 p=camPos+rd*t;
-  float dbz;
-  float den=field(p,dbz);
-  if(renderMode==1)den=smoothstep(.12,.28,den);
-  else den=smoothstep(.085,.31,den);
-  float alpha=1.-exp(-den*stepLen*1.55);
-  accum+=trans*alpha*radarColor(dbz);
-  trans*=1.-alpha;
-  if(trans<.015)break;
+
+ if(floorT>0.){
+  vec3 floorPoint=cameraPosition+direction*floorT;
+  if(abs(floorPoint.x)<=2.25&&abs(floorPoint.z)<=1.40){
+   vec2 floorUV=vec2(
+    (floorPoint.x+2.25)/4.5,
+    (floorPoint.z+1.40)/2.8
+   );
+   vec4 base=radar(floorUV);
+   result=mix(BACKGROUND,base.rgb,base.a);
+  }
  }
- vec3 color=accum+trans*bg;
- vec2 v=uv*2.-1.;
- color*=1.-.20*dot(v*.55,v*.55);
- outColor=vec4(pow(max(color,0.),vec3(.90)),1.);
+
+ /* Ray marching del volume sopra la base radar. */
+ if(intersectBox(cameraPosition,direction,nearT,farT)){
+  float startT=max(nearT,0.);
+  float endT=farT;
+  if(floorT>startT)endT=min(endT,floorT);
+
+  float stepSize=(endT-startT)/160.;
+  float transparency=1.;
+  vec3 volume=vec3(0.);
+
+  for(int i=0;i<160;i++){
+   float t=startT+(float(i)+.5)*stepSize;
+   vec3 p=cameraPosition+direction*t;
+   vec3 cellColor;
+   float density=densityAt(p,cellColor);
+
+   if(density>.015){
+    float alpha=1.-exp(-density*stepSize*2.2);
+    volume+=transparency*alpha*cellColor;
+    transparency*=1.-alpha;
+   }
+
+   if(transparency<.025)break;
+  }
+
+  result=volume+transparency*result;
+ }
+
+ outputColor=vec4(result,1.);
 }`;
 
-function compile(type,source){
- const s=gl.createShader(type);
- gl.shaderSource(s,source);gl.compileShader(s);
- if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))
-  throw Error(gl.getShaderInfoLog(s));
- return s;
+function compileShader(type,source){
+ const shader=gl.createShader(type);
+ gl.shaderSource(shader,source);
+ gl.compileShader(shader);
+ if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))
+  throw Error(gl.getShaderInfoLog(shader));
+ return shader;
 }
+
 const program=gl.createProgram();
-gl.attachShader(program,compile(gl.VERTEX_SHADER,vertexShader));
-gl.attachShader(program,compile(gl.FRAGMENT_SHADER,fragmentShader));
+gl.attachShader(program,compileShader(gl.VERTEX_SHADER,vertexShader));
+gl.attachShader(program,compileShader(gl.FRAGMENT_SHADER,fragmentShader));
 gl.linkProgram(program);
+
 if(!gl.getProgramParameter(program,gl.LINK_STATUS))
  throw Error(gl.getProgramInfoLog(program));
+
 gl.useProgram(program);
 
-const quad=gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER,quad);
-gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
-const pos=gl.getAttribLocation(program,'p');
-gl.enableVertexAttribArray(pos);
-gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
+const buffer=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
+ -1,-1,1,-1,-1,1,1,1
+]),gl.STATIC_DRAW);
 
-const U={};
-['resolution','camPos','camRight','camUp','camForward',
- 'tanHalfFov','verticalScale','mapTex','renderMode'].forEach(n=>{
- U[n]=gl.getUniformLocation(program,n);
+const position=gl.getAttribLocation(program,'position');
+gl.enableVertexAttribArray(position);
+gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
+
+const uniform={};
+[
+ 'resolution','cameraPosition','cameraRight','cameraUp',
+ 'cameraForward','fov','radarTexture','renderMode'
+].forEach(name=>{
+ uniform[name]=gl.getUniformLocation(program,name);
 });
 
 const texture=gl.createTexture();
 gl.activeTexture(gl.TEXTURE0);
 gl.bindTexture(gl.TEXTURE_2D,texture);
-gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+
+/* Campionamento netto: niente interpolazione sfocata. */
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
 gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
 gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-gl.uniform1i(U.mapTex,0);/* =========================================================
-   MATRICE DBZH -> TEXTURE RADAR
-   ========================================================= */
+gl.uniform1i(uniform.radarTexture,0);
 
-function radarRGB(v){
- if(v>=45)return [237,66,200,255];
- if(v>=40)return [240,48,40,255];
- if(v>=35)return [240,120,50,255];
- if(v>=30)return [244,212,62,255];
- if(v>=25)return [36,189,112,255];
- if(v>=15)return [57,126,232,255];
+function radarColor(dbz){
+ if(dbz>=45)return [237,66,200,255];
+ if(dbz>=35)return [240,120,50,255];
+ if(dbz>=30)return [244,212,62,255];
+ if(dbz>=25)return [36,189,112,255];
+ if(dbz>=15)return [57,126,232,255];
  return [0,0,0,0];
 }
 
-function uploadMatrix(cell){
+function uploadRadarMatrix(cell){
  const matrix=cell.grid_matrix;
- if(!Array.isArray(matrix)||!matrix.length)
-  throw Error('Matrice DBZH non disponibile.');
+ if(!Array.isArray(matrix)||matrix.length===0)
+  throw Error('Matrice DBZH non presente');
 
  const height=matrix.length;
- const width=Math.max(...matrix.map(r=>Array.isArray(r)?r.length:0));
- if(!width)throw Error('Matrice DBZH vuota.');
+ const width=Math.max(...matrix.map(row=>
+  Array.isArray(row)?row.length:0
+ ));
+
+ if(width===0)throw Error('Matrice DBZH vuota');
 
  const pixels=new Uint8Array(width*height*4);
+
  for(let y=0;y<height;y++){
+  const row=matrix[y]||[];
   for(let x=0;x<width;x++){
-   const raw=Number(Array.isArray(matrix[y])?matrix[y][x]:0);
-   const rgba=radarRGB(Number.isFinite(raw)?raw:0);
-   const i=((height-1-y)*width+x)*4;
-   pixels[i]=rgba[0];pixels[i+1]=rgba[1];
-   pixels[i+2]=rgba[2];pixels[i+3]=rgba[3];
+   const value=Number(row[x]);
+   const rgba=radarColor(Number.isFinite(value)?value:0);
+   const offset=((height-1-y)*width+x)*4;
+   pixels[offset]=rgba[0];
+   pixels[offset+1]=rgba[1];
+   pixels[offset+2]=rgba[2];
+   pixels[offset+3]=rgba[3];
   }
  }
+
  gl.activeTexture(gl.TEXTURE0);
  gl.bindTexture(gl.TEXTURE_2D,texture);
  gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
- gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,width,height,0,
-               gl.RGBA,gl.UNSIGNED_BYTE,pixels);
-}
+ gl.texImage2D(
+  gl.TEXTURE_2D,0,gl.RGBA,width,height,0,
+  gl.RGBA,gl.UNSIGNED_BYTE,pixels
+ );
+}/* =====================================================
+   CAMERA E CONTROLLI
+   ===================================================== */
 
-/* =========================================================
-   CAMERA E INTERAZIONE
-   ========================================================= */
-
-let yaw=-.22;
-let pitch=.22;
-let distance=7.4;
-let drag=false;
+let yaw=-.35;
+let pitch=.34;
+let distance=7.1;
+let activeCell=null;
+let dragging=false;
 let lastX=0,lastY=0;
-let activePointer=null;
-let pinchStart=null;
+let touchDistance=0;
 
-function norm(v){
- const n=Math.hypot(v[0],v[1],v[2])||1;
- return [v[0]/n,v[1]/n,v[2]/n];
+function normalize(v){
+ const length=Math.hypot(v[0],v[1],v[2])||1;
+ return v.map(n=>n/length);
 }
+
 function cross(a,b){
- return [a[1]*b[2]-a[2]*b[1],
-         a[2]*b[0]-a[0]*b[2],
-         a[0]*b[1]-a[1]*b[0]];
+ return [
+  a[1]*b[2]-a[2]*b[1],
+  a[2]*b[0]-a[0]*b[2],
+  a[0]*b[1]-a[1]*b[0]
+ ];
 }
-function resize(){
+
+function resizeCanvas(){
  const rect=canvas.getBoundingClientRect();
- const d=Math.min(window.devicePixelRatio||1,1.5);
- canvas.width=Math.max(1,Math.floor(rect.width*d));
- canvas.height=Math.max(1,Math.floor(rect.height*d));
+ const ratio=Math.min(window.devicePixelRatio||1,1.5);
+ canvas.width=Math.max(1,Math.round(rect.width*ratio));
+ canvas.height=Math.max(1,Math.round(rect.height*ratio));
  gl.viewport(0,0,canvas.width,canvas.height);
 }
-function draw(){
- if(!active||!viewer.classList.contains('open'))return;
- const w=canvas.width,h=canvas.height;
- if(!w||!h)return;
 
- gl.useProgram(program);
- const target=[0,1.05,0];
- const cp=Math.cos(pitch),sp=Math.sin(pitch);
- const sy=Math.sin(yaw),cy=Math.cos(yaw);
- const cam=[
+function drawScene(){
+ if(!activeCell||!viewer.classList.contains('open'))return;
+
+ const width=canvas.width;
+ const height=canvas.height;
+ if(!width||!height)return;
+
+ const target=[0,.95,0];
+ const cp=Math.cos(pitch);
+ const sp=Math.sin(pitch);
+ const sy=Math.sin(yaw);
+ const cy=Math.cos(yaw);
+
+ const camera=[
   distance*cp*sy,
   target[1]+distance*sp,
   distance*cp*cy
  ];
- const forward=norm([
-  target[0]-cam[0],target[1]-cam[1],target[2]-cam[2]
+
+ const forward=normalize([
+  target[0]-camera[0],
+  target[1]-camera[1],
+  target[2]-camera[2]
  ]);
- const right=norm(cross(forward,[0,1,0]));
- const up=norm(cross(right,forward));
 
- gl.uniform2f(U.resolution,w,h);
- gl.uniform3fv(U.camPos,cam);
- gl.uniform3fv(U.camRight,right);
- gl.uniform3fv(U.camUp,up);
- gl.uniform3fv(U.camForward,forward);
- gl.uniform1f(U.tanHalfFov,Math.tan(35*Math.PI/180));
+ const right=normalize(cross(forward,[0,1,0]));
+ const up=normalize(cross(right,forward));
 
- const mode=$('mode').value;
- gl.uniform1i(U.renderMode,mode==='surface'?1:mode==='holo'?2:0);
+ gl.useProgram(program);
+ gl.uniform2f(uniform.resolution,width,height);
+ gl.uniform3fv(uniform.cameraPosition,camera);
+ gl.uniform3fv(uniform.cameraRight,right);
+ gl.uniform3fv(uniform.cameraUp,up);
+ gl.uniform3fv(uniform.cameraForward,forward);
+ gl.uniform1f(uniform.fov,Math.tan(34*Math.PI/180));
+ gl.uniform1i(uniform.renderMode,Number($('mode').value)||0);
+
  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
 }
 
-function open(id){
- const eligible=cells.filter(c=>c['3d_available']===true)
-  .sort((a,b)=>(a['3d_rank']??999)-(b['3d_rank']??999)).slice(0,30);
- const candidate=eligible.find(c=>c.id===id);
- if(!candidate){
-  $('status').textContent='Cella non abilitata alla visualizzazione 3D.';
+function open3D(cell){
+ if(cell['3d_available']!==true){
+  alert('Questa cella non è inclusa nelle 30 selezionate per il 3D.');
   return;
  }
- active=candidate;
- $('vtitle').textContent=active.id+' · '+fmt(active.max_dbz)+' dBZ';
+
  try{
-  uploadMatrix(active);
+  activeCell=cell;
+  uploadRadarMatrix(cell);
+
+  $('vtitle').textContent=
+   cell.id+' · '+number(cell.max_dbz)+' dBZ';
+
   viewer.classList.add('open');
-  resize();
-  draw();
- }catch(e){
-  $('status').textContent='Errore renderer: '+e.message;
+  resizeCanvas();
+  drawScene();
+ }catch(error){
+  console.error(error);
+  alert('Errore nella ricostruzione: '+error.message);
  }
 }
 
-$('close').onclick=()=>viewer.classList.remove('open');
-$('reset').onclick=()=>{
- yaw=-.22;pitch=.22;distance=7.4;draw();
+$('mode').onchange=drawScene;
+
+$('close').onclick=()=>{
+ viewer.classList.remove('open');
+ activeCell=null;
 };
-$('mode').onchange=draw;
+
+$('reset').onclick=()=>{
+ yaw=-.35;
+ pitch=.34;
+ distance=7.1;
+ drawScene();
+};
 
 window.addEventListener('resize',()=>{
- if(viewer.classList.contains('open')){resize();draw();}
+ if(viewer.classList.contains('open')){
+  resizeCanvas();
+  drawScene();
+ }
 });
 
-canvas.onpointerdown=e=>{
- if(e.pointerType==='touch'&&activePointer!==null){
-  pinchStart={distance:distance,x:e.clientX,y:e.clientY};
- }
- activePointer=e.pointerId;
- drag=true;lastX=e.clientX;lastY=e.clientY;
- canvas.setPointerCapture(e.pointerId);
-};
-canvas.onpointermove=e=>{
- if(!drag)return;
- yaw-=(e.clientX-lastX)*.006;
- pitch=Math.max(-.05,Math.min(.85,pitch+(e.clientY-lastY)*.004));
- lastX=e.clientX;lastY=e.clientY;draw();
-};
-canvas.onpointerup=()=>{
- drag=false;activePointer=null;pinchStart=null;
-};
-canvas.onpointercancel=()=>{
- drag=false;activePointer=null;pinchStart=null;
-};
-canvas.addEventListener('wheel',e=>{
- e.preventDefault();
- distance=Math.max(4.8,Math.min(14,distance+e.deltaY*.008));
- draw();
+canvas.addEventListener('pointerdown',event=>{
+ dragging=true;
+ lastX=event.clientX;
+ lastY=event.clientY;
+ canvas.setPointerCapture(event.pointerId);
+});
+
+canvas.addEventListener('pointermove',event=>{
+ if(!dragging)return;
+
+ const dx=event.clientX-lastX;
+ const dy=event.clientY-lastY;
+
+ yaw-=dx*.006;
+ pitch=Math.max(-.05,Math.min(1.05,pitch+dy*.004));
+
+ lastX=event.clientX;
+ lastY=event.clientY;
+ drawScene();
+});
+
+canvas.addEventListener('pointerup',()=>dragging=false);
+canvas.addEventListener('pointercancel',()=>dragging=false);
+
+canvas.addEventListener('wheel',event=>{
+ event.preventDefault();
+ distance=Math.max(4.2,Math.min(13,distance+event.deltaY*.008));
+ drawScene();
 },{passive:false});
 
-/* Doppio tocco/pinch: zoom progressivo. */
-let touchDistance=0;
-canvas.addEventListener('touchstart',e=>{
- if(e.touches.length===2){
+/* Zoom a due dita. */
+canvas.addEventListener('touchstart',event=>{
+ if(event.touches.length===2){
   touchDistance=Math.hypot(
-   e.touches[0].clientX-e.touches[1].clientX,
-   e.touches[0].clientY-e.touches[1].clientY
+   event.touches[0].clientX-event.touches[1].clientX,
+   event.touches[0].clientY-event.touches[1].clientY
   );
  }
 },{passive:true});
-canvas.addEventListener('touchmove',e=>{
- if(e.touches.length===2){
-  e.preventDefault();
-  const next=Math.hypot(
-   e.touches[0].clientX-e.touches[1].clientX,
-   e.touches[0].clientY-e.touches[1].clientY
-  );
-  if(touchDistance>0){
-   distance=Math.max(4.8,Math.min(14,
-    distance*(touchDistance/next)
-   ));
-   draw();
-  }
-  touchDistance=next;
+
+canvas.addEventListener('touchmove',event=>{
+ if(event.touches.length!==2)return;
+
+ event.preventDefault();
+
+ const next=Math.hypot(
+  event.touches[0].clientX-event.touches[1].clientX,
+  event.touches[0].clientY-event.touches[1].clientY
+ );
+
+ if(touchDistance>0&&next>0){
+  distance=Math.max(4.2,Math.min(13,distance*touchDistance/next));
+  drawScene();
  }
+ touchDistance=next;
 },{passive:false});
+
 canvas.addEventListener('touchend',()=>touchDistance=0,{passive:true});
 
 load();
+
 })();
 </script>
 </body>
