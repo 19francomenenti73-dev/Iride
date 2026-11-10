@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """I.R.I.D.E. — OPERA radar pipeline."""
 
@@ -59,7 +60,6 @@ TRACK_MAX_DISTANCE_KM = 100.0
 TRACK_MAX_SPEED_KMH = 140.0
 TRACK_HISTORY_SIZE = 24
 
-# Limiti per evitare associazioni arbitrarie tra celle diverse.
 TRACK_SAME_SCAN_KM = 8.0
 TRACK_MAX_PREDICTION_ERROR_KM = 90.0
 TRACK_COST_REJECT = 1_000_000.0
@@ -319,8 +319,7 @@ def decode(path):
                 product_time = None
 
         return radar, grid, inverse, (ll_x, ll_y), product_time
-
-
+        
 # ---------------------------------------------------------
 # GEOGRAFIA E MATRICE RADAR
 # ---------------------------------------------------------
@@ -396,7 +395,11 @@ def contextual_matrix(radar, cx, cy, component_slice):
 
 # ---------------------------------------------------------
 # PERIMETRO E RILEVAMENTO CELLE
-# ---------------------------------------------------------def ordered_perimeter(component, x_start, y_start, grid, inverse, origin):
+# ---------------------------------------------------------
+
+def ordered_perimeter(
+    component, x_start, y_start, grid, inverse, origin
+):
     edge = component & ~ndimage.binary_erosion(
         component,
         structure=np.ones((3, 3)),
@@ -556,6 +559,7 @@ def detect(radar, grid, inverse, origin):
     )
     return cells[:MAX_CELLS]
 
+
 # ---------------------------------------------------------
 # TRACKING E VETTORI
 # ---------------------------------------------------------
@@ -614,9 +618,8 @@ def destination(point, bearing, distance_km):
     return {
         "lat": degrees(lat2),
         "lon": (degrees(lon2) + 540.0) % 360.0 - 180.0
-    }
-
-
+        }
+        
 def track_prediction(track, timestamp):
     observations = track.get("observations", [])
     if len(observations) < 2:
@@ -718,7 +721,6 @@ def track_cells(cells, timestamp, history):
                 else:
                     cost = distance
 
-                # Penalizza associazioni incompatibili con la storia.
                 if len(track.get("observations", [])) >= 2:
                     previous = track["observations"][-2]
                     try:
@@ -795,7 +797,8 @@ def track_cells(cells, timestamp, history):
                 minutes1 = minutes2 = -1
 
             if (
-                5.0 <= minutes1 <= 45.0                and 5.0 <= minutes2 <= 45.0
+                5.0 <= minutes1 <= 45.0
+                and 5.0 <= minutes2 <= 45.0
                 and 0.5 <= minutes2 / minutes1 <= 2.0
             ):
                 distance1 = haversine(p0, p1)
@@ -851,7 +854,6 @@ def track_cells(cells, timestamp, history):
             "forecast_status": track_data["forecast_status"]
         }
 
-    # Conserva solo track recenti e quelli aggiornati nella scansione.
     history["tracks"] = active | {
         cell["track_id"]: tracks[cell["track_id"]]
         for cell in cells
@@ -873,7 +875,6 @@ def png_chunk(kind, data):
     )
 
 
-# CORREZIONE: scrittura corretta delle righe RGBA.
 def write_png(path, width, height, rgba):
     rgba = np.asarray(rgba, dtype=np.uint8)
 
@@ -904,8 +905,7 @@ def write_png(path, width, height, rgba):
     temp = path.with_suffix(path.suffix + ".tmp")
     temp.write_bytes(content)
     temp.replace(path)
-
-
+        
 def generate_radar_overlay(radar, grid, origin):
     width = 720
     height = 1007
@@ -915,19 +915,29 @@ def generate_radar_overlay(radar, grid, origin):
     south = REGION["south"]
     north = REGION["north"]
 
-    # ImageOverlay stretches the image in the map's EPSG:3857 plane.
-    # Sample pixel centres uniformly in Mercator Y, not latitude.
+    # Campionamento in Mercatore per Leaflet.
     longitudes = west + (
         np.arange(width, dtype=np.float64) + 0.5
     ) * (east - west) / width
-    mercator_north = np.log(np.tan(np.pi / 4 + np.deg2rad(north) / 2))
-    mercator_south = np.log(np.tan(np.pi / 4 + np.deg2rad(south) / 2))
+
+    mercator_north = np.log(
+        np.tan(np.pi / 4 + np.deg2rad(north) / 2)
+    )
+    mercator_south = np.log(
+        np.tan(np.pi / 4 + np.deg2rad(south) / 2)
+    )
+
     mercator_y = mercator_north - (
         np.arange(height, dtype=np.float64) + 0.5
     ) * (mercator_north - mercator_south) / height
-    latitudes = np.rad2deg(2 * np.arctan(np.exp(mercator_y)) - np.pi / 2)
 
-    lon_grid, lat_grid = np.meshgrid(longitudes, latitudes)
+    latitudes = np.rad2deg(
+        2 * np.arctan(np.exp(mercator_y)) - np.pi / 2
+    )
+
+    lon_grid, lat_grid = np.meshgrid(
+        longitudes, latitudes
+    )
 
     forward = Transformer.from_crs(
         CRS.from_epsg(4326),
@@ -958,18 +968,35 @@ def generate_radar_overlay(radar, grid, origin):
         & (pixel_y_float < grid["ysize"] - 0.5)
     )
 
-    pixel_x = np.zeros((height, width), dtype=np.int32)
-    pixel_y = np.zeros((height, width), dtype=np.int32)
+    pixel_x = np.zeros(
+        (height, width), dtype=np.int32
+    )
+    pixel_y = np.zeros(
+        (height, width), dtype=np.int32
+    )
 
-    pixel_x[valid] = np.rint(pixel_x_float[valid]).astype(np.int32)
-    pixel_y[valid] = np.rint(pixel_y_float[valid]).astype(np.int32)
+    pixel_x[valid] = np.rint(
+        pixel_x_float[valid]
+    ).astype(np.int32)
 
-    sampled = np.full((height, width), np.nan, dtype=np.float32)
+    pixel_y[valid] = np.rint(
+        pixel_y_float[valid]
+    ).astype(np.int32)
+
+    sampled = np.full(
+        (height, width),
+        np.nan,
+        dtype=np.float32
+    )
+
     sampled[valid] = radar[
         pixel_y[valid], pixel_x[valid]
     ]
 
-    rgba = np.zeros((height, width, 4), dtype=np.uint8)
+    rgba = np.zeros(
+        (height, width, 4),
+        dtype=np.uint8
+    )
 
     classes = [
         (15.0, 25.0, (57, 126, 232)),
@@ -1006,10 +1033,12 @@ def generate_radar_overlay(radar, grid, origin):
         "minimum_dbz": 15,
         "transparent_below_dbz": 15,
         "georeferencing": (
-            "EPSG:3857 pixel-centre sampling from ODIM projection"
+            "EPSG:3857 pixel-centre sampling "
+            "from ODIM projection"
         ),
         "timestamp": None
     }
+
 
 # ---------------------------------------------------------
 # PUBBLICAZIONE
@@ -1028,7 +1057,9 @@ def main():
                 "Timestamp prodotto OPERA non disponibile."
             )
 
-        age_minutes = (now() - key_time).total_seconds() / 60
+        age_minutes = (
+            now() - key_time
+        ).total_seconds() / 60
 
         if age_minutes < -5:
             raise RuntimeError("Timestamp OPERA nel futuro.")
@@ -1040,7 +1071,9 @@ def main():
 
         source_path, source_url = fetch(key, size)
 
-        radar, grid, inverse, origin, decoded_time = decode(source_path)
+        radar, grid, inverse, origin, decoded_time = decode(
+            source_path
+        )
 
         if decoded_time is not None:
             difference = abs(
@@ -1063,7 +1096,9 @@ def main():
                 f"Età prodotto non valida: {age_minutes:.1f} minuti."
             )
 
-        cells = detect(radar, grid, inverse, origin)
+        cells = detect(
+            radar, grid, inverse, origin
+        )
 
         if not cells:
             raise RuntimeError(
@@ -1071,8 +1106,12 @@ def main():
                 "Pubblicazione precedente conservata."
             )
 
-        radar_overlay = generate_radar_overlay(radar, grid, origin)
-        radar_overlay["timestamp"] = stamp(product_time)
+        radar_overlay = generate_radar_overlay(
+            radar, grid, origin
+        )
+        radar_overlay["timestamp"] = stamp(
+            product_time
+        )
 
         history = read_history()
         cells, history = track_cells(
@@ -1080,9 +1119,13 @@ def main():
         )
 
         for index, cell in enumerate(cells):
-            cell["3d_available"] = index < MAX_3D_CELLS
+            cell["3d_available"] = (
+                index < MAX_3D_CELLS
+            )
             cell["3d_rank"] = (
-                index + 1 if index < MAX_3D_CELLS else None
+                index + 1
+                if index < MAX_3D_CELLS
+                else None
             )
 
         payload = {
@@ -1102,9 +1145,11 @@ def main():
                 "object_key": key,
                 "product": "OPERA DBZH composite",
                 "attribution": (
-                    "Dati radar EUMETNET OPERA, archivio CloudFerro; "
-                    "elaborazione I.R.I.D.E. Licenza e condizioni del "
-                    "prodotto da verificare nella documentazione "
+                    "Dati radar EUMETNET OPERA, "
+                    "archivio CloudFerro; "
+                    "elaborazione I.R.I.D.E. "
+                    "Licenza e condizioni del prodotto "
+                    "da verificare nella documentazione "
                     "ufficiale."
                 )
             },
@@ -1119,14 +1164,18 @@ def main():
                     "2D DBZH morphology only; "
                     "mesoscale classes are not confirmed"
                 ),
-                "matrix_size": [MATRIX_SIDE, MATRIX_SIDE],
+                "matrix_size": [
+                    MATRIX_SIDE, MATRIX_SIDE
+                ],
                 "tracking": (
-                    "one-to-one global assignment with motion-aware "
-                    "prediction and distance gating"
+                    "one-to-one global assignment "
+                    "with motion-aware prediction "
+                    "and distance gating"
                 ),
                 "forecast": (
-                    "experimental geodesic extrapolation after three "
-                    "observations with two coherent motion intervals"
+                    "experimental geodesic extrapolation "
+                    "after three observations with "
+                    "two coherent motion intervals"
                 ),
                 "vertical_data": (
                     "not available from 2D DBZH composite"
@@ -1136,16 +1185,20 @@ def main():
             "cells": cells
         }
 
-        # Pubblicazione atomica dei JSON.
         save(DATA / "iride.json", payload)
-        save(ROOT / "docs" / "data" / "iride.json", payload)
+        save(
+            ROOT / "docs" / "data" / "iride.json",
+            payload
+        )
         save(HIST, history)
 
         save(DATA / "status.json", {
             "status": "ok",
             "timestamp": payload["timestamp"],
             "cell_count": len(cells),
-            "cells_3d": min(len(cells), MAX_3D_CELLS),
+            "cells_3d": min(
+                len(cells), MAX_3D_CELLS
+            ),
             "elapsed_seconds": round(
                 (now() - started).total_seconds(), 1
             )
@@ -1174,3 +1227,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
