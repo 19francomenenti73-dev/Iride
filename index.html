@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -242,6 +243,7 @@ header{
   <div class="toolbar-actions">
    <button id="vectorsToggle">Vettori: ON</button>
    <button id="cellsToggle">Celle: ON</button>
+   
    <button id="reload">Aggiorna</button>
   </div>
  </div>
@@ -443,7 +445,7 @@ function popupContent(c,index){
  <div class="popup-line">Centroide: ${fmt(c.lat,3)}°, ${fmt(c.lon,3)}°</div>
  ${vector?`<div class="popup-line">Moto osservato: ${fmt(t.speed_kmh)} km/h</div>`:''}
  <div class="popup-line">Morfologia: ${safe(morphology)}</div>
- <div class="popup-note">Perimetro: bordo dei pixel connessi DBZH sopra soglia. La classificazione è preliminare.</div>
+ <div class="popup-note">Perimetro: inviluppo geometrico orientato dell’eco radar, non confine meteorologico. Classificazione preliminare.</div>
  ${c['3d_available']===true&&webgl2Available?`<button class="popup-action" id="open3d-${index}">APRI RICOSTRUZIONE 3D</button>`:''}
  `;
 }
@@ -486,6 +488,7 @@ function overlayUrl(path){
 function render(data){
  currentData=data;
  cells=Array.isArray(data.cells)?data.cells:[];
+ 
 
  radarLayer.clearLayers();
  cellLayer.clearLayers();
@@ -730,6 +733,7 @@ float densityAt(vec3 p,out vec3 cellColor,out float klass){
  }
  vec4 base=radar(uvMap);
  float k=echoClass(base.rgb);
+ 
  float blue=direct.r*.025*exp(-pow((h-.48)/.34,2.))+
   spread.r*.18*exp(-pow((h-2.55)/.66,2.));
  float green=direct.g*.035*exp(-pow((h-.72)/.42,2.))+
@@ -974,6 +978,7 @@ function uploadRadarMatrix(cell){
  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,distances);
+ 
  gl.uniform1i(uniforms.distanceTexture,1);
 
  gl.activeTexture(gl.TEXTURE0);
