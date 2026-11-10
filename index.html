@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -396,7 +397,7 @@ function pointDistanceKm(a,b){
  const q=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
  return 6371*2*Math.asin(Math.min(1,Math.sqrt(q)));
 }
-
+ 
 function drawVector(c){
  const v=c.vectors;
  const real=v.real;
@@ -470,13 +471,24 @@ function addCell(c,index){
  });
 
  if(showVectors&&vectorIsUsable(c))drawVector(c);
-}function overlayUrl(path){
- if(path.startsWith('http://')||path.startsWith('https://'))
-  return path;
+}
 
- if(path.startsWith('docs/'))return path;
+/* Correzione del percorso radar: GitHub Pages pubblica docs/ come radice. */
+function overlayUrl(path){
+ if(!path)return '';
 
- return 'docs/'+path.replace(/^\.\//,'');
+ const value=String(path).trim();
+
+ if(/^https?:\/\//i.test(value)){
+  return value;
+ }
+
+ const relative=value
+  .replace(/^\.\/+/,'')
+  .replace(/^\/+/,'')
+  .replace(/^docs\//,'');
+
+ return relative;
 }
 
 function render(data){
@@ -894,7 +906,9 @@ void main(){
  }
 
  outputColor=vec4(result,1.);
-}`;function compileShader(type,source){
+}`;
+ 
+function compileShader(type,source){
  const shader=gl.createShader(type);
  gl.shaderSource(shader,source);
  gl.compileShader(shader);
@@ -1205,7 +1219,7 @@ function stopDragging(){
 canvas.addEventListener('pointerup',stopDragging);
 canvas.addEventListener('pointercancel',stopDragging);
 canvas.addEventListener('lostpointercapture',stopDragging);
-
+ 
 canvas.addEventListener('wheel',event=>{
  event.preventDefault();
 
