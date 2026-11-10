@@ -36,7 +36,7 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Compile backend before execution
+      - name: Compile backend
         run: |
           python -m py_compile backend/iride_pipeline.py
 
@@ -65,7 +65,10 @@ jobs:
           radar_file = Path("docs/data/iride_radar.png")
 
           for path in (
-              internal, public, status_file, radar_file
+              internal,
+              public,
+              status_file,
+              radar_file,
           ):
               assert path.is_file(), f"Missing: {path}"
 
@@ -92,6 +95,7 @@ jobs:
           }
 
           raw = radar_file.read_bytes()
+
           assert len(raw) > 1000
           assert raw[:8] == bytes(
               (137, 80, 78, 71, 13, 10, 26, 10)
@@ -100,9 +104,11 @@ jobs:
           width, height = struct.unpack(
               ">II", raw[16:24]
           )
+
           assert (width, height) == (720, 1007)
 
           overlay = data["radar_overlay"]
+
           assert overlay["image"] == "data/iride_radar.png"
           assert overlay["width"] == width
           assert overlay["height"] == height
@@ -111,13 +117,18 @@ jobs:
           for corner in overlay["bounds"]:
               assert len(corner) == 2
               assert all(
-                  math.isfinite(float(x)) for x in corner
+                  math.isfinite(float(x))
+                  for x in corner
               )
 
           cells = data["cells"]
-          assert 1 <= len(cells) <= 100
+
+          assert 1 <= len(cells) <= 40
           assert data["cell_count"] == len(cells)
           assert status["cell_count"] == len(cells)
+
+          assert data["processing"]["maximum_detected_cells"] == 40
+          assert data["processing"]["maximum_3d_cells"] == 30
 
           track_ids = set()
           count_3d = 0
@@ -144,9 +155,7 @@ jobs:
                   )
 
               perimeter = cell["perimeter"]
-              assert len(perimeter) == 4, (
-                  "Expected four oriented corners"
-              )
+              assert len(perimeter) == 4
 
               for point in perimeter:
                   assert len(point) == 2
@@ -158,8 +167,8 @@ jobs:
               assert cell["morphology"]["class"]
               assert cell["mesoscale_classification"]["class"]
               assert (
-                  cell["mesoscale_classification"]
-                      ["confirmed"] is False
+                  cell["mesoscale_classification"]["confirmed"]
+                  is False
               )
 
               if cell["3d_available"]:
@@ -174,6 +183,7 @@ jobs:
 
               if real is not None or future is not None:
                   count_vectors += 1
+
                   assert real is not None
                   assert future is not None
                   assert len(
@@ -213,8 +223,7 @@ jobs:
         if: always() && steps.pipeline.outcome != 'skipped'
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           if [ -f data/status.json ]; then
             git add data/status.json
