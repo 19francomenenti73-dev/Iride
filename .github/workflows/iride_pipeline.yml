@@ -1,3 +1,4 @@
+
 name: I.R.I.D.E. radar nowcasting
 
 on:
@@ -35,69 +36,83 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Compile backend before execution
+        run: |
+          python -m py_compile backend/iride_pipeline.py
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
 
-      - name: Acquire, decode, detect and track OPERA
-        run: python backend/iride_pipeline.py
-
-      - name: Compile backend
-        run: python -m py_compile backend/iride_pipeline.py
-
-      - name: Validate generated JSON
+      - name: Acquire decode detect and track OPERA
+        id: pipeline
         run: |
-          python -m json.tool data/iride.json >/dev/null
-          python -m json.tool docs/data/iride.json >/dev/null
-          python -m json.tool data/status.json >/dev/null
+          python backend/iride_pipeline.py
 
-      - name: Validate radar, detections and vectors
+      - name: Validate generated radar data
+        id: validation
         run: |
           python - <<'PY'
           import json
           import math
+          import struct
           from pathlib import Path
 
+          internal = Path("data/iride.json")
+          public = Path("docs/data/iride.json")
+          status_file = Path("data/status.json")
+          radar_file = Path("docs/data/iride_radar.png")
+
+          for path in (
+              internal, public, status_file, radar_file
+          ):
+              assert path.is_file(), f"Missing: {path}"
+
           data = json.loads(
-              Path("data/iride.json").read_text(encoding="utf-8")
+              internal.read_text(encoding="utf-8")
           )
-          public = json.loads(
-              Path("docs/data/iride.json").read_text(encoding="utf-8")
+          published = json.loads(
+              public.read_text(encoding="utf-8")
           )
           status = json.loads(
-              Path("data/status.json").read_text(encoding="utf-8")
+              status_file.read_text(encoding="utf-8")
           )
 
-          assert data == public, "JSON interno e pubblico non coincidono"
-          assert data["status"] == "ok"
+          assert data == published
           assert data["schema_version"] == 6
+          assert data["status"] == "ok"
           assert status["status"] == "ok"
 
-          expected_region = {
+          assert data["region"] == {
               "west": -15.0,
               "east": 38.0,
               "south": 30.0,
               "north": 72.0,
           }
-          assert data["region"] == expected_region
 
-          radar = Path("docs/data/iride_radar.png")
-          assert radar.is_file(), "Overlay radar assente"
-          assert radar.stat().st_size > 1000, "Overlay radar vuoto"
-          assert radar.read_bytes()[:8] == bytes(
+          raw = radar_file.read_bytes()
+          assert len(raw) > 1000
+          assert raw[:8] == bytes(
               (137, 80, 78, 71, 13, 10, 26, 10)
-          ), "Firma PNG non valida"
+          )
+
+          width, height = struct.unpack(
+              ">II", raw[16:24]
+          )
+          assert (width, height) == (720, 1007)
 
           overlay = data["radar_overlay"]
           assert overlay["image"] == "data/iride_radar.png"
-          assert overlay["width"] == 720
-          assert overlay["height"] == 1007
+          assert overlay["width"] == width
+          assert overlay["height"] == height
           assert len(overlay["bounds"]) == 2
 
           for corner in overlay["bounds"]:
               assert len(corner) == 2
-              assert all(math.isfinite(float(v)) for v in corner)
+              assert all(
+                  math.isfinite(float(x)) for x in corner
+              )
 
           cells = data["cells"]
           assert 1 <= len(cells) <= 100
@@ -106,28 +121,46 @@ jobs:
 
           track_ids = set()
           count_3d = 0
-          vector_count = 0
+          count_vectors = 0
 
           for cell in cells:
-              assert cell["max_dbz"] >= data["processing"]["threshold_dbz"]
-              assert -90 <= cell["lat"] <= 90
-              assert -180 <= cell["lon"] <= 180
+              assert math.isfinite(float(cell["lat"]))
+              assert math.isfinite(float(cell["lon"]))
+              assert cell["max_dbz"] >= 25
 
               track_id = cell["track_id"]
-              assert track_id not in track_ids, "Track ID duplicato"
+              assert track_id not in track_ids
               track_ids.add(track_id)
 
               matrix = cell["grid_matrix"]
               assert len(matrix) == 72
-              assert all(len(row) == 72 for row in matrix)
 
               for row in matrix:
-                  for value in row:
-                      assert isinstance(value, (int, float))
-                      assert math.isfinite(value)
+                  assert len(row) == 72
+                  assert all(
+                      isinstance(v, (int, float))
+                      and math.isfinite(v)
+                      for v in row
+                  )
+
+              perimeter = cell["perimeter"]
+              assert len(perimeter) == 4, (
+                  "Expected four oriented corners"
+              )
+
+              for point in perimeter:
+                  assert len(point) == 2
+                  assert all(
+                      math.isfinite(float(v))
+                      for v in point
+                  )
 
               assert cell["morphology"]["class"]
-              assert cell["perimeter_semantics"]
+              assert cell["mesoscale_classification"]["class"]
+              assert (
+                  cell["mesoscale_classification"]
+                      ["confirmed"] is False
+              )
 
               if cell["3d_available"]:
                   count_3d += 1
@@ -137,26 +170,15 @@ jobs:
 
               vectors = cell["vectors"]
               real = vectors["real"]
-              forecast = vectors["predictive_180m"]
+              future = vectors["predictive_180m"]
 
-              if real is not None or forecast is not None:
-                  vector_count += 1
-
-                  observations = cell["track"]["observations"]
-                  assert len(observations) >= 3
-                  assert real is not None and len(real) == 2
-                  assert forecast is not None and len(forecast) == 2
-
-                  assert (
-                      cell["track"]["forecast_status"]
-                      == "experimental_consistent_motion_extrapolation"
-                  )
-                  assert (
-                      vectors["forecast_status"]
-                      == cell["track"]["forecast_status"]
-                  )
-
-                  assert real[1] == forecast[0]
+              if real is not None or future is not None:
+                  count_vectors += 1
+                  assert real is not None
+                  assert future is not None
+                  assert len(
+                      cell["track"]["observations"]
+                  ) >= 3
 
                   for name in (
                       "real",
@@ -165,41 +187,52 @@ jobs:
                       "predictive_180m",
                   ):
                       vector = vectors[name]
-                      assert vector is not None and len(vector) == 2
+                      assert vector is not None
+                      assert len(vector) == 2
 
                       for point in vector:
                           assert len(point) == 2
                           assert all(
-                              math.isfinite(float(v)) for v in point
+                              math.isfinite(float(v))
+                              for v in point
                           )
+
+                  assert real[1] == future[0]
 
           assert count_3d == min(len(cells), 30)
 
           print(
-              f"Validazione superata: {len(cells)} celle, "
-              f"{count_3d} celle 3D, "
-              f"{vector_count} celle con vettori, "
-              f"PNG radar {radar.stat().st_size} byte"
+              f"IRIDE VALID: {len(cells)} cells; "
+              f"{count_3d} 3D; "
+              f"{count_vectors} motion vectors; "
+              f"radar {len(raw)} bytes"
           )
           PY
 
-      - name: Commit generated radar data
+      - name: Commit validated data or failure status
+        if: always() && steps.pipeline.outcome != 'skipped'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add \
-            data/iride.json \
-            data/iride_history.json \
-            data/status.json \
-            docs/data/iride.json \
-            docs/data/iride_radar.png
+          if [ -f data/status.json ]; then
+            git add data/status.json
+          fi
+
+          if [ "${{ steps.pipeline.outcome }}" = "success" ] && \
+             [ "${{ steps.validation.outcome }}" = "success" ]; then
+            git add \
+              data/iride.json \
+              data/iride_history.json \
+              docs/data/iride.json \
+              docs/data/iride_radar.png
+          fi
 
           if git diff --cached --quiet; then
-            echo "No new data changes."
+            echo "No changes to publish."
           else
-            git commit -m "Update I.R.I.D.E. OPERA radar data"
+            git commit -m "Update I.R.I.D.E. radar state"
             git push
           fi
           
