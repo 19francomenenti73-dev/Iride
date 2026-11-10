@@ -256,9 +256,7 @@ def decode(path):
         if radar.shape != (ny, nx):
             raise RuntimeError(
                 "Dimensioni raster e metadati ODIM non coerenti."
-            )
-
-        if not projection or xscale is None or yscale is None:
+         )        if not projection or xscale is None or yscale is None:
             raise RuntimeError("Georeferenziazione ODIM incompleta.")
 
         ll_x = number(attr(where, "LL_x"))
@@ -312,7 +310,10 @@ def decode(path):
             except ValueError:
                 product_time = None
 
-        return radar, grid, inverse, (ll_x, ll_y), product_time# ---------------------------------------------------------
+        return radar, grid, inverse, (ll_x, ll_y), product_time
+
+
+# ---------------------------------------------------------
 # GEOGRAFIA E MATRICE RADAR
 # ---------------------------------------------------------
 
@@ -517,8 +518,7 @@ def detect(radar, grid, inverse, origin):
                 1
             ),
             "perimeter": perimeter,
-            "perimeter_semantics": "Bordo dei pixel connessi DBZH >= soglia; non è un confine mesoscala.",
-            "morphology": {
+            "perimeter_semantics": "Bordo dei pixel connessi DBZH >= soglia; non è un confine mesoscala.",            "morphology": {
                 "class": morphology,
                 "label": morphology_label,
                 "elongation_ratio": round(float(elongation), 2),
@@ -693,7 +693,9 @@ def track_cells(cells, timestamp, history):
 
             if 0 < minutes <= TRACK_MAX_AGE_MIN:
                 distance = haversine(a, b)
-                speed = distance / (minutes / 60)                if speed <= TRACK_MAX_SPEED_KMH:
+                speed = distance / (minutes / 60)
+
+                if speed <= TRACK_MAX_SPEED_KMH:
                     def predict(future_minutes):
                         factor = future_minutes / minutes
 
@@ -787,8 +789,7 @@ def write_png(path, width, height, rgba):
     )
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(path.suffix + ".tmp")
-    temp.write_bytes(content)
+    temp = path.with_suffix(path.suffix + ".tmp")    temp.write_bytes(content)
     temp.replace(path)
 
 
