@@ -396,9 +396,7 @@ def contextual_matrix(radar, cx, cy, component_slice):
 
 # ---------------------------------------------------------
 # PERIMETRO E RILEVAMENTO CELLE
-# ---------------------------------------------------------
-
-def ordered_perimeter(component, x_start, y_start, grid, inverse, origin):
+# ---------------------------------------------------------def ordered_perimeter(component, x_start, y_start, grid, inverse, origin):
     edge = component & ~ndimage.binary_erosion(
         component,
         structure=np.ones((3, 3)),
@@ -424,8 +422,8 @@ def ordered_perimeter(component, x_start, y_start, grid, inverse, origin):
         px = x_start + int(xx[index])
         py = y_start + int(yy[index])
 
-        gx = ox + px * grid["xscale_m"]
-        gy = oy + (grid["ysize"] - 1 - py) * grid["yscale_m"]
+        gx = ox + (px + 0.5) * grid["xscale_m"]
+        gy = oy + (grid["ysize"] - 0.5 - py) * grid["yscale_m"]
 
         lon, lat = inverse.transform(gx, gy)
 
@@ -468,8 +466,8 @@ def detect(radar, grid, inverse, origin):
         cx = xs.start + float(np.average(xx, weights=weights))
         cy = ys.start + float(np.average(yy, weights=weights))
 
-        gx = ox + cx * grid["xscale_m"]
-        gy = oy + (grid["ysize"] - 1 - cy) * grid["yscale_m"]
+        gx = ox + (cx + 0.5) * grid["xscale_m"]
+        gy = oy + (grid["ysize"] - 0.5 - cy) * grid["yscale_m"]
 
         lon, lat = inverse.transform(gx, gy)
 
@@ -557,7 +555,7 @@ def detect(radar, grid, inverse, origin):
         reverse=True
     )
     return cells[:MAX_CELLS]
-            
+
 # ---------------------------------------------------------
 # TRACKING E VETTORI
 # ---------------------------------------------------------
@@ -797,8 +795,7 @@ def track_cells(cells, timestamp, history):
                 minutes1 = minutes2 = -1
 
             if (
-                5.0 <= minutes1 <= 45.0
-                and 5.0 <= minutes2 <= 45.0
+                5.0 <= minutes1 <= 45.0                and 5.0 <= minutes2 <= 45.0
                 and 0.5 <= minutes2 / minutes1 <= 2.0
             ):
                 distance1 = haversine(p0, p1)
@@ -918,16 +915,17 @@ def generate_radar_overlay(radar, grid, origin):
     south = REGION["south"]
     north = REGION["north"]
 
-    # Leaflet imageOverlay distribuisce i pixel linearmente in latitudine.
-    # Il raster viene quindi campionato linearmente in latitudine,
-    # non in Y Mercator, per evitare una georeferenziazione deformata.
+    # ImageOverlay stretches the image in the map's EPSG:3857 plane.
+    # Sample pixel centres uniformly in Mercator Y, not latitude.
     longitudes = west + (
         np.arange(width, dtype=np.float64) + 0.5
     ) * (east - west) / width
-
-    latitudes = north - (
+    mercator_north = np.log(np.tan(np.pi / 4 + np.deg2rad(north) / 2))
+    mercator_south = np.log(np.tan(np.pi / 4 + np.deg2rad(south) / 2))
+    mercator_y = mercator_north - (
         np.arange(height, dtype=np.float64) + 0.5
-    ) * (north - south) / height
+    ) * (mercator_north - mercator_south) / height
+    latitudes = np.rad2deg(2 * np.arctan(np.exp(mercator_y)) - np.pi / 2)
 
     lon_grid, lat_grid = np.meshgrid(longitudes, latitudes)
 
@@ -945,10 +943,10 @@ def generate_radar_overlay(radar, grid, origin):
 
     pixel_x_float = (
         projected_x - ox
-    ) / grid["xscale_m"]
+    ) / grid["xscale_m"] - 0.5
 
     pixel_y_float = (
-        grid["ysize"] - 1
+        grid["ysize"] - 0.5
     ) - (projected_y - oy) / grid["yscale_m"]
 
     valid = (
@@ -990,7 +988,7 @@ def generate_radar_overlay(radar, grid, origin):
         rgba[selected, 0] = rgb[0]
         rgba[selected, 1] = rgb[1]
         rgba[selected, 2] = rgb[2]
-        rgba[selected, 3] = 178
+        rgba[selected, 3] = 230
 
     path = ROOT / "docs" / "data" / "iride_radar.png"
     write_png(path, width, height, rgba)
@@ -1008,11 +1006,11 @@ def generate_radar_overlay(radar, grid, origin):
         "minimum_dbz": 15,
         "transparent_below_dbz": 15,
         "georeferencing": (
-            "geographic latitude-linear sampling from ODIM projection"
+            "EPSG:3857 pixel-centre sampling from ODIM projection"
         ),
         "timestamp": None
     }
-    
+
 # ---------------------------------------------------------
 # PUBBLICAZIONE
 # ---------------------------------------------------------
@@ -1176,4 +1174,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-                    
