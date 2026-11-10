@@ -3,158 +3,217 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#07111d">
+<meta name="theme-color" content="#101d2b">
 <title>I.R.I.D.E. | Nowcasting Italia</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
 :root{
- --bg:#07111d;
- --panel:#0b1928;
- --panel2:#102337;
- --line:#244158;
- --cyan:#00dff5;
- --yellow:#ffd000;
- --orange:#ff762d;
- --red:#ff4057;
- --text:#edf6ff;
- --muted:#91a9bd;
+ --bg:#101d2b;
+ --surface:#17283a;
+ --surface2:#1c3045;
+ --border:#30465b;
+ --text:#e8eff6;
+ --muted:#9aabba;
+ --accent:#48a9d5;
+ --blue:#397ee8;
+ --green:#24bd70;
+ --yellow:#f4d43e;
+ --orange:#f07832;
+ --magenta:#ed42c8;
+ --real:#36b6df;
+ --forecast:#e6a34a;
 }
 *{box-sizing:border-box}
 html,body{
  margin:0;width:100%;height:100%;overflow:hidden;
  background:var(--bg);color:var(--text);
- font:14px system-ui,-apple-system,Segoe UI,sans-serif
+ font:14px system-ui,-apple-system,"Segoe UI",sans-serif
 }
 button,select{
- background:var(--panel2);color:var(--text);
- border:1px solid var(--line);border-radius:7px;
- padding:9px 11px;font:inherit
+ background:var(--surface2);color:var(--text);
+ border:1px solid var(--border);border-radius:5px;
+ padding:8px 11px;font:inherit
 }
 button{cursor:pointer}
-button:active{transform:scale(.98)}
+button:hover{border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
 header{
- height:58px;background:#071321;
- border-bottom:2px solid var(--cyan);
+ height:62px;background:#142438;border-bottom:1px solid var(--border);
  display:flex;align-items:center;justify-content:space-between;
- padding:0 14px;gap:8px
+ padding:0 20px;gap:14px
 }
-.brand{
- font-size:18px;font-weight:900;letter-spacing:1.5px;
- color:#fff
+.brand{display:flex;align-items:center;gap:13px;min-width:0}
+.brand-mark{
+ width:36px;height:36px;border:1px solid #4c91b4;
+ border-radius:6px;display:grid;place-items:center;
+ color:#8ccbe8;font-size:17px;font-weight:800
 }
-.brand small{
- display:block;font-size:9px;letter-spacing:2px;
- color:var(--cyan);font-weight:700;margin-top:1px
+.brand-name{font-size:17px;font-weight:750;letter-spacing:.8px}
+.brand-sub{
+ color:var(--muted);font-size:9px;letter-spacing:1.2px;
+ margin-top:2px
 }
+.header-right{display:flex;align-items:center;gap:16px}
 #status{
- color:#a7bdcf;font-size:10px;text-align:right;
- line-height:1.4
+ color:#b8c7d5;font-size:11px;text-align:right;
+ line-height:1.5
 }
 .status-dot{
- display:inline-block;width:7px;height:7px;
- border-radius:50%;background:#20d889;margin-right:5px
+ display:inline-block;width:7px;height:7px;border-radius:50%;
+ background:#42bd89;margin-right:6px
 }
-#map{
- position:absolute;top:58px;bottom:0;width:100%;
- background:#0a1b2a
+.app-shell{
+ height:calc(100% - 62px);
+ display:grid;grid-template-rows:48px minmax(0,1fr);
+ min-height:0
 }
-.top-panel{
- position:absolute;z-index:600;top:68px;left:10px;right:10px;
- display:flex;justify-content:space-between;align-items:center;
- gap:8px;pointer-events:none
+.toolbar{
+ display:flex;align-items:center;justify-content:space-between;
+ gap:12px;padding:0 18px;background:#17283a;
+ border-bottom:1px solid var(--border)
 }
-.panel-tag{
- pointer-events:auto;background:#071321ed;
- border:1px solid var(--line);border-left:3px solid var(--cyan);
- border-radius:5px;padding:7px 10px;
- font-size:10px;font-weight:800;letter-spacing:1px
+.breadcrumb{font-size:11px;color:var(--muted)}
+.breadcrumb strong{color:var(--text);font-weight:650}
+.toolbar-actions{display:flex;gap:7px;align-items:center}
+.toolbar button{font-size:11px;padding:6px 10px}
+#reload{border-color:#477d9a}
+.workspace{
+ display:grid;grid-template-columns:minmax(0,1fr) 320px;
+ gap:12px;padding:12px;min-height:0;overflow:hidden
 }
-.panel-tag em{font-style:normal;color:var(--cyan)}
-#reload{
- pointer-events:auto;border-color:#1688a5;color:var(--cyan);
- font-weight:800;padding:7px 12px
+.map-panel,.side-panel{
+ background:var(--surface);border:1px solid var(--border);
+ border-radius:7px;min-height:0;overflow:hidden
 }
-.legend{
- position:absolute;z-index:600;bottom:15px;left:10px;right:10px;
- display:flex;align-items:center;justify-content:center;
- flex-wrap:wrap;gap:10px;
- background:#071321ed;border:1px solid var(--line);
- border-radius:7px;padding:9px 8px
+.map-panel{display:flex;flex-direction:column;position:relative}
+.panel-heading{
+ height:42px;flex:0 0 42px;display:flex;
+ align-items:center;justify-content:space-between;
+ padding:0 13px;border-bottom:1px solid var(--border);
+ background:#1a2c40
 }
-.legend span{
- display:flex;align-items:center;gap:5px;
- color:#d8e6f2;font-size:10px
-}
-.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
-.map-tools{
- position:absolute;z-index:600;right:10px;top:120px;
+.panel-heading strong{font-size:12px;font-weight:700}
+.panel-heading small{font-size:10px;color:var(--muted)}
+.map-frame{position:relative;flex:1;min-height:0}
+#map{position:absolute;inset:0;background:#d5dce2}
+.map-overlay-tools{
+ position:absolute;z-index:600;right:12px;top:12px;
  display:flex;flex-direction:column;gap:6px
 }
-.map-tools button{font-size:11px;padding:7px 9px}
+.map-overlay-tools button{
+ background:#17283aeb;font-size:10px;padding:7px 9px;
+ box-shadow:0 1px 4px #0003
+}
+.map-legend{
+ min-height:42px;display:flex;align-items:center;
+ justify-content:center;gap:15px;flex-wrap:wrap;
+ padding:7px 10px;border-top:1px solid var(--border);
+ background:#17283a
+}
+.legend-item{
+ display:flex;align-items:center;gap:5px;
+ color:#c5d1dc;font-size:10px;white-space:nowrap
+}
+.legend-swatch{width:10px;height:10px;border-radius:2px}
+.side-panel{display:flex;flex-direction:column}
+.side-section{
+ padding:12px 13px;border-bottom:1px solid var(--border)
+}
+.side-title{
+ color:#c7d5e2;font-size:10px;font-weight:750;
+ letter-spacing:.65px;text-transform:uppercase;
+ margin-bottom:10px
+}
+.metrics{
+ display:grid;grid-template-columns:1fr 1fr;gap:8px
+}
+.metric{
+ background:#20354a;border:1px solid #30485d;
+ border-radius:5px;padding:9px
+}
+.metric-label{font-size:9px;color:var(--muted)}
+.metric-value{font-size:20px;font-weight:700;margin-top:3px}
+.metric-unit{font-size:9px;color:var(--muted);margin-left:3px}
+#cell-list{overflow:auto;flex:1;min-height:0}
+.cell-row{
+ width:100%;display:grid;grid-template-columns:8px minmax(0,1fr) auto;
+ align-items:center;gap:9px;text-align:left;
+ padding:10px 12px;background:transparent;
+ border:0;border-bottom:1px solid #2b4054;border-radius:0
+}
+.cell-row:hover{background:#20364a}
+.cell-color{width:7px;height:32px;border-radius:3px}
+.cell-main{min-width:0}
+.cell-name{font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis}
+.cell-detail{font-size:9px;color:var(--muted);margin-top:3px}
+.cell-dbz{font-size:12px;font-weight:700;white-space:nowrap}
+.empty-list{padding:18px 12px;color:var(--muted);font-size:11px}
+.side-footer{
+ padding:9px 12px;color:var(--muted);font-size:9px;
+ border-top:1px solid var(--border);line-height:1.45
+}
 .leaflet-popup-content-wrapper{
- background:#0b1b2b;color:#edf6ff;
- border:1px solid #26708a;border-radius:9px
+ background:#17283a;color:var(--text);
+ border:1px solid #49647a;border-radius:6px
 }
-.leaflet-popup-tip{background:#0b1b2b}
+.leaflet-popup-tip{background:#17283a}
 .leaflet-popup-content{margin:12px;min-width:190px}
-.popup-title{
- color:var(--cyan);font-weight:900;font-size:14px;
- margin-bottom:8px
-}
-.popup-line{font-size:12px;color:#d1e0ec;margin:5px 0}
-.popup-note{
- font-size:10px;color:#91a9bd;margin-top:8px;line-height:1.4
-}
+.popup-title{font-weight:750;font-size:13px;margin-bottom:8px}
+.popup-line{font-size:11px;color:#d0dce6;margin:5px 0}
+.popup-note{font-size:9px;color:var(--muted);margin-top:8px;line-height:1.4}
 .popup-action{
- width:100%;margin-top:10px;background:#073c53;
- border-color:var(--cyan);color:white;font-weight:800
+ width:100%;margin-top:10px;background:#28516a;
+ border-color:#5599bd;color:white;font-weight:700
 }
 #viewer{
  display:none;position:fixed;inset:0;z-index:2000;
- background:#050c15;flex-direction:column
+ background:#101a27;flex-direction:column
 }
 #viewer.open{display:flex}
 .vhead{
- min-height:58px;flex-shrink:0;background:#071321;
- border-bottom:2px solid var(--cyan);
+ min-height:58px;flex-shrink:0;background:#17283a;
+ border-bottom:1px solid var(--border);
  display:flex;align-items:center;justify-content:space-between;
- padding:7px 10px;gap:6px
+ padding:7px 14px;gap:8px
 }
-#vtitle{font-size:12px;font-weight:900;color:var(--cyan)}
-.vcontrols{display:flex;gap:5px;align-items:center}
-.vcontrols select,.vcontrols button{font-size:11px;padding:8px 7px}
-#mode{border-color:var(--cyan);max-width:145px}
-#reset{color:var(--yellow)}
-#close{color:#ff9a9a}
+#vtitle{font-size:12px;font-weight:750}
+.vcontrols{display:flex;gap:6px;align-items:center}
+.vcontrols select,.vcontrols button{font-size:11px;padding:8px 9px}
 #scene{
  display:block;width:100%;height:100%;flex:1;min-height:0;
  touch-action:none
 }
 .vfoot{
- min-height:39px;display:flex;align-items:center;
- padding:0 12px;background:#071321;
- border-top:1px solid var(--line);
+ min-height:38px;display:flex;align-items:center;
+ padding:0 14px;background:#17283a;
+ border-top:1px solid var(--border);
  color:var(--muted);font-size:10px
 }
-@media(min-width:700px){
- .top-panel{top:72px;left:18px;right:18px}
- .legend{left:18px;right:auto;bottom:18px}
+@media(max-width:900px){
+ .workspace{grid-template-columns:minmax(0,1fr) 270px}
 }
-@media(max-width:600px){
- header{height:52px;padding:0 10px}
- #map{top:52px}
- .brand{font-size:16px}
+@media(max-width:650px){
+ header{height:54px;padding:0 10px}
+ .brand-mark{width:30px;height:30px}
+ .brand-name{font-size:15px}
+ .brand-sub{font-size:8px}
  #status{font-size:9px}
- .top-panel{top:61px}
- .panel-tag{font-size:9px;padding:6px 8px}
- .legend{gap:7px;padding:8px 5px}
- .legend span{font-size:9px}
- .map-tools{top:108px}
+ .app-shell{height:calc(100% - 54px);grid-template-rows:42px minmax(0,1fr)}
+ .toolbar{padding:0 9px}
+ .breadcrumb{font-size:10px}
+ .toolbar button{font-size:10px;padding:6px 8px}
+ .workspace{
+  display:flex;flex-direction:column;gap:7px;
+  padding:7px;overflow:auto
+ }
+ .map-panel{flex:0 0 62vh;min-height:330px}
+ .side-panel{flex:0 0 300px;min-height:260px}
+ .map-legend{gap:9px}
+ .legend-item{font-size:9px}
  .vhead{min-height:54px;padding:6px}
- #vtitle{font-size:10px;max-width:95px}
+ #vtitle{font-size:10px;max-width:90px}
  .vcontrols{gap:3px}
  .vcontrols select,.vcontrols button{font-size:10px;padding:7px 5px}
- #mode{max-width:125px}
 }
 </style>
 </head>
@@ -162,32 +221,82 @@ header{
 
 <header>
  <div class="brand">
-  I.R.I.D.E.
-  <small>INTEGRATED RADAR IMAGING & DETECTION ENGINE</small>
+  <div class="brand-mark">I</div>
+  <div>
+   <div class="brand-name">I.R.I.D.E.</div>
+   <div class="brand-sub">INTEGRATED RADAR IMAGING &amp; DETECTION ENGINE</div>
+  </div>
  </div>
- <div style="display:flex;align-items:center;gap:8px">
+ <div class="header-right">
   <div id="status"><span class="status-dot"></span>OPERA · caricamento</div>
  </div>
 </header>
 
-<div id="map"></div>
+<div class="app-shell">
+ <div class="toolbar">
+  <div class="breadcrumb">NOWCASTING ITALIA / <strong>RADAR EUROPA</strong></div>
+  <div class="toolbar-actions">
+   <button id="vectorsToggle">Vettori: ON</button>
+   <button id="cellsToggle">Celle: ON</button>
+   <button id="reload">Aggiorna</button>
+  </div>
+ </div>
 
-<div class="top-panel">
- <div class="panel-tag">NOWCASTING ITALIA <em> / RADAR</em></div>
- <button id="reload">↻ AGGIORNA</button>
-</div>
+ <main class="workspace">
+  <section class="map-panel">
+   <div class="panel-heading">
+    <strong>RADAR COMPOSITO OPERA · DBZH</strong>
+    <small id="map-time">Prodotto: in attesa</small>
+   </div>
+   <div class="map-frame">
+    <div id="map"></div>
+    <div class="map-overlay-tools">
+     <button id="fitRegion">INTERA AREA</button>
+    </div>
+   </div>
+   <div class="map-legend">
+    <span class="legend-item"><i class="legend-swatch" style="background:#397ee8"></i>15–24 dBZ</span>
+    <span class="legend-item"><i class="legend-swatch" style="background:#24bd70"></i>25–29 dBZ</span>
+    <span class="legend-item"><i class="legend-swatch" style="background:#f4d43e"></i>30–34 dBZ</span>
+    <span class="legend-item"><i class="legend-swatch" style="background:#f07832"></i>35–44 dBZ</span>
+    <span class="legend-item"><i class="legend-swatch" style="background:#ed42c8"></i>≥45 dBZ</span>
+    <span class="legend-item"><i class="legend-swatch" style="background:#36b6df"></i>Moto osservato</span>
+    <span class="legend-item"><i class="legend-swatch" style="background:#e6a34a"></i>Previsione +3h</span>
+   </div>
+  </section>
 
-<div class="map-tools">
- <button id="vectorsToggle">VETTORI: ON</button>
- <button id="cellsToggle">CELLE: ON</button>
-</div>
-
-<div class="legend">
- <span><i class="dot" style="background:#397ee8"></i>15–24</span>
- <span><i class="dot" style="background:#24bd70"></i>25–29</span>
- <span><i class="dot" style="background:#f4d43e"></i>30–34</span>
- <span><i class="dot" style="background:#f07832"></i>35–44</span>
- <span><i class="dot" style="background:#ed42c8"></i>≥45 dBZ</span>
+  <aside class="side-panel">
+   <div class="side-section">
+    <div class="side-title">Quadro operativo</div>
+    <div class="metrics">
+     <div class="metric">
+      <div class="metric-label">CELLE RILEVATE</div>
+      <div class="metric-value" id="metric-cells">—</div>
+     </div>
+     <div class="metric">
+      <div class="metric-label">MASSIMO DBZH</div>
+      <div class="metric-value"><span id="metric-max">—</span><span class="metric-unit">dBZ</span></div>
+     </div>
+     <div class="metric">
+      <div class="metric-label">VETTORI VALIDI</div>
+      <div class="metric-value" id="metric-vectors">—</div>
+     </div>
+     <div class="metric">
+      <div class="metric-label">RICOSTRUZIONI 3D</div>
+      <div class="metric-value" id="metric-3d">—</div>
+     </div>
+    </div>
+   </div>
+   <div class="side-section">
+    <div class="side-title">Celle osservate · selezione</div>
+   </div>
+   <div id="cell-list"><div class="empty-list">In attesa dei dati radar OPERA.</div></div>
+   <div class="side-footer">
+    DBZH osservato. La quota del modello 3D è una ricostruzione morfologica,
+    non una misura verticale radar.
+   </div>
+  </aside>
+ </main>
 </div>
 
 <div id="viewer">
@@ -205,7 +314,7 @@ header{
  </div>
  <canvas id="scene"></canvas>
  <div class="vfoot">
-  ROTAZIONE 360° · INCLINAZIONE · ZOOM · BASE DBZH OSSERVATA · QUOTA MORFOLOGICA STIMATA
+  ROTAZIONE 360° · INCLINAZIONE · ZOOM · DBZH OSSERVATO · QUOTA MORFOLOGICA STIMATA
  </div>
 </div>
 
@@ -215,11 +324,18 @@ header{
 'use strict';
 
 const $=id=>document.getElementById(id);
+const finite=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v));
+const fmt=(v,d=1)=>finite(v)?Number(v).toFixed(d):'—';
+const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({
+ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+})[c]);
 
 const map=L.map('map',{
  preferCanvas:true,
- zoomControl:true
-}).setView([43,12],5);
+ zoomControl:true,
+ minZoom:3,
+ maxZoom:12
+}).setView([49,11],4);
 
 L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{
  maxZoom:17,
@@ -230,11 +346,12 @@ const radarLayer=L.layerGroup().addTo(map);
 const cellLayer=L.layerGroup().addTo(map);
 const vectorLayer=L.layerGroup().addTo(map);
 
+const REGION_BOUNDS=[[30,-15],[72,38]];
 let radarImage=null;
 let cells=[];
+let currentData=null;
 let showVectors=true;
 let showCells=true;
-let currentData=null;
 let jsonLocation='docs/data/iride.json';
 let webgl2Available=true;
 
@@ -244,49 +361,40 @@ const color=v=>v>=45?'#ed42c8':
  v>=25?'#24bd70':
  v>=15?'#397ee8':'#000';
 
-const finite=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v));
-const fmt=(v,d=1)=>finite(v)?Number(v).toFixed(d):'—';
-
-const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({
- '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-})[c]);
-
-function popupContent(c,index){
- const t=c.track||{};
- const speed=Number(t.speed_kmh);
- const validSpeed=finite(t.speed_kmh);
- const area=Number(c.approx_area_km2);
- const morphology=c.morphology?.label||'Non classificata';
-
- return `
- <div class="popup-title">${safe(c.id)}</div>
- <div class="popup-line"><b>${fmt(c.max_dbz)} dBZ</b> · massimo</div>
- <div class="popup-line">Media: ${fmt(c.mean_dbz)} dBZ</div>
- <div class="popup-line">Area eco: ${Number.isFinite(area)?fmt(area)+' km²':'—'}</div>
- <div class="popup-line">Centroide: ${fmt(c.lat,3)}°, ${fmt(c.lon,3)}°</div>
- ${validSpeed?`<div class="popup-line">Velocità osservata: ${fmt(speed)} km/h</div>`:''}
- <div class="popup-line">Morfologia: ${safe(morphology)}</div>
- <div class="popup-note">Il contorno rappresenta il bordo dei pixel DBZH sopra soglia. La morfologia è preliminare.</div>
- ${c['3d_available']===true&&webgl2Available?`<button class="popup-action" id="open3d-${index}">APRI RICOSTRUZIONE 3D</button>`:''}
- `;
-}
-
-/* Vettori: solo moti sostenuti da tre posizioni e due intervalli coerenti. */
 function vectorIsUsable(c){
  const v=c.vectors||{};
  const t=c.track||{};
- const observations=Array.isArray(t.observations)?t.observations:[];
+ const obs=Array.isArray(t.observations)?t.observations:[];
  const speed=Number(t.speed_kmh);
  const interval=Number(t.observed_interval_minutes);
 
- if(observations.length<3)return false;
+ if(obs.length<3)return false;
  if(!Array.isArray(v.real)||v.real.length!==2)return false;
  if(!Array.isArray(v.predictive_180m)||v.predictive_180m.length!==2)return false;
  if(!Number.isFinite(speed)||speed<5||speed>90)return false;
  if(!Number.isFinite(interval)||interval<5||interval>45)return false;
  if(t.forecast_status!=='experimental_consistent_motion_extrapolation')return false;
 
- return true;
+ const realEnd=v.real[1];
+ const forecastStart=v.predictive_180m[0];
+ if(!validPoint(realEnd)||!validPoint(forecastStart))return false;
+
+ const mismatch=pointDistanceKm(realEnd,forecastStart);
+ return mismatch<=2;
+}
+
+function validPoint(p){
+ return Array.isArray(p)&&p.length>=2&&finite(p[0])&&finite(p[1])&&
+  Math.abs(Number(p[0]))<=90&&Math.abs(Number(p[1]))<=180;
+}
+
+function pointDistanceKm(a,b){
+ const rad=Math.PI/180;
+ const p1=Number(a[0])*rad,p2=Number(b[0])*rad;
+ const dp=(Number(b[0])-Number(a[0]))*rad;
+ const dl=(Number(b[1])-Number(a[1]))*rad;
+ const q=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+ return 6371*2*Math.asin(Math.min(1,Math.sqrt(q)));
 }
 
 function drawVector(c){
@@ -295,49 +403,74 @@ function drawVector(c){
  const forecast=v.predictive_180m;
 
  L.polyline(real,{
-  color:'#00cfff',weight:3,opacity:.95,
-  lineCap:'round'
+  color:'#36b6df',weight:3,opacity:.95,
+  lineCap:'round',lineJoin:'round'
+ }).addTo(vectorLayer);
+
+ L.circleMarker(real[0],{
+  radius:3,color:'#36b6df',weight:1,fillOpacity:1
+ }).addTo(vectorLayer);
+
+ L.circleMarker(real[1],{
+  radius:4,color:'#eaf7ff',weight:1.5,
+  fillColor:'#36b6df',fillOpacity:1
  }).addTo(vectorLayer);
 
  L.polyline(forecast,{
-  color:'#ff9b32',weight:2.5,opacity:.95,
-  dashArray:'7 7',lineCap:'round'
+  color:'#e6a34a',weight:2.5,opacity:.95,
+  dashArray:'7 6',lineCap:'round'
  }).addTo(vectorLayer);
+
+ L.circleMarker(forecast[1],{
+  radius:4,color:'#e6a34a',weight:1.5,
+  fillColor:'#e6a34a',fillOpacity:1
+ }).addTo(vectorLayer);
+}
+
+function popupContent(c,index){
+ const t=c.track||{};
+ const area=Number(c.approx_area_km2);
+ const morphology=c.morphology?.label||c.morphology?.class||'Non classificata';
+ const vector=vectorIsUsable(c);
+
+ return `
+ <div class="popup-title">${safe(c.track_id||c.id||'Cella')}</div>
+ <div class="popup-line"><b>${fmt(c.max_dbz)} dBZ</b> · massimo</div>
+ <div class="popup-line">Media: ${fmt(c.mean_dbz)} dBZ</div>
+ <div class="popup-line">Area eco: ${Number.isFinite(area)?fmt(area)+' km²':'—'}</div>
+ <div class="popup-line">Centroide: ${fmt(c.lat,3)}°, ${fmt(c.lon,3)}°</div>
+ ${vector?`<div class="popup-line">Moto osservato: ${fmt(t.speed_kmh)} km/h</div>`:''}
+ <div class="popup-line">Morfologia: ${safe(morphology)}</div>
+ <div class="popup-note">Perimetro: bordo dei pixel connessi DBZH sopra soglia. La classificazione è preliminare.</div>
+ ${c['3d_available']===true&&webgl2Available?`<button class="popup-action" id="open3d-${index}">APRI RICOSTRUZIONE 3D</button>`:''}
+ `;
 }
 
 function addCell(c,index){
  const stroke=color(c.max_dbz);
-
- const points=Array.isArray(c.perimeter)?c.perimeter.filter(p=>
-  Array.isArray(p)&&p.length>=2&&finite(p[0])&&finite(p[1])
- ):[];
+ const points=Array.isArray(c.perimeter)?c.perimeter.filter(validPoint):[];
 
  if(points.length>=3){
   L.polygon(points,{
-   color:stroke,weight:1.4,opacity:.85,
-   fillColor:stroke,fillOpacity:.08,
+   color:stroke,weight:1.4,opacity:.9,
+   fillColor:stroke,fillOpacity:.07,
    smoothFactor:1
   }).addTo(cellLayer);
  }
 
- const marker=L.circleMarker([+c.lat,+c.lon],{
-  radius:6,color:'#fff',weight:1.6,
+ const marker=L.circleMarker([Number(c.lat),Number(c.lon)],{
+  radius:5,color:'#fff',weight:1.4,
   fillColor:stroke,fillOpacity:1
  }).addTo(cellLayer);
 
- marker.bindPopup(popupContent(c,index),{maxWidth:270});
-
+ marker.bindPopup(popupContent(c,index),{maxWidth:280});
  marker.on('popupopen',()=>{
   const button=$('open3d-'+index);
   if(button)button.onclick=()=>open3D(c);
  });
 
  if(showVectors&&vectorIsUsable(c))drawVector(c);
-}
-
-function overlayUrl(path){
- if(!path)return null;
-
+}function overlayUrl(path){
  if(path.startsWith('http://')||path.startsWith('https://'))
   return path;
 
@@ -394,14 +527,61 @@ function render(data){
   else if(showVectors&&vectorIsUsable(c))drawVector(c);
  });
 
+ $('metric-cells').textContent=cells.length;
+ $('metric-max').textContent=cells.length
+  ?fmt(Math.max(...cells.map(c=>Number(c.max_dbz)||0))):'—';
+ $('metric-vectors').textContent=
+  cells.filter(vectorIsUsable).length;
+ $('metric-3d').textContent=
+  cells.filter(c=>c['3d_available']===true).length;
+
  const productTime=Date.parse(data.timestamp||'');
  const ageMinutes=Number.isFinite(productTime)
   ?(Date.now()-productTime)/60000:Infinity;
- const stale=ageMinutes>90||ageMinutes< -5; $('status').innerHTML=
+ const stale=ageMinutes>90||ageMinutes< -5;
+
+ $('status').innerHTML=
   '<span class="status-dot"></span>OPERA · '+
   safe(data.timestamp||'orario n/d')+' · '+cells.length+' celle'+
   (stale?' · DATI OBSOLETI':'')+
   (!webgl2Available?' · 3D NON DISPONIBILE':'');
+
+ $('map-time').textContent=
+  'Prodotto: '+safe(data.timestamp||'orario n/d');
+
+ $('cell-list').innerHTML=ordered.length
+  ?ordered.map(({c,i})=>`
+   <button class="cell-row" data-cell-index="${i}">
+    <span class="cell-color" style="background:${color(Number(c.max_dbz)||0)}"></span>
+    <span class="cell-main">
+     <span class="cell-name">${safe(c.track_id||c.id||'Cella')}</span>
+     <span class="cell-detail">
+      ${fmt(c.lat,2)}°, ${fmt(c.lon,2)}° ·
+      ${fmt(c.approx_area_km2)} km²
+     </span>
+    </span>
+    <span class="cell-dbz">${fmt(c.max_dbz)} dBZ</span>
+   </button>
+  `).join('')
+  :'<div class="empty-list">Nessuna cella disponibile.</div>';
+
+ $('cell-list').querySelectorAll('[data-cell-index]').forEach(button=>{
+  button.onclick=()=>{
+   const index=Number(button.dataset.cellIndex);
+   const cell=cells[index];
+   if(!cell)return;
+
+   map.setView([Number(cell.lat),Number(cell.lon)],7);
+   const marker=cellLayer.getLayers().find(layer=>{
+    const ll=layer.getLatLng?.();
+    return ll&&
+     Math.abs(ll.lat-Number(cell.lat))<.00001&&
+     Math.abs(ll.lng-Number(cell.lon))<.00001;
+   });
+
+   if(marker?.openPopup)marker.openPopup();
+  };
+ });
 
  if(!map._irideCentered&&ordered.length){
   const bounds=ordered.map(x=>[+x.c.lat,+x.c.lon]);
@@ -461,7 +641,10 @@ $('cellsToggle').onclick=()=>{
  if(currentData)render(currentData);
 };
 
-/* Caricamento mappa e dati indipendente dal supporto WebGL2. */
+$('fitRegion').onclick=()=>{
+ map.fitBounds(REGION_BOUNDS);
+};
+
 load();
 setInterval(load,20*60*1000);
 
@@ -532,9 +715,9 @@ float echoTop(float k){
  return 0.;
 }
 
-/* Espansione verticale differenziata.
-   Blu e verde più larghi e trasparenti in quota.
-   Giallo, arancio e magenta più compatti. */
+/* Geometria comune ai tre renderer.
+   Blu e verde si allargano salendo e restano trasparenti.
+   Giallo -10%, arancio -20%, magenta -30%. */
 float footprintScale(float k,float h,float top){
  float f=h/max(top,.01);
 
@@ -558,29 +741,30 @@ float densityAt(vec3 p,out vec3 cellColor,out float klass){
  );
 
  vec2 center=vec2(.5);
+
+ /* Prima si applica la trasformazione geometrica,
+    poi si campiona la matrice DBZH. */
  vec4 base=radar(local);
+ float baseClass=echoClass(base.rgb);
 
- klass=echoClass(base.rgb);
- cellColor=base.rgb;
+ if(base.a<.1||baseClass<1.)return 0.;
 
- if(base.a<.1||klass<1.)return 0.;
-
- float top=echoTop(klass);
+ float top=echoTop(baseClass);
  if(top<=0.||h>top)return 0.;
 
- float scale=footprintScale(klass,h,top);
+ float scale=footprintScale(baseClass,h,top);
  vec2 expanded=center+(local-center)/scale;
  vec4 sampleColor=radar(expanded);
 
- float sampleClass=echoClass(sampleColor.rgb);
- if(sampleColor.a<.1||sampleClass<.5)return 0.;
+ klass=echoClass(sampleColor.rgb);
+
+ if(sampleColor.a<.1||klass<1.)return 0.;
 
  cellColor=sampleColor.rgb;
 
  float vertical=h/top;
  float lower=smoothstep(.025,.24,h);
  float upper=1.-smoothstep(.82,1.0,vertical);
-
  float density=lower*upper;
 
  if(klass==1.)density*=.17;
@@ -589,7 +773,7 @@ float densityAt(vec3 p,out vec3 cellColor,out float klass){
  if(klass==4.)density*=.68;
  if(klass==5.)density*=.78;
 
- /* Voxel: gradini verticali e blocchi definiti. */
+ /* Modalità 0: voxel con livelli definiti. */
  if(renderMode==0){
   float steps=12.;
   float stepped=floor(vertical*steps)/steps;
@@ -597,14 +781,14 @@ float densityAt(vec3 p,out vec3 cellColor,out float klass){
   density*=.90;
  }
 
- /* Isosuperficie: parete compatta con bordo luminoso. */
+ /* Modalità 1: superficie continua con bordo. */
  if(renderMode==1){
   float shell=smoothstep(.16,.36,density);
   float edge=1.-smoothstep(.025,.13,abs(density-.36));
   density=shell*.92+edge*.16;
  }
 
- /* Olografico: strati sottili, linee di scansione. */
+ /* Modalità 2: volume olografico a strati. */
  if(renderMode==2){
   float scan=.62+.38*sin(h*48.);
   float shell=1.-smoothstep(.025,.10,abs(fract(vertical*8.)-.5));
@@ -647,13 +831,13 @@ void main(){
  float nearT,farT;
  vec3 result=BG;
 
- /* Piano radar: texture DBZH osservata. */
  float floorT=-1.;
 
  if(direction.y<-.0001){
   floorT=(.04-cameraPosition.y)/direction.y;
  }
 
+ /* Piano radar: riflette i DBZH osservati. */
  if(floorT>0.){
   vec3 fp=cameraPosition+direction*floorT;
 
@@ -668,7 +852,7 @@ void main(){
   }
  }
 
- /* Ray marching volume. */
+ /* Ray marching del volume tridimensionale. */
  if(intersectBox(cameraPosition,direction,nearT,farT)){
   float startT=max(nearT,0.);
   float endT=farT;
@@ -702,7 +886,6 @@ void main(){
   result=volume+transparency*result;
  }
 
- /* Reticolo tecnico molto discreto in modalità olografica. */
  if(renderMode==2){
   float gridX=abs(fract((uv.x*resolution.x)/48.)-.5);
   float gridY=abs(fract((uv.y*resolution.y)/48.)-.5);
@@ -711,9 +894,7 @@ void main(){
  }
 
  outputColor=vec4(result,1.);
-}`;
-
-function compileShader(type,source){
+}`;function compileShader(type,source){
  const shader=gl.createShader(type);
  gl.shaderSource(shader,source);
  gl.compileShader(shader);
@@ -735,10 +916,12 @@ gl.attachShader(
 gl.attachShader(
  program,compileShader(gl.FRAGMENT_SHADER,fragmentShader)
 );
+
 gl.linkProgram(program);
 
-if(!gl.getProgramParameter(program,gl.LINK_STATUS))
+if(!gl.getProgramParameter(program,gl.LINK_STATUS)){
  throw Error(gl.getProgramInfoLog(program));
+}
 
 gl.useProgram(program);
 
@@ -746,7 +929,10 @@ const buffer=gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
 
 gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
- -1,-1,1,-1,-1,1,1,1
+ -1,-1,
+  1,-1,
+ -1, 1,
+  1, 1
 ]),gl.STATIC_DRAW);
 
 const position=gl.getAttribLocation(program,'position');
@@ -757,8 +943,14 @@ gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
 const uniforms={};
 
 [
- 'resolution','cameraPosition','cameraRight','cameraUp',
- 'cameraForward','fov','radarTexture','renderMode'
+ 'resolution',
+ 'cameraPosition',
+ 'cameraRight',
+ 'cameraUp',
+ 'cameraForward',
+ 'fov',
+ 'radarTexture',
+ 'renderMode'
 ].forEach(name=>{
  uniforms[name]=gl.getUniformLocation(program,name);
 });
@@ -768,10 +960,18 @@ const texture=gl.createTexture();
 gl.activeTexture(gl.TEXTURE0);
 gl.bindTexture(gl.TEXTURE_2D,texture);
 
-gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
-gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
-gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+gl.texParameteri(
+ gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST
+);
+gl.texParameteri(
+ gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST
+);
+gl.texParameteri(
+ gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE
+);
+gl.texParameteri(
+ gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE
+);
 
 gl.uniform1i(uniforms.radarTexture,0);
 
@@ -787,15 +987,22 @@ function radarColor(dbz){
 function uploadRadarMatrix(cell){
  const matrix=cell.grid_matrix;
 
- if(!Array.isArray(matrix)||matrix.length!==72)
+ if(!Array.isArray(matrix)||matrix.length!==72){
   throw Error('Matrice DBZH 72×72 non disponibile');
+ }
 
  const width=72;
  const height=72;
  const pixels=new Uint8Array(width*height*4);
 
  for(let y=0;y<height;y++){
-  const row=matrix[y]||[];  for(let x=0;x<width;x++){
+  const row=matrix[y]||[];
+
+  if(!Array.isArray(row)||row.length!==72){
+   throw Error('Riga matrice DBZH non valida');
+  }
+
+  for(let x=0;x<width;x++){
    const value=Number(row[x]);
    const rgba=radarColor(Number.isFinite(value)?value:0);
    const offset=((height-1-y)*width+x)*4;
@@ -812,10 +1019,19 @@ function uploadRadarMatrix(cell){
  gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
 
  gl.texImage2D(
-  gl.TEXTURE_2D,0,gl.RGBA,
-  width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,pixels
+  gl.TEXTURE_2D,
+  0,
+  gl.RGBA,
+  width,
+  height,
+  0,
+  gl.RGBA,
+  gl.UNSIGNED_BYTE,
+  pixels
  );
- }/* =====================================================
+}
+
+/* =====================================================
    CAMERA, ROTAZIONE E INTERAZIONE
    ===================================================== */
 
@@ -858,6 +1074,9 @@ function drawScene(){
  const height=canvas.height;
 
  if(!width||!height)return;
+
+ gl.clearColor(.008,.018,.031,1);
+ gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
 
  const target=[0,.9,0];
  const cp=Math.cos(pitch);
@@ -912,12 +1131,14 @@ function open3D(cell){
   uploadRadarMatrix(cell);
 
   $('vtitle').textContent=
-   cell.id+' · '+fmt(cell.max_dbz)+' dBZ';
+   (cell.track_id||cell.id||'CELLA')+
+   ' · '+fmt(cell.max_dbz)+' dBZ';
 
   yaw=-.35;
   pitch=.34;
   distance=7.1;
 
+  $('mode').value='0';
   viewer.classList.add('open');
 
   requestAnimationFrame(()=>{
@@ -956,7 +1177,10 @@ canvas.addEventListener('pointerdown',event=>{
  dragging=true;
  lastX=event.clientX;
  lastY=event.clientY;
- canvas.setPointerCapture(event.pointerId);
+
+ if(canvas.setPointerCapture){
+  canvas.setPointerCapture(event.pointerId);
+ }
 });
 
 canvas.addEventListener('pointermove',event=>{
@@ -974,8 +1198,13 @@ canvas.addEventListener('pointermove',event=>{
  drawScene();
 });
 
-canvas.addEventListener('pointerup',()=>dragging=false);
-canvas.addEventListener('pointercancel',()=>dragging=false);
+function stopDragging(){
+ dragging=false;
+}
+
+canvas.addEventListener('pointerup',stopDragging);
+canvas.addEventListener('pointercancel',stopDragging);
+canvas.addEventListener('lostpointercapture',stopDragging);
 
 canvas.addEventListener('wheel',event=>{
  event.preventDefault();
@@ -1013,6 +1242,7 @@ canvas.addEventListener('touchmove',event=>{
    4.0,
    Math.min(13,distance*pinchDistance/next)
   );
+
   drawScene();
  }
 
@@ -1023,8 +1253,7 @@ canvas.addEventListener('touchend',()=>{
  pinchDistance=0;
 },{passive:true});
 
-/* Il frontend legge i dati; non avvia né modifica il backend. */
-
+/* Fine frontend I.R.I.D.E. */
 })();
 </script>
 </body>
