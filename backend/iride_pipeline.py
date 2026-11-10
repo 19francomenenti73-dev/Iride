@@ -479,6 +479,27 @@ def detect(radar, grid, inverse, origin):
             origin
         )
 
+        bbox_width = max(1, xs.stop - xs.start)
+        bbox_height = max(1, ys.stop - ys.start)
+        elongation = max(
+            bbox_width / bbox_height,
+            bbox_height / bbox_width
+        )
+        fill_ratio = area / float(bbox_width * bbox_height)
+
+        if area >= 25 and elongation >= 3.0:
+            morphology = "linear_echo_candidate"
+            morphology_label = "Eco lineare candidato"
+        elif area >= 40 and elongation < 3.0:
+            morphology = "clustered_echo"
+            morphology_label = "Eco organizzato / cluster"
+        elif float(values.max()) >= 40 and area < 40:
+            morphology = "isolated_convective_echo"
+            morphology_label = "Eco convettivo isolato"
+        else:
+            morphology = "unclassified_echo"
+            morphology_label = "Eco non classificato"
+
         cells.append({
             "id": f"OPERA-{label_id:05d}",
             "lat": round(float(lat), 4),
@@ -494,6 +515,18 @@ def detect(radar, grid, inverse, origin):
                 1
             ),
             "perimeter": perimeter,
+            "perimeter_semantics": "Bordo dei pixel connessi DBZH >= soglia; non è un confine mesoscala.",
+            "morphology": {
+                "class": morphology,
+                "label": morphology_label,
+                "elongation_ratio": round(float(elongation), 2),
+                "fill_ratio": round(float(fill_ratio), 3),
+                "status": "morphological_candidate_not_mcs_diagnosis"
+            },
+            "mesoscale_classification": {
+                "class": "not_confirmed",
+                "reason": "Un singolo composito DBZH 2D non conferma MCS, MCC, supercella o squall line."
+            },
             "grid_matrix": matrix,
             "matrix_sampling": matrix_info,
             "matrix_semantics": {
@@ -514,7 +547,10 @@ def detect(radar, grid, inverse, origin):
         reverse=True
     )
 
-    return cells[:MAX_CELLS]# ---------------------------------------------------------
+    return cells[:MAX_CELLS]
+
+
+# ---------------------------------------------------------
 # TRACKING
 # ---------------------------------------------------------
 
@@ -632,15 +668,14 @@ def track_cells(cells, timestamp, history):
                 "max_dbz": cell["max_dbz"]
             })
 
-        del observations[:-TRACK_HISTORY_SIZE]
-
-        track_data = {
+        del observations[:-TRACK_HISTORY_SIZE]        track_data = {
             "track_id": track_id,
             "observations": observations[-TRACK_HISTORY_SIZE:],
             "forecast_status": "insufficient_observations",
             "real_vector": None,
             "forecast_30m": None,
             "forecast_60m": None,
+            "forecast_180m": None,
             "speed_kmh": None
         }
 
@@ -688,6 +723,10 @@ def track_cells(cells, timestamp, history):
                             [b["lat"], b["lon"]],
                             predict(60)
                         ],
+                        "forecast_180m": [
+                            [b["lat"], b["lon"]],
+                            predict(180)
+                        ],
                         "observed_interval_minutes": round(
                             minutes, 1
                         ),
@@ -701,6 +740,7 @@ def track_cells(cells, timestamp, history):
             "real": track_data["real_vector"],
             "predictive_30m": track_data["forecast_30m"],
             "predictive_60m": track_data["forecast_60m"],
+            "predictive_180m": track_data["forecast_180m"],
             "forecast_status": track_data["forecast_status"]
         }
 
@@ -789,7 +829,7 @@ def main():
             )
 
         payload = {
-            "schema_version": 5,
+            "schema_version": 6,
             "product": (
                 "I.R.I.D.E. — Integrated Radar Imaging "
                 "& Detection Engine"
@@ -817,6 +857,7 @@ def main():
                 "minimum_cell_pixels": MIN_PIXELS,
                 "maximum_detected_cells": MAX_CELLS,
                 "maximum_3d_cells": MAX_3D_CELLS,
+                "morphology": "2D DBZH morphology only; mesoscale classes are not confirmed",
                 "matrix_size": [MATRIX_SIDE, MATRIX_SIDE],
                 "tracking": (
                     "one-to-one spatial and temporal association"
