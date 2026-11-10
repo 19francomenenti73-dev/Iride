@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -139,7 +138,7 @@ header{
 .metric-label{font-size:9px;color:var(--muted)}
 .metric-value{font-size:20px;font-weight:700;margin-top:3px}
 .metric-unit{font-size:9px;color:var(--muted);margin-left:3px}
-#cell-list{overflow:auto;flex:1;min-height:0}
+#cell-list{display:none}
 .cell-row{
  width:100%;display:grid;grid-template-columns:8px minmax(0,1fr) auto;
  align-items:center;gap:9px;text-align:left;
@@ -212,7 +211,7 @@ header{
   padding:7px;overflow:auto
  }
  .map-panel{flex:0 0 62vh;min-height:330px}
- .side-panel{flex:0 0 300px;min-height:260px}
+ .side-panel{flex:0 0 auto;min-height:0}
  .map-legend{gap:9px}
  .legend-item{font-size:9px}
  .vhead{min-height:54px;padding:6px}
@@ -243,7 +242,6 @@ header{
   <div class="toolbar-actions">
    <button id="vectorsToggle">Vettori: ON</button>
    <button id="cellsToggle">Celle: ON</button>
-   
    <button id="reload">Aggiorna</button>
   </div>
  </div>
@@ -261,26 +259,24 @@ header{
     </div>
    </div>
    <div class="map-legend">
-    <span class="legend-item"><i class="legend-swatch" style="background:#397ee8"></i>15–24 dBZ</span>
-    <span class="legend-item"><i class="legend-swatch" style="background:#24bd70"></i>25–29 dBZ</span>
-    <span class="legend-item"><i class="legend-swatch" style="background:#f4d43e"></i>30–34 dBZ</span>
-    <span class="legend-item"><i class="legend-swatch" style="background:#f07832"></i>35–44 dBZ</span>
-    <span class="legend-item"><i class="legend-swatch" style="background:#ed42c8"></i>≥45 dBZ</span>
-    <span class="legend-item"><i class="legend-swatch" style="background:#36b6df"></i>Moto osservato</span>
-    <span class="legend-item"><i class="legend-swatch" style="background:#e6a34a"></i>Previsione +3h</span>
+    <div class="legend-item"><span class="legend-swatch" style="background:#397ee8"></span>15–25</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:#24bd70"></span>25–30</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:#f4d43e"></span>30–35</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:#f07832"></span>35–45</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:#ed42c8"></span>≥45 dBZ</div>
    </div>
   </section>
 
   <aside class="side-panel">
    <div class="side-section">
-    <div class="side-title">Quadro operativo</div>
+    <div class="side-title">STATO OPERATIVO</div>
     <div class="metrics">
      <div class="metric">
       <div class="metric-label">CELLE RILEVATE</div>
       <div class="metric-value" id="metric-cells">—</div>
      </div>
      <div class="metric">
-      <div class="metric-label">MASSIMO DBZH</div>
+      <div class="metric-label">MAX RIFLETTIVITÀ</div>
       <div class="metric-value"><span id="metric-max">—</span><span class="metric-unit">dBZ</span></div>
      </div>
      <div class="metric">
@@ -288,16 +284,12 @@ header{
       <div class="metric-value" id="metric-vectors">—</div>
      </div>
      <div class="metric">
-      <div class="metric-label">RICOSTRUZIONI 3D</div>
+      <div class="metric-label">CELLE 3D</div>
       <div class="metric-value" id="metric-3d">—</div>
      </div>
     </div>
    </div>
-   <div class="side-section">
-    <div class="side-title">Celle osservate · selezione</div>
-   </div>
-   <div id="cell-list"><div class="empty-list">In attesa dei dati radar OPERA.</div></div>
-   <div class="side-footer">
+   
     DBZH osservato. La quota del modello 3D è una ricostruzione morfologica,
     non una misura verticale radar.
    </div>
@@ -349,6 +341,7 @@ L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{
 
 const radarLayer=L.layerGroup().addTo(map);
 const cellLayer=L.layerGroup().addTo(map);
+const centroidLayer=L.layerGroup().addTo(map);
 const vectorLayer=L.layerGroup().addTo(map);
 
 const REGION_BOUNDS=[[30,-15],[72,38]];
@@ -434,45 +427,42 @@ function drawVector(c){
 function popupContent(c,index){
  const t=c.track||{};
  const area=Number(c.approx_area_km2);
- const morphology=c.morphology?.label||c.morphology?.class||'Non classificata';
+ const classification=c.mesoscale_classification||{};
+ const morphology=classification.label||c.morphology?.label||'Non classificata';
  const vector=vectorIsUsable(c);
-
  return `
  <div class="popup-title">${safe(c.track_id||c.id||'Cella')}</div>
- <div class="popup-line"><b>${fmt(c.max_dbz)} dBZ</b> · massimo</div>
+ <div class="popup-line"><b>${fmt(c.max_dbz)} dBZ</b> · massimo radar non validato</div>
  <div class="popup-line">Media: ${fmt(c.mean_dbz)} dBZ</div>
  <div class="popup-line">Area eco: ${Number.isFinite(area)?fmt(area)+' km²':'—'}</div>
  <div class="popup-line">Centroide: ${fmt(c.lat,3)}°, ${fmt(c.lon,3)}°</div>
  ${vector?`<div class="popup-line">Moto osservato: ${fmt(t.speed_kmh)} km/h</div>`:''}
- <div class="popup-line">Morfologia: ${safe(morphology)}</div>
- <div class="popup-note">Perimetro: inviluppo geometrico orientato dell’eco radar, non confine meteorologico. Classificazione preliminare.</div>
+ <div class="popup-line">Mesoscala: ${safe(morphology)}</div>
+ <div class="popup-note">Classificazione candidata da DBZH 2D, non confermata. Il 3D rappresenta una ricostruzione morfologica.</div>
  ${c['3d_available']===true&&webgl2Available?`<button class="popup-action" id="open3d-${index}">APRI RICOSTRUZIONE 3D</button>`:''}
  `;
 }
 
 function addCell(c,index){
- const stroke=color(c.max_dbz);
- const points=Array.isArray(c.perimeter)?c.perimeter.filter(validPoint):[];
-
- if(points.length>=3){
-  L.polygon(points,{
-   color:stroke,weight:1.4,opacity:.9,
-   fillColor:stroke,fillOpacity:.07,
-   smoothFactor:1
-  }).addTo(cellLayer);
- }
-
- const marker=L.circleMarker([Number(c.lat),Number(c.lon)],{
-  radius:5,color:'#fff',weight:1.4,
-  fillColor:stroke,fillOpacity:0
- }).addTo(cellLayer);
-
- marker.bindPopup(popupContent(c,index),{maxWidth:280});
- marker.on('popupopen',()=>{
+ const stroke=color(Number(c.max_dbz));
+ const centre=[Number(c.lat),Number(c.lon)];
+ // No rectangular envelope: it is not the real echo boundary.
+ // The visible ring stays hollow; an invisible 20 px touch target
+ // makes selection reliable on mobile devices.
+ const hit=L.circleMarker(centre,{
+  radius:20,stroke:false,fillColor:'#ffffff',fillOpacity:0.001,
+  interactive:true,bubblingMouseEvents:false
+ }).addTo(centroidLayer);
+ L.circleMarker(centre,{
+  radius:9,color:'#ffffff',weight:2.5,
+  fillColor:stroke,fillOpacity:0,
+  interactive:false
+ }).addTo(centroidLayer);
+ hit.bindPopup(popupContent(c,index),{maxWidth:300,autoPan:true});
+ hit.on('popupopen',()=>{
   const button=$('open3d-'+index);
   if(button)button.onclick=()=>open3D(c);
  });
-
  if(showVectors&&vectorIsUsable(c))drawVector(c);
 }
 
@@ -488,10 +478,10 @@ function overlayUrl(path){
 function render(data){
  currentData=data;
  cells=Array.isArray(data.cells)?data.cells:[];
- 
 
  radarLayer.clearLayers();
  cellLayer.clearLayers();
+ centroidLayer.clearLayers();
  vectorLayer.clearLayers();
 
  if(radarImage){
@@ -557,40 +547,6 @@ function render(data){
  $('map-time').textContent=
   'Prodotto: '+safe(data.timestamp||'orario n/d');
 
- $('cell-list').innerHTML=ordered.length
-  ?ordered.map(({c,i})=>`
-   <button class="cell-row" data-cell-index="${i}">
-    <span class="cell-color" style="background:${color(Number(c.max_dbz)||0)}"></span>
-    <span class="cell-main">
-     <span class="cell-name">${safe(c.track_id||c.id||'Cella')}</span>
-     <span class="cell-detail">
-      ${fmt(c.lat,2)}°, ${fmt(c.lon,2)}° ·
-      ${fmt(c.approx_area_km2)} km²
-     </span>
-    </span>
-    <span class="cell-dbz">${fmt(c.max_dbz)} dBZ</span>
-   </button>
-  `).join('')
-  :'<div class="empty-list">Nessuna cella disponibile.</div>';
-
- $('cell-list').querySelectorAll('[data-cell-index]').forEach(button=>{
-  button.onclick=()=>{
-   const index=Number(button.dataset.cellIndex);
-   const cell=cells[index];
-   if(!cell)return;
-
-   map.setView([Number(cell.lat),Number(cell.lon)],7);
-   const marker=cellLayer.getLayers().find(layer=>{
-    const ll=layer.getLatLng?.();
-    return ll&&
-     Math.abs(ll.lat-Number(cell.lat))<.00001&&
-     Math.abs(ll.lng-Number(cell.lon))<.00001;
-   });
-
-   if(marker?.openPopup)marker.openPopup();
-  };
- });
-
  if(!map._irideCentered&&ordered.length){
   const bounds=ordered.map(x=>[+x.c.lat,+x.c.lon]);
   map.fitBounds(bounds,{padding:[25,25],maxZoom:7});
@@ -628,7 +584,7 @@ async function load(){
   }
 
   render(data);
-
+ 
  }catch(error){
   $('status').textContent='OPERA · dati non disponibili';
   console.error(error);
@@ -733,7 +689,6 @@ float densityAt(vec3 p,out vec3 cellColor,out float klass){
  }
  vec4 base=radar(uvMap);
  float k=echoClass(base.rgb);
- 
  float blue=direct.r*.025*exp(-pow((h-.48)/.34,2.))+
   spread.r*.18*exp(-pow((h-2.55)/.66,2.));
  float green=direct.g*.035*exp(-pow((h-.72)/.42,2.))+
@@ -930,7 +885,7 @@ function uploadRadarMatrix(cell){
  if(!Array.isArray(matrix)||matrix.length!==72){
   throw Error('Matrice DBZH 72×72 non disponibile');
  }
-
+ 
  const width=72;
  const height=72;
  const pixels=new Uint8Array(width*height*4);
@@ -978,7 +933,6 @@ function uploadRadarMatrix(cell){
  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,distances);
- 
  gl.uniform1i(uniforms.distanceTexture,1);
 
  gl.activeTexture(gl.TEXTURE0);
@@ -1223,3 +1177,4 @@ canvas.addEventListener('touchend',()=>{
 </script>
 </body>
 </html>
+
