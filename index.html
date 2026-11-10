@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -97,6 +96,7 @@ header{
 .panel-heading small{font-size:10px;color:var(--muted)}
 .map-frame{position:relative;flex:1;min-height:0}
 #map{position:absolute;inset:0;background:#d5dce2}
+.leaflet-image-layer.iride-radar-raster{filter:saturate(1.28) contrast(1.22) brightness(1.06)}
 .map-overlay-tools{
  position:absolute;z-index:600;right:12px;top:12px;
  display:flex;flex-direction:column;gap:6px
@@ -326,8 +326,7 @@ header{
 
 const $=id=>document.getElementById(id);
 const finite=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v));
-const fmt=(v,d=1)=>finite(v)?Number(v).toFixed(d):'—';
-const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({
+const fmt=(v,d=1)=>finite(v)?Number(v).toFixed(d):'—';const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({
  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
 })[c]);
 
@@ -397,7 +396,7 @@ function pointDistanceKm(a,b){
  const q=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
  return 6371*2*Math.asin(Math.min(1,Math.sqrt(q)));
 }
- 
+
 function drawVector(c){
  const v=c.vectors;
  const real=v.real;
@@ -513,7 +512,8 @@ function render(data){
    url+'?t='+Date.now(),
    overlay.bounds,
    {
-    opacity:Math.min(1,Number(overlay.opacity)||.82),
+    opacity:1.0,
+    className:'iride-radar-raster',
     interactive:false,
     crossOrigin:false
    }
@@ -655,9 +655,7 @@ $('cellsToggle').onclick=()=>{
 
 $('fitRegion').onclick=()=>{
  map.fitBounds(REGION_BOUNDS);
-};
-
-load();
+};load();
 setInterval(load,20*60*1000);
 
 /* =====================================================
@@ -690,10 +688,8 @@ void main(){
 
 const fragmentShader=`#version 300 es
 precision highp float;
-
 in vec2 uv;
 out vec4 outputColor;
-
 uniform vec2 resolution;
 uniform vec3 cameraPosition;
 uniform vec3 cameraRight;
@@ -702,13 +698,8 @@ uniform vec3 cameraForward;
 uniform float fov;
 uniform sampler2D radarTexture;
 uniform int renderMode;
-
 const vec3 BG=vec3(.008,.018,.031);
-
-vec4 radar(vec2 p){
- return texture(radarTexture,clamp(p,vec2(0.),vec2(1.)));
-}
-
+vec4 radar(vec2 p){return texture(radarTexture,clamp(p,vec2(0.),vec2(1.)));}
 float echoClass(vec3 c){
  if(c.b>c.r*1.22 && c.b>c.g*1.12)return 1.;
  if(c.g>c.r*1.12 && c.g>c.b*1.05)return 2.;
@@ -717,7 +708,6 @@ float echoClass(vec3 c){
  if(c.r>.60 && c.b>.35 && c.g<.40)return 5.;
  return 0.;
 }
-
 float echoTop(float k){
  if(k==1.)return 3.0;
  if(k==2.)return 2.65;
@@ -726,188 +716,131 @@ float echoTop(float k){
  if(k==5.)return 1.25;
  return 0.;
 }
-
-/* Geometria comune ai tre renderer.
-   Blu e verde si allargano salendo e restano trasparenti.
-   Giallo -10%, arancio -20%, magenta -30%. */
+/* Geometria V11: blu/verde si allargano salendo;
+   giallo -10%, arancio -20%, magenta -30%. */
 float footprintScale(float k,float h,float top){
- float f=h/max(top,.01);
-
+ float f=clamp(h/max(top,.01),0.,1.);
  if(k==1.)return 1.0+.14*f;
  if(k==2.)return 1.0+.11*f;
  if(k==3.)return 1.0-.10*f;
  if(k==4.)return 1.0-.20*f;
  if(k==5.)return 1.0-.30*f;
-
  return 1.;
 }
-
+/* Campo volumetrico comune. La quota è morfologica stimata. */
 float densityAt(vec3 p,out vec3 cellColor,out float klass){
- float h=p.y;
-
- if(h<.04||h>3.15)return 0.;
-
- vec2 local=vec2(
-  (p.x+2.25)/4.5,
-  (p.z+1.40)/2.8
- );
-
- vec2 center=vec2(.5);
-
- /* Prima si applica la trasformazione geometrica,
-    poi si campiona la matrice DBZH. */
+ cellColor=vec3(0.);klass=0.;
+ if(p.y<.04||p.y>3.15)return 0.;
+ vec2 local=vec2((p.x+2.25)/4.5,(p.z+1.40)/2.8);
  vec4 base=radar(local);
  float baseClass=echoClass(base.rgb);
-
  if(base.a<.1||baseClass<1.)return 0.;
-
  float top=echoTop(baseClass);
- if(top<=0.||h>top)return 0.;
-
- float scale=footprintScale(baseClass,h,top);
- vec2 expanded=center+(local-center)/scale;
+ if(top<=0.||p.y>top)return 0.;
+ float scale=footprintScale(baseClass,p.y,top);
+ vec2 expanded=vec2(.5)+(local-vec2(.5))/scale;
+ if(any(lessThan(expanded,vec2(0.)))||any(greaterThan(expanded,vec2(1.))))return 0.;
  vec4 sampleColor=radar(expanded);
-
  klass=echoClass(sampleColor.rgb);
-
  if(sampleColor.a<.1||klass<1.)return 0.;
-
  cellColor=sampleColor.rgb;
-
- float vertical=h/top;
- float lower=smoothstep(.025,.24,h);
- float upper=1.-smoothstep(.82,1.0,vertical);
+ float vertical=p.y/top;
+ float lower=smoothstep(.025,.24,p.y);
+ float upper=1.-smoothstep(.82,1.,vertical);
  float density=lower*upper;
-
- if(klass==1.)density*=.17;
- if(klass==2.)density*=.23;
- if(klass==3.)density*=.55;
- if(klass==4.)density*=.68;
- if(klass==5.)density*=.78;
-
- /* Modalità 0: voxel con livelli definiti. */
+ if(klass==1.)density*=.13;
+ if(klass==2.)density*=.19;
+ if(klass==3.)density*=.54;
+ if(klass==4.)density*=.67;
+ if(klass==5.)density*=.77;
  if(renderMode==0){
-  float steps=12.;
-  float stepped=floor(vertical*steps)/steps;
-  density*=smoothstep(0.,.12,stepped);
-  density*=.90;
+  float layer=floor(vertical*12.)/12.;
+  density*=smoothstep(0.,.10,layer)*.92;
+ }else if(renderMode==2){
+  float layer=abs(fract(vertical*10.)-.5);
+  float shell=1.-smoothstep(.035,.13,layer);
+  density*=.20+shell*.58;
+  density*=.82+.18*sin(p.y*58.);
  }
-
- /* Modalità 1: superficie continua con bordo. */
- if(renderMode==1){
-  float shell=smoothstep(.16,.36,density);
-  float edge=1.-smoothstep(.025,.13,abs(density-.36));
-  density=shell*.92+edge*.16;
- }
-
- /* Modalità 2: volume olografico a strati. */
- if(renderMode==2){
-  float scan=.62+.38*sin(h*48.);
-  float shell=1.-smoothstep(.025,.10,abs(fract(vertical*8.)-.5));
-  density*=scan;
-  density+=shell*.12;
- }
-
- return density;
+ return clamp(density,0.,.95);
 }
-
-bool intersectBox(
- vec3 ro,vec3 rd,out float nearT,out float farT
-){
- vec3 low=vec3(-2.25,.04,-1.40);
- vec3 high=vec3(2.25,3.15,1.40);
-
- vec3 inv=1./rd;
- vec3 a=(low-ro)*inv;
- vec3 b=(high-ro)*inv;
-
- vec3 mn=min(a,b);
- vec3 mx=max(a,b);
-
+float fieldAt(vec3 p){vec3 c;float k;return densityAt(p,c,k);}
+bool intersectBox(vec3 ro,vec3 rd,out float nearT,out float farT){
+ vec3 low=vec3(-2.25,.04,-1.40),high=vec3(2.25,3.15,1.40);
+ vec3 inv=1./rd,a=(low-ro)*inv,b=(high-ro)*inv;
+ vec3 mn=min(a,b),mx=max(a,b);
  nearT=max(max(mn.x,mn.y),mn.z);
  farT=min(min(mx.x,mx.y),mx.z);
-
  return farT>max(nearT,0.);
 }
-
+vec3 surfaceNormal(vec3 p){
+ float e=.025;
+ vec3 n=vec3(fieldAt(p+vec3(e,0.,0.))-fieldAt(p-vec3(e,0.,0.)),
+  fieldAt(p+vec3(0.,e,0.))-fieldAt(p-vec3(0.,e,0.)),
+  fieldAt(p+vec3(0.,0.,e))-fieldAt(p-vec3(0.,0.,e)));
+ return normalize(n+vec3(.00001));
+}
 void main(){
- vec2 screen=uv*2.-1.;
- screen.x*=resolution.x/resolution.y;
-
- vec3 direction=normalize(
-  cameraForward+
-  cameraRight*screen.x*fov+
-  cameraUp*screen.y*fov
- );
-
- float nearT,farT;
- vec3 result=BG;
-
- float floorT=-1.;
-
- if(direction.y<-.0001){
-  floorT=(.04-cameraPosition.y)/direction.y;
- }
-
- /* Piano radar: riflette i DBZH osservati. */
+ vec2 screen=uv*2.-1.;screen.x*=resolution.x/resolution.y;
+ vec3 direction=normalize(cameraForward+cameraRight*screen.x*fov+cameraUp*screen.y*fov);
+ float nearT,farT;vec3 result=BG;float floorT=-1.;
+ if(direction.y<-.0001)floorT=(.04-cameraPosition.y)/direction.y;
  if(floorT>0.){
   vec3 fp=cameraPosition+direction*floorT;
-
   if(abs(fp.x)<=2.25&&abs(fp.z)<=1.40){
-   vec2 floorUV=vec2(
-    (fp.x+2.25)/4.5,
-    (fp.z+1.40)/2.8
-   );
-
-   vec4 base=radar(floorUV);
-   result=mix(BG,base.rgb,base.a);
+   vec2 floorUV=vec2((fp.x+2.25)/4.5,(fp.z+1.40)/2.8);
+   vec4 base=radar(floorUV);result=mix(BG,base.rgb,base.a);
   }
  }
-
- /* Ray marching del volume tridimensionale. */
  if(intersectBox(cameraPosition,direction,nearT,farT)){
-  float startT=max(nearT,0.);
-  float endT=farT;
-
+  float startT=max(nearT,0.),endT=farT;
   if(floorT>startT)endT=min(endT,floorT);
-
-  float stepSize=(endT-startT)/190.;
-  float transparency=1.;
-  vec3 volume=vec3(0.);
-
-  for(int i=0;i<190;i++){
-   float t=startT+(float(i)+.5)*stepSize;
-   vec3 p=cameraPosition+direction*t;
-   vec3 cellColor;
-   float klass;
-   float density=densityAt(p,cellColor,klass);
-
-   if(density>.012){
-    float alpha=1.-exp(-density*stepSize*2.8);
-
-    if(renderMode==1)alpha=min(.9,alpha*1.4);
-    if(renderMode==2)alpha=min(.55,alpha*.9);
-
-    volume+=transparency*alpha*cellColor;
-    transparency*=1.-alpha;
+  float stepSize=max((endT-startT)/220.,.001);
+  float transparency=1.;vec3 volume=vec3(0.);
+  if(renderMode==1){
+   float previous=0.;
+   for(int i=0;i<220;i++){
+    float t=startT+(float(i)+.5)*stepSize;
+    vec3 p=cameraPosition+direction*t;
+    float d=fieldAt(p);
+    if(d>=.07&&previous<.07){
+     vec3 cellColor;float klass;densityAt(p,cellColor,klass);
+     vec3 normal=surfaceNormal(p),light=normalize(vec3(-.45,.85,.55));
+     float diffuse=max(dot(normal,light),0.);
+     float rim=pow(1.-abs(dot(normal,-direction)),2.);
+     result=cellColor*(.42+.52*diffuse+.22*rim);
+     break;
+    }
+    previous=d;
    }
-
-   if(transparency<.018)break;
+  }else{
+   for(int i=0;i<220;i++){
+    float t=startT+(float(i)+.5)*stepSize;
+    vec3 p=cameraPosition+direction*t,cellColor;float klass;
+    float density=densityAt(p,cellColor,klass);
+    if(density>.012){
+     float alpha=1.-exp(-density*stepSize*(renderMode==0?5.2:2.2));
+     alpha=renderMode==0?min(.88,alpha):min(.42,alpha);
+     volume+=transparency*alpha*cellColor;
+     transparency*=1.-alpha;
+    }
+    if(transparency<.018)break;
+   }
+   result=volume+transparency*result;
   }
-
-  result=volume+transparency*result;
  }
-
  if(renderMode==2){
-  float gridX=abs(fract((uv.x*resolution.x)/48.)-.5);
-  float gridY=abs(fract((uv.y*resolution.y)/48.)-.5);
-  float gridLine=1.-smoothstep(.47,.50,min(gridX,gridY));
-  result+=vec3(.0,.12,.17)*gridLine*.12;
+  float gx=abs(fract((uv.x*resolution.x)/48.)-.5);
+  float gy=abs(fract((uv.y*resolution.y)/48.)-.5);
+  float gridLine=1.-smoothstep(.47,.50,min(gx,gy));
+  result+=vec3(.0,.10,.15)*gridLine*.10;
+  float scanLine=1.-smoothstep(.0,.035,abs(fract(uv.y*resolution.y/5.)-.5));
+  result+=vec3(.02,.10,.13)*scanLine*.045;
  }
-
  outputColor=vec4(result,1.);
 }`;
- 
+
+
 function compileShader(type,source){
  const shader=gl.createShader(type);
  gl.shaderSource(shader,source);
@@ -1050,8 +983,7 @@ function uploadRadarMatrix(cell){
    ===================================================== */
 
 let yaw=-.35;
-let pitch=.34;
-let distance=7.1;
+let pitch=.34;let distance=7.1;
 let activeCell=null;
 let dragging=false;
 let lastX=0;
@@ -1219,7 +1151,7 @@ function stopDragging(){
 canvas.addEventListener('pointerup',stopDragging);
 canvas.addEventListener('pointercancel',stopDragging);
 canvas.addEventListener('lostpointercapture',stopDragging);
- 
+
 canvas.addEventListener('wheel',event=>{
  event.preventDefault();
 
