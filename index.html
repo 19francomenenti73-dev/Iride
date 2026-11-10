@@ -2,12 +2,12 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>I.R.I.D.E. — Radar Nowcasting</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#07111f;color:#e8f1fb;font:14px system-ui}
+html,body{margin:0;min-height:100%;background:#07111f;color:#e8f1fb;font:14px system-ui}
 header{padding:12px;background:#0b1726;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 h1{font-size:18px;margin:0}
 small,.muted{color:#9fb2c8}
@@ -29,15 +29,16 @@ button:active{background:#294665}
 .swatch{width:10px;height:10px;border-radius:3px;display:inline-block}
 #viewer{display:none;position:fixed;inset:0;z-index:9999;background:#030912;flex-direction:column}
 #viewer.open{display:flex}
-.vhead{padding:9px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
-#scene{width:100%;height:100%;flex:1;touch-action:none}
+.vhead{padding:9px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;background:#030912}
+#scene{width:100%;height:100%;flex:1;min-height:0;touch-action:none}
+.vfoot{padding:9px 12px;background:#030912}
 .leaflet-popup-content{color:#172536}
 .leaflet-tooltip{background:#101d2d;color:#fff;border:1px solid #38516b}
 .cell-label{font-weight:700}
 @media(max-width:800px){
  .layout{grid-template-columns:1fr;padding:6px}
- #map{height:52vh;min-height:320px}
- #cells{max-height:220px}
+ #map{height:48vh;min-height:300px}
+ #cells{max-height:190px}
 }
 </style>
 </head>
@@ -61,31 +62,24 @@ button:active{background:#294665}
 <h2>Stato</h2>
 <div id="status" class="status">Caricamento dati OPERA…</div>
 </section>
-
 <section class="panel">
 <h2>Riflettività radar</h2>
-<div class="fine">
 <div class="legend">
-<span><i class="swatch" style="background:#00e7d0"></i>15–24</span>
-<span><i class="swatch" style="background:#00e58b"></i>25–29</span>
-<span><i class="swatch" style="background:#ffcf00"></i>30–34</span>
-<span><i class="swatch" style="background:#ff7900"></i>35–39</span>
-<span><i class="swatch" style="background:#ff3028"></i>40–44</span>
-<span><i class="swatch" style="background:#ef39c6"></i>≥45 dBZ</span>
-</div>
+<span><i class="swatch" style="background:#397ee8"></i>15–24</span>
+<span><i class="swatch" style="background:#24bd70"></i>25–29</span>
+<span><i class="swatch" style="background:#f4d43e"></i>30–34</span>
+<span><i class="swatch" style="background:#f07832"></i>35–44</span>
+<span><i class="swatch" style="background:#ed42c8"></i>≥45 dBZ</span>
 </div>
 </section>
-
 <section class="panel">
 <h2>Centroidi e celle</h2>
 <div id="cells">Nessun dato.</div>
 </section>
-
 <section class="panel">
 <h2>Informazioni radar</h2>
 <div id="details" class="fine">Seleziona una cella sulla mappa.</div>
 </section>
-
 <section class="panel">
 <h2>Limiti osservativi</h2>
 <p class="fine">
@@ -113,8 +107,8 @@ temporali sufficienti.
 </div>
 </div>
 <canvas id="scene"></canvas>
-<div class="fine" style="padding:8px">
-Trascina per ruotare · rotella per zoom ·
+<div class="vfoot fine">
+Trascina per ruotare · rotella o pizzico per zoom ·
 quote verticali stimate, non misurate.
 </div>
 </div>
@@ -129,11 +123,8 @@ Nowcasting sperimentale, non servizio di allerta.
 <script>
 (()=>{
 'use strict';
-
 const $=id=>document.getElementById(id);
-
 const map=L.map('map',{preferCanvas:true}).setView([43,12],5);
-
 L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{
  maxZoom:17,
  attribution:'© OpenTopoMap · © OpenStreetMap contributors'
@@ -142,134 +133,70 @@ L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{
 const marks=L.layerGroup().addTo(map);
 const contours=L.layerGroup().addTo(map);
 const lines=L.layerGroup().addTo(map);
-
 let cells=[];
 let active=null;
-let dataTimestamp=null;
 
-const col=v=>
- v>=45?'#ef39c6':
- v>=40?'#ff3028':
- v>=35?'#ff7900':
- v>=30?'#ffcf00':
- v>=25?'#00e58b':
- v>=15?'#00e7d0':
- '#328cff';
+const col=v=>v>=45?'#ef39c6':v>=40?'#ff3028':
+ v>=35?'#ff7900':v>=30?'#ffcf00':
+ v>=25?'#00e58b':v>=15?'#397ee8':'#328cff';
 
-const fmt=v=>
- Number.isFinite(+v)?(+v).toFixed(1):'n/d';
+const fmt=v=>Number.isFinite(+v)?(+v).toFixed(1):'n/d';
 
 function validPoint(p){
  return Array.isArray(p)&&p.length>=2&&
- Number.isFinite(Number(p[0]))&&
- Number.isFinite(Number(p[1]));
+ Number.isFinite(Number(p[0]))&&Number.isFinite(Number(p[1]));
 }
-
 function drawLine(points,color,dash){
- if(!Array.isArray(points)||points.length<2)return;
- if(!points.every(validPoint))return;
-
- L.polyline(points,{
-  color,
-  weight:3,
-  opacity:.9,
-  dashArray:dash||null
- }).addTo(lines);
+ if(!Array.isArray(points)||points.length<2||!points.every(validPoint))return;
+ L.polyline(points,{color,weight:3,opacity:.9,dashArray:dash||null}).addTo(lines);
 }
-
-function drawPerimeter(cell){
- const p=cell.perimeter;
- if(!Array.isArray(p)||p.length<3)return;
- if(!p.every(validPoint))return;
-
- L.polygon(p,{
-  color:col(cell.max_dbz),
-  weight:2,
-  opacity:.95,
-  fillColor:col(cell.max_dbz),
-  fillOpacity:.10,
-  smoothFactor:1
- }).addTo(contours);
+function drawPerimeter(c){
+ const p=c.perimeter;
+ if(!Array.isArray(p)||p.length<3||!p.every(validPoint))return;
+ L.polygon(p,{color:col(c.max_dbz),weight:2,opacity:.95,
+ fillColor:col(c.max_dbz),fillOpacity:.10}).addTo(contours);
 }
-
 function cellDetails(c){
- const track=c.track||{};
- const vector=c.vectors||{};
-
- const real=vector.real;
- const forecast=vector.predictive_60m;
-
+ const t=c.track||{},v=c.vectors||{};
  const rows=[
-  '<b>'+c.id+'</b>',
-  'Riflettività massima: '+fmt(c.max_dbz)+' dBZ',
-  'Riflettività media: '+fmt(c.mean_dbz)+' dBZ',
-  'Area: '+fmt(c.approx_area_km2)+' km²',
-  'Pixel: '+(c.area_pixels??'n/d'),
-  'Centroide: '+fmt(c.lat)+'°, '+fmt(c.lon)+'°',
-  'Track: '+(track.track_id||c.track_id||'non assegnato'),
-  'Velocità: '+fmt(track.speed_kmh)+' km/h',
-  'VIL: non disponibile',
-  'Echo-top: non disponibile',
-  'Quota: stima morfologica 3D',
-  '3D: '+(c['3d_available']?'disponibile':'non abilitato')
+ '<b>'+c.id+'</b>',
+ 'Riflettività massima: '+fmt(c.max_dbz)+' dBZ',
+ 'Riflettività media: '+fmt(c.mean_dbz)+' dBZ',
+ 'Area: '+fmt(c.approx_area_km2)+' km²',
+ 'Pixel: '+(c.area_pixels??'n/d'),
+ 'Centroide: '+fmt(c.lat)+'°, '+fmt(c.lon)+'°',
+ 'Track: '+(t.track_id||c.track_id||'non assegnato'),
+ 'Velocità: '+fmt(t.speed_kmh)+' km/h',
+ 'VIL: non disponibile',
+ 'Echo-top: non disponibile',
+ 'Quota: stima morfologica 3D',
+ '3D: '+(c['3d_available']?'disponibile':'non abilitato'),
+ 'Vettore osservato: '+(Array.isArray(v.real)?'disponibile':'dati insufficienti'),
+ 'Previsione +60 min: '+(Array.isArray(v.predictive_60m)?'disponibile':'non disponibile')
  ];
-
- if(Array.isArray(real)&&real.length===2){
-  rows.push('Vettore osservato: disponibile');
- }else{
-  rows.push('Vettore osservato: dati insufficienti');
- }
-
- if(Array.isArray(forecast)&&forecast.length===2){
-  rows.push('Previsione sperimentale +60 min: disponibile');
- }else{
-  rows.push('Previsione: non disponibile');
- }
-
  $('details').innerHTML=rows.join('<br>');
 }
-
 function selectCell(c){
  active=c;
  cellDetails(c);
-
  document.querySelectorAll('.cellBtn').forEach(b=>{
   b.classList.toggle('active',b.dataset.cell===c.id);
  });
-
- if(c['3d_available']===true){
-  open(c.id);
- }
+ if(c['3d_available']===true)open(c.id);
 }
-
 function render(d){
  cells=Array.isArray(d.cells)?d.cells:[];
- dataTimestamp=d.timestamp||null;
-
- marks.clearLayers();
- contours.clearLayers();
- lines.clearLayers();
+ marks.clearLayers();contours.clearLayers();lines.clearLayers();
  $('cells').replaceChildren();
 
  for(const c of cells){
-  if(!Number.isFinite(Number(c.lat))||
-     !Number.isFinite(Number(c.lon)))continue;
-
+  if(!Number.isFinite(Number(c.lat))||!Number.isFinite(Number(c.lon)))continue;
   drawPerimeter(c);
-
   const marker=L.circleMarker([c.lat,c.lon],{
    radius:Math.max(5,Math.min(13,4+c.max_dbz/9)),
-   color:'#ffffff',
-   weight:1,
-   fillColor:col(c.max_dbz),
-   fillOpacity:.9
+   color:'#fff',weight:1,fillColor:col(c.max_dbz),fillOpacity:.9
   }).addTo(marks);
-
-  marker.bindTooltip(
-   '<span class="cell-label">'+c.id+'</span>'+
-   ' · '+fmt(c.max_dbz)+' dBZ'
-  );
-
+  marker.bindTooltip('<b>'+c.id+'</b> · '+fmt(c.max_dbz)+' dBZ');
   marker.on('click',()=>selectCell(c));
 
   const v=c.vectors||{};
@@ -278,830 +205,443 @@ function render(d){
   drawLine(v.predictive_60m,'#ff8b4b','3 7');
 
   const b=document.createElement('button');
-  b.className='cellBtn';
-  b.dataset.cell=c.id;
-  b.textContent=
-   c.id+' · '+fmt(c.max_dbz)+' dBZ · '+
-   (c.area_pixels??'?')+' px'+
-   (c['3d_available']?' · 3D':'');
+  b.className='cellBtn';b.dataset.cell=c.id;
+  b.textContent=c.id+' · '+fmt(c.max_dbz)+' dBZ · '+
+   (c.area_pixels??'?')+' px'+(c['3d_available']?' · 3D':'');
   b.onclick=()=>{
    map.setView([c.lat,c.lon],Math.max(7,map.getZoom()));
    selectCell(c);
   };
   $('cells').appendChild(b);
  }
-
  $('status').textContent=
   'Stato: '+(d.status||'n/d')+
   '\nProdotto UTC: '+(d.timestamp||'n/d')+
   '\nElaborato UTC: '+(d.generated_at||'n/d')+
   '\nCelle rilevate: '+cells.length+
-  '\nCelle 3D abilitate: '+
-  cells.filter(c=>c['3d_available']===true).length+
+  '\nCelle 3D abilitate: '+cells.filter(c=>c['3d_available']===true).length+
   '\nSoglia: '+fmt(d.processing?.threshold_dbz)+' dBZ'+
   '\nFonte: '+(d.source?.provider||'OPERA')+
   '\nProdotto: '+(d.source?.product||'DBZH');
 
  if(cells.length){
-  const bounds=cells
-   .filter(c=>Number.isFinite(+c.lat)&&Number.isFinite(+c.lon))
+  const bounds=cells.filter(c=>Number.isFinite(+c.lat)&&Number.isFinite(+c.lon))
    .map(c=>[c.lat,c.lon]);
   if(bounds.length)map.fitBounds(bounds,{padding:[25,25],maxZoom:6});
  }
 }
-
 async function load(){
  try{
   $('status').textContent='Caricamento dati OPERA…';
-
-  const r=await fetch('docs/data/iride.json?t='+Date.now(),{
-   cache:'no-store'
-  });
-
+  const r=await fetch('docs/data/iride.json?t='+Date.now(),{cache:'no-store'});
   if(!r.ok)throw Error('HTTP '+r.status);
-
   const d=await r.json();
-
-  if(d.status!=='ok'||!Array.isArray(d.cells)){
-   throw Error('Struttura JSON non valida');
-  }
-
+  if(d.status!=='ok'||!Array.isArray(d.cells))throw Error('Struttura JSON non valida');
   render(d);
+ }catch(e){$('status').textContent='Dati non disponibili: '+e.message;}
+}
+$('reload').onclick=load;
+$('fit').onclick=()=>{
+ const valid=cells.filter(c=>Number.isFinite(+c.lat)&&Number.isFinite(+c.lon));
+ if(valid.length)map.fitBounds(valid.map(c=>[c.lat,c.lon]),{padding:[25,25],maxZoom:7});
+};/* =========================================================
+   RENDERER VOLUMETRICO V11 — WEBGL2
+   Input: matrice DBZH reale 72x72.
+   Blu/verde invariati; giallo -10%, rosso -20%, magenta -30%.
+   ========================================================= */
 
- }catch(e){
-  $('status').textContent='Dati non disponibili: '+e.message;
- }
+const viewer=$('viewer');
+const canvas=$('scene');
+const gl=canvas.getContext('webgl2',{
+ alpha:false,antialias:false,powerPreference:'high-performance'
+});
+
+if(!gl){
+ $('status').textContent='WebGL2 non disponibile.';
+ return;
 }
 
-$('reload').onclick=load;
+const vertexShader=`#version 300 es
+in vec2 p;
+out vec2 uv;
+void main(){
+ uv=p*.5+.5;
+ gl_Position=vec4(p,0.,1.);
+}`;
 
-$('fit').onclick=()=>{
- const valid=cells.filter(c=>
-  Number.isFinite(+c.lat)&&Number.isFinite(+c.lon)
- );
- if(valid.length){
-  map.fitBounds(valid.map(c=>[c.lat,c.lon]),{
-   padding:[25,25],
-   maxZoom:7
-  });
+const fragmentShader=`#version 300 es
+precision highp float;
+in vec2 uv;
+out vec4 outColor;
+uniform vec2 resolution;
+uniform vec3 camPos,camRight,camUp,camForward;
+uniform float tanHalfFov,verticalScale;
+uniform sampler2D mapTex;
+uniform int renderMode;
+
+float hash(vec3 p){
+ p=fract(p*.3183099+.1);p*=17.;
+ return fract(p.x*p.y*p.z*(p.x+p.y+p.z));
+}
+float noise(vec3 x){
+ vec3 i=floor(x),f=fract(x);
+ f=f*f*(3.-2.*f);
+ return mix(
+  mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),
+      mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
+  mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),
+      mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),
+  f.z);
+}
+
+/* Classi cromatiche ricavate dalla texture radar. */
+vec4 radarClass(vec2 p){
+ vec3 c=texture(mapTex,clamp(p,vec2(.002),vec2(.998))).rgb;
+ float blue=smoothstep(.12,.30,c.b-c.r)*
+            smoothstep(.035,.16,c.b-c.g)*smoothstep(.28,.48,c.b);
+ float green=smoothstep(.10,.24,c.g-c.r)*
+             smoothstep(.015,.10,c.g-c.b)*smoothstep(.22,.40,c.g);
+ float yellow=smoothstep(.48,.68,c.r)*smoothstep(.40,.62,c.g)*
+              (1.-smoothstep(.28,.48,c.b));
+ float red=smoothstep(.48,.68,c.r)*smoothstep(.18,.42,c.r-c.g)*
+           (1.-smoothstep(.28,.48,c.b));
+ float orange=red*smoothstep(.20,.42,c.g);
+ float magenta=smoothstep(.42,.65,c.r)*smoothstep(.12,.30,c.b-c.g);
+ return vec4(blue,green,yellow,max(max(red,orange),magenta));
+}
+vec3 warmClasses(vec2 p){
+ vec3 c=texture(mapTex,clamp(p,vec2(.002),vec2(.998))).rgb;
+ float yellow=smoothstep(.48,.68,c.r)*smoothstep(.40,.62,c.g)*
+              (1.-smoothstep(.28,.48,c.b));
+ float red=smoothstep(.48,.68,c.r)*smoothstep(.18,.42,c.r-c.g)*
+           (1.-smoothstep(.28,.48,c.b));
+ float orange=red*smoothstep(.20,.42,c.g);
+ float magenta=smoothstep(.42,.65,c.r)*smoothstep(.12,.30,c.b-c.g);
+ return vec3(yellow,max(red,orange),magenta);
+}
+
+float field(vec3 p,out float dbz){
+ vec2 m=vec2((p.x+2.25)/4.50,(p.z+1.40)/2.80);
+ float h=clamp(p.y,0.,3.8);
+ vec4 d=radarClass(m);
+
+ /* Espansione in quota delle classi blu e verde. */
+ float sb=.010+.105*smoothstep(.25,3.,h);
+ float sg=.006+.060*smoothstep(.20,2.5,h);
+ float blue=d.r;
+ blue=max(blue,radarClass(m+vec2(sb,0.)).r);
+ blue=max(blue,radarClass(m-vec2(sb,0.)).r);
+ blue=max(blue,radarClass(m+vec2(0.,sb)).r);
+ blue=max(blue,radarClass(m-vec2(0.,sb)).r);
+ float green=d.g;
+ green=max(green,radarClass(m+vec2(sg,0.)).g);
+ green=max(green,radarClass(m-vec2(sg,0.)).g);
+ green=max(green,radarClass(m+vec2(0.,sg)).g);
+ green=max(green,radarClass(m-vec2(0.,sg)).g);
+
+ /* Compattamento V11 delle sole classi calde. */
+ vec2 e=vec2(.0026);
+ vec3 w0=warmClasses(m);
+ vec3 w1=warmClasses(m+vec2(e.x,0.));
+ vec3 w2=warmClasses(m-vec2(e.x,0.));
+ vec3 w3=warmClasses(m+vec2(0.,e.y));
+ vec3 w4=warmClasses(m-vec2(0.,e.y));
+ vec3 w5=warmClasses(m+e);
+ vec3 w6=warmClasses(m-e);
+ vec3 wm=min(min(min(w1,w2),min(w3,w4)),min(w5,w6));
+ float yellow=mix(w0.x,wm.x,.10);
+ float red=mix(w0.y,wm.y,.20);
+ float magenta=mix(w0.z,wm.z,.30);
+ float hot=max(red,magenta);
+
+ /* Profilo verticale stimato: nessuna torre per pixel. */
+ float blueBase=blue*exp(-pow((h-.48)/.34,2.));
+ float greenBase=green*exp(-pow((h-.72)/.42,2.));
+ float blueAnvil=blue*exp(-pow((h-2.55)/.66,2.));
+ float greenShoulder=green*exp(-pow((h-1.95)/.62,2.));
+ float yellowCore=yellow*exp(-pow((h-1.10)/.48,2.));
+ float redCore=hot*exp(-pow((h-1.34)/.43,2.));
+
+ float density=max(max(blueBase*.42,greenBase*.48),
+                   max(blueAnvil*.74,greenShoulder*.66));
+ density=max(density,max(yellowCore*.92,redCore));
+ density*=.92+.08*noise(vec3(p.xz*7.,h*2.2));
+
+ if(renderMode==2)density*=1.15;
+ dbz=20.+10.*blue+10.*green+15.*yellow+25.*hot;
+ return max(density,0.);
+}
+
+vec3 radarColor(float d){
+ if(d<30.)return mix(vec3(.10,.28,.78),vec3(.20,.53,1.),smoothstep(20.,30.,d));
+ if(d<40.)return mix(vec3(.10,.53,.30),vec3(.10,.88,.42),smoothstep(30.,40.,d));
+ if(d<45.)return mix(vec3(.85,.72,.12),vec3(1.,.91,.20),smoothstep(40.,45.,d));
+ if(d<55.)return mix(vec3(.90,.29,.08),vec3(1.,.48,.12),smoothstep(45.,55.,d));
+ return vec3(.94,.18,.68);
+}
+
+bool hitBox(vec3 ro,vec3 rd,out float t0,out float t1){
+ vec3 lo=vec3(-2.25,.04,-1.40);
+ vec3 hi=vec3(2.25,3.75,1.40);
+ vec3 inv=1./rd;
+ vec3 a=(lo-ro)*inv,b=(hi-ro)*inv;
+ vec3 mn=min(a,b),mx=max(a,b);
+ t0=max(max(mn.x,mn.y),mn.z);
+ t1=min(min(mx.x,mx.y),mx.z);
+ return t1>max(t0,0.);
+}
+
+void main(){
+ vec2 q=uv*2.-1.;
+ q.x*=resolution.x/resolution.y;
+ vec3 rd=normalize(camForward+camRight*q.x*tanHalfFov+
+                   camUp*q.y*tanHalfFov);
+ vec3 bg=vec3(.018,.027,.045);
+ float t0,t1;
+ if(!hitBox(camPos,rd,t0,t1)){
+  outColor=vec4(bg,1.);return;
  }
-};const viewer=$('viewer');
-const canvas=$('scene');
-const ctx=canvas.getContext('2d');
+ float stepLen=(t1-t0)/112.;
+ float trans=1.;
+ vec3 accum=vec3(0.);
+ for(int i=0;i<112;i++){
+  float t=t0+(float(i)+.5)*stepLen;
+  vec3 p=camPos+rd*t;
+  float dbz;
+  float den=field(p,dbz);
+  if(renderMode==1)den=smoothstep(.12,.28,den);
+  else den=smoothstep(.085,.31,den);
+  float alpha=1.-exp(-den*stepLen*1.55);
+  accum+=trans*alpha*radarColor(dbz);
+  trans*=1.-alpha;
+  if(trans<.015)break;
+ }
+ vec3 color=accum+trans*bg;
+ vec2 v=uv*2.-1.;
+ color*=1.-.20*dot(v*.55,v*.55);
+ outColor=vec4(pow(max(color,0.),vec3(.90)),1.);
+}`;
 
-let yaw=-.55;
-let pitch=.58;
-let zoom=1.30;
-let drag=null;
+function compile(type,source){
+ const s=gl.createShader(type);
+ gl.shaderSource(s,source);gl.compileShader(s);
+ if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))
+  throw Error(gl.getShaderInfoLog(s));
+ return s;
+}
+const program=gl.createProgram();
+gl.attachShader(program,compile(gl.VERTEX_SHADER,vertexShader));
+gl.attachShader(program,compile(gl.FRAGMENT_SHADER,fragmentShader));
+gl.linkProgram(program);
+if(!gl.getProgramParameter(program,gl.LINK_STATUS))
+ throw Error(gl.getProgramInfoLog(program));
+gl.useProgram(program);
 
+const quad=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,quad);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+const pos=gl.getAttribLocation(program,'p');
+gl.enableVertexAttribArray(pos);
+gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
+
+const U={};
+['resolution','camPos','camRight','camUp','camForward',
+ 'tanHalfFov','verticalScale','mapTex','renderMode'].forEach(n=>{
+ U[n]=gl.getUniformLocation(program,n);
+});
+
+const texture=gl.createTexture();
+gl.activeTexture(gl.TEXTURE0);
+gl.bindTexture(gl.TEXTURE_2D,texture);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+gl.uniform1i(U.mapTex,0);/* =========================================================
+   MATRICE DBZH -> TEXTURE RADAR
+   ========================================================= */
+
+function radarRGB(v){
+ if(v>=45)return [237,66,200,255];
+ if(v>=40)return [240,48,40,255];
+ if(v>=35)return [240,120,50,255];
+ if(v>=30)return [244,212,62,255];
+ if(v>=25)return [36,189,112,255];
+ if(v>=15)return [57,126,232,255];
+ return [0,0,0,0];
+}
+
+function uploadMatrix(cell){
+ const matrix=cell.grid_matrix;
+ if(!Array.isArray(matrix)||!matrix.length)
+  throw Error('Matrice DBZH non disponibile.');
+
+ const height=matrix.length;
+ const width=Math.max(...matrix.map(r=>Array.isArray(r)?r.length:0));
+ if(!width)throw Error('Matrice DBZH vuota.');
+
+ const pixels=new Uint8Array(width*height*4);
+ for(let y=0;y<height;y++){
+  for(let x=0;x<width;x++){
+   const raw=Number(Array.isArray(matrix[y])?matrix[y][x]:0);
+   const rgba=radarRGB(Number.isFinite(raw)?raw:0);
+   const i=((height-1-y)*width+x)*4;
+   pixels[i]=rgba[0];pixels[i+1]=rgba[1];
+   pixels[i+2]=rgba[2];pixels[i+3]=rgba[3];
+  }
+ }
+ gl.activeTexture(gl.TEXTURE0);
+ gl.bindTexture(gl.TEXTURE_2D,texture);
+ gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
+ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,width,height,0,
+               gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+}
+
+/* =========================================================
+   CAMERA E INTERAZIONE
+   ========================================================= */
+
+let yaw=-.22;
+let pitch=.22;
+let distance=7.4;
+let drag=false;
+let lastX=0,lastY=0;
+let activePointer=null;
+let pinchStart=null;
+
+function norm(v){
+ const n=Math.hypot(v[0],v[1],v[2])||1;
+ return [v[0]/n,v[1]/n,v[2]/n];
+}
+function cross(a,b){
+ return [a[1]*b[2]-a[2]*b[1],
+         a[2]*b[0]-a[0]*b[2],
+         a[0]*b[1]-a[1]*b[0]];
+}
 function resize(){
- const r=canvas.getBoundingClientRect();
- const d=Math.min(devicePixelRatio||1,2);
- canvas.width=r.width*d;
- canvas.height=r.height*d;
- ctx.setTransform(d,0,0,d,0,0);
+ const rect=canvas.getBoundingClientRect();
+ const d=Math.min(window.devicePixelRatio||1,1.5);
+ canvas.width=Math.max(1,Math.floor(rect.width*d));
+ canvas.height=Math.max(1,Math.floor(rect.height*d));
+ gl.viewport(0,0,canvas.width,canvas.height);
+}
+function draw(){
+ if(!active||!viewer.classList.contains('open'))return;
+ const w=canvas.width,h=canvas.height;
+ if(!w||!h)return;
+
+ gl.useProgram(program);
+ const target=[0,1.05,0];
+ const cp=Math.cos(pitch),sp=Math.sin(pitch);
+ const sy=Math.sin(yaw),cy=Math.cos(yaw);
+ const cam=[
+  distance*cp*sy,
+  target[1]+distance*sp,
+  distance*cp*cy
+ ];
+ const forward=norm([
+  target[0]-cam[0],target[1]-cam[1],target[2]-cam[2]
+ ]);
+ const right=norm(cross(forward,[0,1,0]));
+ const up=norm(cross(right,forward));
+
+ gl.uniform2f(U.resolution,w,h);
+ gl.uniform3fv(U.camPos,cam);
+ gl.uniform3fv(U.camRight,right);
+ gl.uniform3fv(U.camUp,up);
+ gl.uniform3fv(U.camForward,forward);
+ gl.uniform1f(U.tanHalfFov,Math.tan(35*Math.PI/180));
+
+ const mode=$('mode').value;
+ gl.uniform1i(U.renderMode,mode==='surface'?1:mode==='holo'?2:0);
+ gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
 }
 
 function open(id){
- const eligible=cells
-  .filter(c=>c['3d_available']===true)
-  .sort((a,b)=>(a['3d_rank']??999)-(b['3d_rank']??999))
-  .slice(0,30);
-
+ const eligible=cells.filter(c=>c['3d_available']===true)
+  .sort((a,b)=>(a['3d_rank']??999)-(b['3d_rank']??999)).slice(0,30);
  const candidate=eligible.find(c=>c.id===id);
-
  if(!candidate){
-  $('status').textContent=
-   '3D non disponibile per questa cella. Limite: 30 celle abilitate.';
+  $('status').textContent='Cella non abilitata alla visualizzazione 3D.';
   return;
  }
-
  active=candidate;
- viewer.classList.add('open');
-
- $('vtitle').textContent=
-  active.id+' · '+fmt(active.max_dbz)+' dBZ';
-
- resize();
- draw();
+ $('vtitle').textContent=active.id+' · '+fmt(active.max_dbz)+' dBZ';
+ try{
+  uploadMatrix(active);
+  viewer.classList.add('open');
+  resize();
+  draw();
+ }catch(e){
+  $('status').textContent='Errore renderer: '+e.message;
+ }
 }
 
-$('close').onclick=()=>{
- viewer.classList.remove('open');
-};
-
+$('close').onclick=()=>viewer.classList.remove('open');
 $('reset').onclick=()=>{
- yaw=-.55;
- pitch=.58;
- zoom=1.30;
- draw();
+ yaw=-.22;pitch=.22;distance=7.4;draw();
 };
-
 $('mode').onchange=draw;
 
 window.addEventListener('resize',()=>{
- if(viewer.classList.contains('open')){
-  resize();
-  draw();
- }
+ if(viewer.classList.contains('open')){resize();draw();}
 });
 
 canvas.onpointerdown=e=>{
- drag=[e.clientX,e.clientY];
+ if(e.pointerType==='touch'&&activePointer!==null){
+  pinchStart={distance:distance,x:e.clientX,y:e.clientY};
+ }
+ activePointer=e.pointerId;
+ drag=true;lastX=e.clientX;lastY=e.clientY;
  canvas.setPointerCapture(e.pointerId);
 };
-
 canvas.onpointermove=e=>{
  if(!drag)return;
-
- yaw+=(e.clientX-drag[0])*.008;
- pitch=Math.max(
-  -.1,
-  Math.min(1.35,pitch+(e.clientY-drag[1])*.008)
- );
-
- drag=[e.clientX,e.clientY];
- draw();
+ yaw-=(e.clientX-lastX)*.006;
+ pitch=Math.max(-.05,Math.min(.85,pitch+(e.clientY-lastY)*.004));
+ lastX=e.clientX;lastY=e.clientY;draw();
 };
-
-canvas.onpointerup=()=>drag=null;
-canvas.onpointercancel=()=>drag=null;
-
+canvas.onpointerup=()=>{
+ drag=false;activePointer=null;pinchStart=null;
+};
+canvas.onpointercancel=()=>{
+ drag=false;activePointer=null;pinchStart=null;
+};
 canvas.addEventListener('wheel',e=>{
  e.preventDefault();
- zoom=Math.max(
-  .5,
-  Math.min(2.5,zoom*(e.deltaY>0?.92:1.08))
- );
+ distance=Math.max(4.8,Math.min(14,distance+e.deltaY*.008));
  draw();
 },{passive:false});
 
-/* =====================================================
-   RENDERER 3D MORFOLOGICO INCUDINE + GAMBO
-
-   Piano radar: campioni DBZH originali.
-   Gambo: nuclei >=35 dBZ.
-   Incudine: echi reali circostanti.
-
-   QUOTE VERTICALI: STIMA PARAMETRICA.
-   ===================================================== */
-
-function draw(){
-
- if(!active)return;
-
- const r=canvas.getBoundingClientRect();
- const w=r.width;
- const h=r.height;
-
- if(w<2||h<2)return;
-
- ctx.clearRect(0,0,w,h);
-
- const bg=ctx.createLinearGradient(0,0,0,h);
- bg.addColorStop(0,'#071a2c');
- bg.addColorStop(.55,'#061321');
- bg.addColorStop(1,'#02070d');
-
- ctx.fillStyle=bg;
- ctx.fillRect(0,0,w,h);
-
- const raw=active.grid_matrix||[];
- const rows=raw.length;
- const cols=Math.max(0,...raw.map(row=>
-  Array.isArray(row)?row.length:0
- ));
-
- if(!rows||!cols){
-  ctx.fillStyle='#fff';
-  ctx.font='14px system-ui';
-  ctx.fillText('Matrice DBZH non disponibile',18,30);
-  return;
- }
-
- const mode=$('mode').value;
-
- /* Lettura campioni DBZH */
-
- const values=raw.map(row=>
-  Array.from({length:cols},(_,x)=>{
-   const v=Number(Array.isArray(row)?row[x]:0);
-   return Number.isFinite(v)&&v>=8?v:0;
-  })
- );
-
- let observedMax=0;
- let occupied=0;
-
- for(let y=0;y<rows;y++){
-  for(let x=0;x<cols;x++){
-   const v=values[y][x];
-   if(v>0){
-    observedMax=Math.max(observedMax,v);
-    occupied++;
-   }
-  }
- }
-
- if(!occupied){
-  ctx.fillStyle='#fff';
-  ctx.font='14px system-ui';
-  ctx.fillText('Nessun campione DBZH utile nella matrice',18,30);
-  return;
- }
-
- /* PARAMETRI VERTICALI: STIMA */
-
- const ANVIL_TOP_KM=8.5;
- const ANVIL_THICKNESS_KM=4.5;
- const ANVIL_BASE_KM=ANVIL_TOP_KM-ANVIL_THICKNESS_KM;
-
- const VERTICAL_UNITS=15;
- const STEM_TOP=VERTICAL_UNITS*.76;
- const ANVIL_TOP=VERTICAL_UNITS;
- const ANVIL_BASE=ANVIL_TOP-
-  (ANVIL_THICKNESS_KM/ANVIL_TOP_KM)*VERTICAL_UNITS;
-
- const baseZ=-.8;
- const cellSize=.82;
- const half=cellSize*.5;
-
- /* Nuclei convettivi >=35 dBZ */
-
- const coreMask=values.map(row=>
-  row.map(v=>v>=35?1:0)
- );
-
- let corePixels=0;
- let coreX=0;
- let coreY=0;
-
- for(let y=0;y<rows;y++){
-  for(let x=0;x<cols;x++){
-   if(coreMask[y][x]){
-    corePixels++;
-    coreX+=x;
-    coreY+=y;
-   }
-  }
- }
-
- if(corePixels){
-  coreX/=corePixels;
-  coreY/=corePixels;
- }else{
-  coreX=cols*.5;
-  coreY=rows*.5;
- }
-
- /* Campo di influenza incudine */
-
- const anvilField=values.map((row,y)=>
-  row.map((v,x)=>{
-
-   if(v<15)return 0;
-
-   const dx=x-coreX;
-   const dy=y-coreY;
-   const distance=Math.sqrt(dx*dx+dy*dy);
-
-   const influence=Math.max(
-    0,
-    1-distance/Math.max(8,Math.min(rows,cols)*.42)
-   );
-
-   if(v<25)return influence*.55;
-   if(v<35)return influence*.78;
-
-   return influence;
-  })
- );
-
- /* Regione di eco collegata al nucleo */
-
- const anvilMask=values.map((row,y)=>
-  row.map((v,x)=>{
-
-   if(v<15)return 0;
-
-   const dx=x-coreX;
-   const dy=y-coreY;
-   const distance=Math.sqrt(dx*dx+dy*dy);
-
-   const nearCore=distance<=Math.max(
-    8,
-    Math.min(rows,cols)*.42
-   );
-
-   return nearCore?1:0;
-  })
- );
-
- /* Interpolazione del nucleo */
-
- function smoothCore(x,y){
-
-  let sum=0;
-  let weight=0;
-
-  for(let yy=Math.max(0,Math.floor(y)-2);
-      yy<=Math.min(rows-1,Math.ceil(y)+2);yy++){
-
-   for(let xx=Math.max(0,Math.floor(x)-2);
-       xx<=Math.min(cols-1,Math.ceil(x)+2);xx++){
-
-    if(values[yy][xx]<35)continue;
-
-    const dx=xx-x;
-    const dy=yy-y;
-    const d2=dx*dx+dy*dy;
-
-    const q=Math.exp(-d2/2.2);
-
-    sum+=q;
-    weight+=q;
-   }
-  }
-
-  return weight>0?Math.min(1,sum/1.8):0;
- }
-
- /* Superficie superiore derivata da DBZH */
-
- const radarHeight=values.map(row=>
-  row.map(v=>{
-
-   if(v<=0)return 0;
-
-   if(v>=45)return 15;
-   if(v>=40)return 14;
-   if(v>=35)return 12;
-   if(v>=30)return 10;
-   if(v>=25)return 9;
-   if(v>=15)return 8;
-
-   return 0;
-  })
- );
-
- /* Proiezione 3D */
-
- const scale=Math.min(
-  w/(cols+rows*.72),
-  h/(rows*.85+VERTICAL_UNITS*.75+3)
- )*zoom*1.05;
-
- const ox=w*.5;
- const oy=h*.78;
-
- function project(x,y,z){
-
-  const X=x-cols/2;
-  const Y=y-rows/2;
-
-  const A=X*Math.cos(yaw)-Y*Math.sin(yaw);
-  const B=X*Math.sin(yaw)+Y*Math.cos(yaw);
-
-  const C=B*Math.cos(pitch)-z*Math.sin(pitch);
-  const D=B*Math.sin(pitch)+z*Math.cos(pitch);
-
-  return{
-   x:ox+(A-C*.48)*scale,
-   y:oy+(A*.22+C*.7-D)*scale
-  };
- }
-
- function wave(x,y,k){
-
-  return(
-   Math.sin(x*.43+y*.19+k*.24)*.16+
-   Math.cos(y*.37-x*.16+k*.18)*.12
+/* Doppio tocco/pinch: zoom progressivo. */
+let touchDistance=0;
+canvas.addEventListener('touchstart',e=>{
+ if(e.touches.length===2){
+  touchDistance=Math.hypot(
+   e.touches[0].clientX-e.touches[1].clientX,
+   e.touches[0].clientY-e.touches[1].clientY
   );
  }
-
- function shade(hex,factor){
-
-  const c=hex.replace('#','');
-  const n=parseInt(c,16);
-
-  const rr=Math.min(255,Math.round(((n>>16)&255)*factor));
-  const gg=Math.min(255,Math.round(((n>>8)&255)*factor));
-  const bb=Math.min(255,Math.round((n&255)*factor));
-
-  return `rgb(${rr},${gg},${bb})`;
- }
-
- function alphaFor(v){
-
-  if(mode==='holo')return .32+Math.min(1,v/55)*.40;
-  if(mode==='surface')return .94;
-
-  if(v>=35)return .96;
-  if(v>=30)return .85;
-  if(v>=25)return .72;
-
-  return .48;
- }
-
- /* Raccolta facce */
-
- const faces=[];
-
- function face(points,fill,alpha,stroke){
-
-  const depth=
-   points.reduce((sum,p)=>sum+p.depth,0)/points.length;
-
-  faces.push({points,fill,alpha,depth,stroke});
- }
-
- function drawFace(points,fill,alpha,stroke){
-
-  ctx.globalAlpha=alpha;
-  ctx.fillStyle=fill;
-  ctx.strokeStyle=stroke||'rgba(3,12,22,.48)';
-  ctx.lineWidth=mode==='holo'?.7:.35;
-
-  ctx.beginPath();
-  ctx.moveTo(points[0].x,points[0].y);
-
-  for(let i=1;i<points.length;i++){
-   ctx.lineTo(points[i].x,points[i].y);
+},{passive:true});
+canvas.addEventListener('touchmove',e=>{
+ if(e.touches.length===2){
+  e.preventDefault();
+  const next=Math.hypot(
+   e.touches[0].clientX-e.touches[1].clientX,
+   e.touches[0].clientY-e.touches[1].clientY
+  );
+  if(touchDistance>0){
+   distance=Math.max(4.8,Math.min(14,
+    distance*(touchDistance/next)
+   ));
+   draw();
   }
-
-  ctx.closePath();
-
-  if(mode!=='holo')ctx.fill();
-  if(mode==='holo'||stroke)ctx.stroke();
+  touchDistance=next;
  }
-
- function P(x,y,z){
-  const p=project(x,y,z);
-  return{x:p.x,y:p.y,depth:p.y};
- }
-
- /* 1. Piano radar inferiore */
-
- for(let y=0;y<rows;y++){
-
-  for(let x=0;x<cols;x++){
-
-   const v=values[y][x];
-   if(v<=0)continue;
-
-   const x0=x+.5-half;
-   const x1=x+.5+half;
-   const y0=y+.5-half;
-   const y1=y+.5+half;
-
-   const p=[
-    P(x0,y0,baseZ),
-    P(x1,y0,baseZ),
-    P(x1,y1,baseZ),
-    P(x0,y1,baseZ)
-   ];
-
-   face(
-    p,
-    shade(col(v),.70),
-    mode==='holo'?.30:.78
-   );
-  }
- }
-
- /* 2. Gambo convettivo */
-
- const stemSegments=18;
- const stemSides=12;
-
- for(let s=0;s<stemSegments;s++){
-
-  const t0=s/stemSegments;
-  const t1=(s+1)/stemSegments;
-
-  const z0=baseZ+(STEM_TOP-baseZ)*t0;
-  const z1=baseZ+(STEM_TOP-baseZ)*t1;
-
-  for(let y=0;y<rows;y++){
-
-   for(let x=0;x<cols;x++){
-
-    if(values[y][x]<35)continue;
-
-    const intensity=values[y][x];
-    const colour=col(intensity);
-
-    const radius0=.20+.34*(1-t0);
-    const radius1=.20+.34*(1-t1);
-
-    const bend0=Math.sin(t0*Math.PI*1.2+x*.13)*.10;
-    const bend1=Math.sin(t1*Math.PI*1.2+x*.13)*.10;
-
-    for(let side=0;side<stemSides;side++){
-
-     const a0=side/stemSides*Math.PI*2;
-     const a1=(side+1)/stemSides*Math.PI*2;
-
-     const p=[
-      P(x+.5+bend0+Math.cos(a0)*radius0,
-        y+.5+Math.sin(a0)*radius0,z0),
-
-      P(x+.5+bend0+Math.cos(a1)*radius0,
-        y+.5+Math.sin(a1)*radius0,z0),
-
-      P(x+.5+bend1+Math.cos(a1)*radius1,
-        y+.5+Math.sin(a1)*radius1,z1),
-
-      P(x+.5+bend1+Math.cos(a0)*radius1,
-        y+.5+Math.sin(a0)*radius1,z1)
-     ];
-
-     face(
-      p,
-      shade(colour,.72+.18*Math.abs(Math.cos(a0))),
-      mode==='holo'?.34:.88
-     );
-    }
-   }
-  }
- }
-
- /* 3. Incudine: superficie irregolare */
-
- const capGrid=values.map((row,y)=>
-  row.map((v,x)=>{
-
-   if(!anvilMask[y][x])return 0;
-   if(v>=35)return 0;
-
-   return anvilField[y][x];
-  })
- );
-
- const capHeight=ANVIL_BASE;
- const capThickness=ANVIL_TOP-ANVIL_BASE;
-
- function capZ(x,y){
-
-  const field=capGrid[y]?.[x]||0;
-  if(field<=0)return 0;
-
-  const undulation=
-   Math.sin(x*.37+y*.21)*.20+
-   Math.cos(y*.31-x*.17)*.14+
-   Math.sin(x*.13-y*.29)*.12;
-
-  return capHeight+
-   field*capThickness*.30+
-   undulation;
- }
-
- for(let y=0;y<rows-1;y++){
-
-  for(let x=0;x<cols-1;x++){
-
-   const v00=values[y][x];
-   const v10=values[y][x+1];
-   const v11=values[y+1][x+1];
-   const v01=values[y+1][x];
-
-   const c00=capGrid[y][x];
-   const c10=capGrid[y][x+1];
-   const c11=capGrid[y+1][x+1];
-   const c01=capGrid[y+1][x];
-
-   if(c00<=0&&c10<=0&&c11<=0&&c01<=0)continue;
-
-   const z00=capZ(x,y);
-   const z10=capZ(x+1,y);
-   const z11=capZ(x+1,y+1);
-   const z01=capZ(x,y+1);
-
-   const samples=[v00,v10,v11,v01].filter(v=>v>=15);
-   if(!samples.length)continue;
-
-   const mean=samples.reduce((a,b)=>a+b,0)/samples.length;
-   const colour=col(mean);
-
-   const p=[
-    P(x+.5,y+.5,z00),
-    P(x+1.5,y+.5,z10),
-    P(x+1.5,y+1.5,z11),
-    P(x+.5,y+1.5,z01)
-   ];
-
-   face(
-    p,
-    colour,
-    mode==='holo'?.48:
-    mode==='surface'?.96:.88
-   );
-  }
-   } /* 4. Bordo irregolare dell'incudine */
-
- for(let y=0;y<rows;y++){
-
-  for(let x=0;x<cols;x++){
-
-   const v=values[y][x];
-   if(v<15||!anvilMask[y][x]||v>=35)continue;
-
-   const z=capZ(x,y);
-   const colour=col(v);
-
-   const neighbours=[
-    {dx:0,dy:-1,a:0,b:1,f:.70},
-    {dx:1,dy:0,a:1,b:2,f:.53},
-    {dx:0,dy:1,a:2,b:3,f:.64},
-    {dx:-1,dy:0,a:3,b:0,f:.44}
-   ];
-
-   const x0=x+.5-half;
-   const x1=x+.5+half;
-   const y0=y+.5-half;
-   const y1=y+.5+half;
-
-   const top=[
-    P(x0,y0,z),
-    P(x1,y0,z),
-    P(x1,y1,z),
-    P(x0,y1,z)
-   ];
-
-   for(const n of neighbours){
-
-    const nx=x+n.dx;
-    const ny=y+n.dy;
-
-    const neighbour=
-     ny>=0&&ny<rows&&nx>=0&&nx<cols?
-     capGrid[ny][nx]:0;
-
-    if(neighbour>0)continue;
-
-    const bottomZ=Math.max(baseZ,z-capThickness*.35);
-
-    const bottom=[
-     P(x0,y0,bottomZ),
-     P(x1,y0,bottomZ),
-     P(x1,y1,bottomZ),
-     P(x0,y1,bottomZ)
-    ];
-
-    face(
-     [
-      bottom[n.a],
-      bottom[n.b],
-      top[n.b],
-      top[n.a]
-     ],
-     shade(colour,n.f),
-     mode==='holo'?.28:.62
-    );
-   }
-  }
- }
-
- /* 5. Reticolo e contorni */
-
- if(mode!=='surface'){
-
-  ctx.globalAlpha=mode==='holo'?.68:.30;
-  ctx.strokeStyle='rgba(220,245,255,.72)';
-  ctx.lineWidth=.42;
-
-  for(let y=0;y<rows;y++){
-
-   for(let x=0;x<cols;x++){
-
-    if(values[y][x]<=0)continue;
-
-    const z=radarHeight[y][x]*.47;
-    if(z<=0)continue;
-
-    const p=[
-     P(x+.5-half,y+.5-half,z),
-     P(x+.5+half,y+.5-half,z),
-     P(x+.5+half,y+.5+half,z),
-     P(x+.5-half,y+.5+half,z)
-    ];
-
-    ctx.beginPath();
-    ctx.moveTo(p[0].x,p[0].y);
-
-    for(let i=1;i<p.length;i++){
-     ctx.lineTo(p[i].x,p[i].y);
-    }
-
-    ctx.closePath();
-    ctx.stroke();
-   }
-  }
- }
-
- /* 6. Rendering facce */
-
- faces.sort((a,b)=>a.depth-b.depth);
-
- for(const f of faces){
-  drawFace(f.points,f.fill,f.alpha,f.stroke);
- }
-
- /* 7. Indicatore nucleo convettivo */
-
- if(corePixels){
-
-  const center=P(coreX+.5,coreY+.5,STEM_TOP);
-
-  ctx.globalAlpha=.95;
-  ctx.strokeStyle='#ffffff';
-  ctx.lineWidth=1.3;
-
-  ctx.beginPath();
-  ctx.arc(center.x,center.y,5,0,Math.PI*2);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(center.x-9,center.y);
-  ctx.lineTo(center.x+9,center.y);
-  ctx.moveTo(center.x,center.y-9);
-  ctx.lineTo(center.x,center.y+9);
-  ctx.stroke();
- }
-
- /* 8. Reticolo holographic */
-
- if(mode==='holo'){
-
-  ctx.globalAlpha=.58;
-  ctx.strokeStyle='rgba(100,210,255,.8)';
-  ctx.lineWidth=.6;
-
-  const step=Math.max(2,Math.floor(Math.min(rows,cols)/18));
-
-  for(let y=0;y<rows;y+=step){
-
-   const a=P(.5,y+.5,baseZ);
-   const b=P(cols-.5,y+.5,baseZ);
-
-   ctx.beginPath();
-   ctx.moveTo(a.x,a.y);
-   ctx.lineTo(b.x,b.y);
-   ctx.stroke();
-  }
-
-  for(let x=0;x<cols;x+=step){
-
-   const a=P(x+.5,.5,baseZ);
-   const b=P(x+.5,rows-.5,baseZ);
-
-   ctx.beginPath();
-   ctx.moveTo(a.x,a.y);
-   ctx.lineTo(b.x,b.y);
-   ctx.stroke();
-  }
- }
-
- /* 9. Informazioni */
-
- ctx.globalAlpha=1;
- ctx.fillStyle='#f0f7ff';
- ctx.font='12px system-ui';
-
- ctx.fillText(
-  active.id+
-  ' · matrice '+rows+'×'+cols+
-  ' · max '+fmt(active.max_dbz)+' dBZ',
-  12,20
- );
-
- ctx.fillStyle='#a9bfd3';
- ctx.font='11px system-ui';
-
- ctx.fillText(
-  'Campioni DBZH: '+occupied+
-  ' · nuclei ≥35 dBZ: '+corePixels,
-  12,38
- );
-
- ctx.fillText(
-  'Incudine: quota superiore STIMA '+
-  ANVIL_TOP_KM.toFixed(1)+
-  ' km · spessore STIMA '+
-  ANVIL_THICKNESS_KM.toFixed(1)+' km',
-  12,h-30
- );
-
- ctx.fillText(
-  'Morfologia pseudo-3D ricostruita da DBZH 2D',
-  12,h-14
- );
-
- ctx.globalAlpha=1;
-}
+},{passive:false});
+canvas.addEventListener('touchend',()=>touchDistance=0,{passive:true});
 
 load();
-
 })();
 </script>
 </body>
