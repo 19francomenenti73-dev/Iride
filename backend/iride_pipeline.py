@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 import re
 import sys
+import struct
+import zlib
 import traceback
 import xml.etree.ElementTree as ET
 
@@ -668,7 +670,9 @@ def track_cells(cells, timestamp, history):
                 "max_dbz": cell["max_dbz"]
             })
 
-        del observations[:-TRACK_HISTORY_SIZE]        track_data = {
+        del observations[:-TRACK_HISTORY_SIZE]
+
+        track_data = {
             "track_id": track_id,
             "observations": observations[-TRACK_HISTORY_SIZE:],
             "forecast_status": "insufficient_observations",
@@ -689,9 +693,7 @@ def track_cells(cells, timestamp, history):
 
             if 0 < minutes <= TRACK_MAX_AGE_MIN:
                 distance = haversine(a, b)
-                speed = distance / (minutes / 60)
-
-                if speed <= TRACK_MAX_SPEED_KMH:
+                speed = distance / (minutes / 60)                if speed <= TRACK_MAX_SPEED_KMH:
                     def predict(future_minutes):
                         factor = future_minutes / minutes
 
@@ -753,6 +755,139 @@ def track_cells(cells, timestamp, history):
 
 
 # ---------------------------------------------------------
+# RASTER DBZH GEORIFERITO PER LA MAPPA LEAFLET
+# ---------------------------------------------------------
+
+def png_chunk(kind, data):
+    body = kind + data
+    return (
+        struct.pack(">I", len(data))
+        + body
+        + struct.pack(">I", zlib.crc32(body) & 0xffffffff)
+    )
+
+
+def write_png(path, width, height, rgba):
+    raw = bytearray()
+    stride = width * 4
+
+    for y in range(height):
+        raw.append(0)
+        start = y * stride
+        raw.extend(rgba[start:start + stride])
+
+    header = struct.pack(">2I", width, height)
+    header += bytes([8, 6, 0, 0, 0])
+
+    content = (
+        b"\x89PNG\r\n\x1a\n"
+        + png_chunk(b"IHDR", header)
+        + png_chunk(b"IDAT", zlib.compress(bytes(raw), 6))
+        + png_chunk(b"IEND", b"")
+    )
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_bytes(content)
+    temp.replace(path)
+
+
+def generate_radar_overlay(radar, grid, origin):
+    width = 720
+    height = 400
+
+    west = REGION["west"]
+    east = REGION["east"]
+    south = REGION["south"]
+    north = REGION["north"]
+
+    longitudes = west + (
+        np.arange(width, dtype=np.float64) + 0.5
+    ) * (east - west) / width
+
+    latitudes = north - (
+        np.arange(height, dtype=np.float64) + 0.5
+    ) * (north - south) / height
+
+    lon_grid, lat_grid = np.meshgrid(longitudes, latitudes)
+
+    forward = Transformer.from_crs(
+        CRS.from_epsg(4326),
+        CRS.from_user_input(grid["projection"]),
+        always_xy=True
+    )
+
+    projected_x, projected_y = forward.transform(
+        lon_grid, lat_grid
+    )
+
+    ox, oy = origin
+
+    pixel_x = np.rint(
+        (projected_x - ox) / grid["xscale_m"]
+    ).astype(np.int32)
+
+    pixel_y = np.rint(
+        (grid["ysize"] - 1)
+        - (projected_y - oy) / grid["yscale_m"]
+    ).astype(np.int32)
+
+    valid = (
+        np.isfinite(projected_x)
+        & np.isfinite(projected_y)
+        & (pixel_x >= 0)
+        & (pixel_x < grid["xsize"])
+        & (pixel_y >= 0)
+        & (pixel_y < grid["ysize"])
+    )
+
+    sampled = np.full((height, width), np.nan, dtype=np.float32)
+    sampled[valid] = radar[
+        pixel_y[valid], pixel_x[valid]
+    ]
+
+    rgba = np.zeros((height, width, 4), dtype=np.uint8)
+
+    classes = [
+        (15.0, 25.0, (57, 126, 232)),
+        (25.0, 30.0, (36, 189, 112)),
+        (30.0, 35.0, (244, 212, 62)),
+        (35.0, 45.0, (240, 120, 50)),
+        (45.0, float("inf"), (237, 66, 200))
+    ]
+
+    for lower, upper, rgb in classes:
+        selected = (
+            np.isfinite(sampled)
+            & (sampled >= lower)
+            & (sampled < upper)
+        )
+        rgba[selected, 0] = rgb[0]
+        rgba[selected, 1] = rgb[1]
+        rgba[selected, 2] = rgb[2]
+        rgba[selected, 3] = 178
+
+    path = ROOT / "docs" / "data" / "iride_radar.png"
+    write_png(path, width, height, rgba)
+
+    return {
+        "image": "data/iride_radar.png",
+        "bounds": [
+            [south, west],
+            [north, east]
+        ],
+        "width": width,
+        "height": height,
+        "format": "PNG RGBA",
+        "opacity": 0.82,
+        "minimum_dbz": 15,
+        "transparent_below_dbz": 15,
+        "georeferencing": "geographic sampling from ODIM projection",
+        "timestamp": None
+    }
+
+
+# ---------------------------------------------------------
 # PUBBLICAZIONE
 # ---------------------------------------------------------
 
@@ -810,6 +945,8 @@ def main():
             )
 
         cells = detect(radar, grid, inverse, origin)
+        radar_overlay = generate_radar_overlay(radar, grid, origin)
+        radar_overlay["timestamp"] = stamp(product_time)
 
         if not cells:
             raise RuntimeError(
@@ -852,6 +989,7 @@ def main():
                 )
             },
             "grid": grid,
+            "radar_overlay": radar_overlay,
             "processing": {
                 "threshold_dbz": THRESHOLD,
                 "minimum_cell_pixels": MIN_PIXELS,
