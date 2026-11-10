@@ -45,7 +45,65 @@ jobs:
         run: |
           python -m json.tool data/iride.json >/dev/null
           python -m json.tool docs/data/iride.json >/dev/null
-          python -c "import json; d=json.load(open('docs/data/iride.json')); assert d['status']=='ok' and d['cell_count']==len(d['cells'])"
+          python -m json.tool data/status.json >/dev/null
+
+          python - <<'PY'
+          import json
+          import math
+          from pathlib import Path
+
+          data = json.loads(Path("data/iride.json").read_text())
+          public = json.loads(Path("docs/data/iride.json").read_text())
+          status = json.loads(Path("data/status.json").read_text())
+
+          assert data == public, "I JSON pubblici e interni non coincidono"
+          assert data["status"] == "ok"
+          assert data["schema_version"] == 5
+          assert status["status"] == "ok"
+
+          cells = data["cells"]
+          assert 1 <= len(cells) <= 100
+          assert data["cell_count"] == len(cells)
+
+          track_ids = set()
+          count_3d = 0
+
+          for cell in cells:
+              assert cell["max_dbz"] >= data["processing"]["threshold_dbz"]
+              assert -90 <= cell["lat"] <= 90
+              assert -180 <= cell["lon"] <= 180
+
+              track_id = cell["track_id"]
+              assert track_id not in track_ids, "Track ID duplicato"
+              track_ids.add(track_id)
+
+              matrix = cell["grid_matrix"]
+              assert len(matrix) == 72
+              assert all(len(row) == 72 for row in matrix)
+
+              for row in matrix:
+                  for value in row:
+                      assert isinstance(value, (int, float))
+                      assert math.isfinite(value)
+
+              if cell["3d_available"]:
+                  count_3d += 1
+                  assert cell["3d_rank"] is not None
+              else:
+                  assert cell["3d_rank"] is None
+
+              for vector_name in ("real", "predictive_30m", "predictive_60m"):
+                  vector = cell["vectors"][vector_name]
+                  if vector is not None:
+                      assert len(vector) == 2
+                      for point in vector:
+                          assert len(point) == 2
+                          assert all(math.isfinite(float(v)) for v in point)
+
+          assert count_3d <= 30
+          assert status["cell_count"] == len(cells)
+          print(f"Validazione superata: {len(cells)} celle, {count_3d} 3D")
+          PY
 
       - name: Commit data and history
         run: |
