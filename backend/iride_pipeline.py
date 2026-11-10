@@ -44,7 +44,6 @@ CONTEXT_FACTOR = 2.4
 MIN_CONTEXT = 48
 MAX_CONTEXT = 360
 
-# Area operativa: Mediterraneo e arco alpino.
 REGION = {
     "west": -12.0,
     "east": 30.0,
@@ -183,7 +182,9 @@ def fetch(key, expected_size):
     total = 0
 
     with requests.get(
-        url, stream=True, timeout=TIMEOUT,
+        url,
+        stream=True,
+        timeout=TIMEOUT,
         headers={"User-Agent": UA}
     ) as response:
         response.raise_for_status()
@@ -194,7 +195,9 @@ def fetch(key, expected_size):
                     continue
                 total += len(chunk)
                 if total > MAX_BYTES:
-                    raise RuntimeError("File OPERA oltre il limite consentito.")
+                    raise RuntimeError(
+                        "File OPERA oltre il limite consentito."
+                    )
                 output.write(chunk)
 
     if expected_size and total != expected_size:
@@ -246,7 +249,55 @@ def decode(path):
         xscale = number(attr(where, "xscale"))
         yscale = number(attr(where, "yscale"))
         nx = int(number(attr(where, "xsize"), radar.shape[1]))
-        ny = int(number(attr(where, "ysize"), radar.shape[0]))# ---------------------------------------------------------
+        ny = int(number(attr(where, "ysize"), radar.shape[0]))
+
+        if radar.shape != (ny, nx):
+            raise RuntimeError(
+                "Dimensioni raster e metadati ODIM non coerenti."
+            )
+
+        if not projection or xscale is None or yscale is None:
+            raise RuntimeError("Georeferenziazione ODIM incompleta.")
+
+        ll_x = number(attr(where, "LL_x"))
+        ll_y = number(attr(where, "LL_y"))
+
+        if ll_x is None or ll_y is None:
+            raise RuntimeError("Coordinate LL_x/LL_y ODIM mancanti.")
+
+        if xscale <= 0 or yscale <= 0:
+            raise RuntimeError("Risoluzione spaziale ODIM non valida.")
+
+        inverse = Transformer.from_crs(
+            CRS.from_user_input(projection),
+            CRS.from_epsg(4326),
+            always_xy=True
+        )
+
+        grid = {
+            "xscale_m": xscale,
+            "yscale_m": yscale,
+            "xsize": nx,
+            "ysize": ny,
+            "projection": str(projection)
+        }
+
+        product_time = None
+        product_what = h.get("what")
+
+        date_value = attr(product_what, "date")
+        time_value = attr(product_what, "time")
+
+        if date_value and time_value:
+            try:
+                product_time = datetime.strptime(
+                    f"{date_value}{time_value[:6]}",
+                    "%Y%m%d%H%M%S"
+                ).replace(tzinfo=timezone.utc)
+            except ValueError:
+                product_time = None
+
+        return radar, grid, inverse, (ll_x, ll_y), product_time# ---------------------------------------------------------
 # GEOGRAFIA E MATRICE RADAR
 # ---------------------------------------------------------
 
@@ -292,14 +343,18 @@ def contextual_matrix(radar, cx, cy, component_slice):
     patch[~np.isfinite(patch) | (patch < MATRIX_FLOOR)] = 0
 
     output = np.zeros((MATRIX_SIDE, MATRIX_SIDE), dtype=np.float32)
+
     for oy in range(MATRIX_SIDE):
         py0 = int(oy * size / MATRIX_SIDE)
         py1 = max(py0 + 1, int((oy + 1) * size / MATRIX_SIDE))
+
         for ox in range(MATRIX_SIDE):
             px0 = int(ox * size / MATRIX_SIDE)
             px1 = max(px0 + 1, int((ox + 1) * size / MATRIX_SIDE))
+
             block = patch[py0:py1, px0:px1]
             valid = block[block >= MATRIX_FLOOR]
+
             if valid.size:
                 output[oy, ox] = float(valid.max())
 
@@ -311,6 +366,7 @@ def contextual_matrix(radar, cx, cy, component_slice):
         "aggregation": "maximum_dbzh",
         "vertical_information": False
     }
+
     return np.round(output, 1).tolist(), info
 
 
@@ -320,16 +376,22 @@ def contextual_matrix(radar, cx, cy, component_slice):
 
 def ordered_perimeter(component, x_start, y_start, grid, inverse, origin):
     edge = component & ~ndimage.binary_erosion(
-        component, structure=np.ones((3, 3)), border_value=0
+        component,
+        structure=np.ones((3, 3)),
+        border_value=0
     )
+
     yy, xx = np.where(edge)
     if len(xx) < 3:
         return []
 
     cx, cy = float(xx.mean()), float(yy.mean())
     order = np.argsort(np.arctan2(yy - cy, xx - cx))
+
     if len(order) > 100:
-        order = order[np.linspace(0, len(order) - 1, 100).astype(int)]
+        order = order[np.linspace(
+            0, len(order) - 1, 100
+        ).astype(int)]
 
     ox, oy = origin
     points = []
@@ -340,10 +402,14 @@ def ordered_perimeter(component, x_start, y_start, grid, inverse, origin):
 
         gx = ox + px * grid["xscale_m"]
         gy = oy + (grid["ysize"] - 1 - py) * grid["yscale_m"]
+
         lon, lat = inverse.transform(gx, gy)
 
         if np.isfinite(lat) and np.isfinite(lon):
-            points.append([round(float(lat), 4), round(float(lon), 4)])
+            points.append([
+                round(float(lat), 4),
+                round(float(lon), 4)
+            ])
 
     return points
 
@@ -352,11 +418,12 @@ def detect(radar, grid, inverse, origin):
     mask = np.isfinite(radar) & (radar >= THRESHOLD)
 
     labels, count = ndimage.label(
-        mask, structure=np.ones((3, 3), dtype=np.uint8)
+        mask,
+        structure=np.ones((3, 3), dtype=np.uint8)
     )
+
     objects = ndimage.find_objects(labels)
     ox, oy = origin
-
     cells = []
 
     for label_id, sl in enumerate(objects, 1):
@@ -374,19 +441,29 @@ def detect(radar, grid, inverse, origin):
         values = radar[sl][yy, xx]
 
         weights = np.maximum(values - THRESHOLD + 1, 1)
+
         cx = xs.start + float(np.average(xx, weights=weights))
         cy = ys.start + float(np.average(yy, weights=weights))
 
         gx = ox + cx * grid["xscale_m"]
         gy = oy + (grid["ysize"] - 1 - cy) * grid["yscale_m"]
+
         lon, lat = inverse.transform(gx, gy)
 
         if not inside_region(float(lat), float(lon)):
             continue
 
-        matrix, matrix_info = contextual_matrix(radar, cx, cy, sl)
+        matrix, matrix_info = contextual_matrix(
+            radar, cx, cy, sl
+        )
+
         perimeter = ordered_perimeter(
-            component, xs.start, ys.start, grid, inverse, origin
+            component,
+            xs.start,
+            ys.start,
+            grid,
+            inverse,
+            origin
         )
 
         cells.append({
@@ -398,7 +475,10 @@ def detect(radar, grid, inverse, origin):
             "threshold_dbz": THRESHOLD,
             "area_pixels": area,
             "approx_area_km2": round(
-                area * abs(grid["xscale_m"] * grid["yscale_m"]) / 1e6, 1
+                area * abs(
+                    grid["xscale_m"] * grid["yscale_m"]
+                ) / 1e6,
+                1
             ),
             "perimeter": perimeter,
             "grid_matrix": matrix,
@@ -420,21 +500,23 @@ def detect(radar, grid, inverse, origin):
         key=lambda c: (c["max_dbz"], c["area_pixels"]),
         reverse=True
     )
-    return cells[:MAX_CELLS]
 
-
-# ---------------------------------------------------------
+    return cells[:MAX_CELLS]# ---------------------------------------------------------
 # TRACKING
 # ---------------------------------------------------------
 
 def read_history():
     try:
         old = json.loads(HIST.read_text(encoding="utf-8"))
+
         if old.get("schema_version") != 2:
             return {"schema_version": 2, "tracks": {}}
+
         if not isinstance(old.get("tracks"), dict):
             return {"schema_version": 2, "tracks": {}}
+
         return old
+
     except Exception:
         return {"schema_version": 2, "tracks": {}}
 
@@ -449,25 +531,31 @@ def track_cells(cells, timestamp, history):
 
     for track_id, track in tracks.items():
         observations = track.get("observations", [])
+
         if not observations:
             continue
+
         try:
             age = (
                 timestamp - parse_time(observations[-1]["timestamp"])
             ).total_seconds() / 60
         except Exception:
             continue
+
         if 0 <= age <= TRACK_MAX_AGE_MIN:
             active[track_id] = track
 
     candidates = []
+
     for cell_index, cell in enumerate(cells):
         for track_id, track in active.items():
             last = track["observations"][-1]
+
             try:
                 age = (
                     timestamp - parse_time(last["timestamp"])
                 ).total_seconds() / 60
+
                 if age <= 0 or age > TRACK_MAX_AGE_MIN:
                     continue
 
@@ -478,7 +566,10 @@ def track_cells(cells, timestamp, history):
                     distance <= TRACK_MAX_DISTANCE_KM
                     and speed <= TRACK_MAX_SPEED_KMH
                 ):
-                    candidates.append((distance, cell_index, track_id))
+                    candidates.append((
+                        distance, cell_index, track_id
+                    ))
+
             except Exception:
                 continue
 
@@ -489,8 +580,12 @@ def track_cells(cells, timestamp, history):
     assignments = {}
 
     for distance, cell_index, track_id in candidates:
-        if cell_index in assigned_cells or track_id in assigned_tracks:
+        if (
+            cell_index in assigned_cells
+            or track_id in assigned_tracks
+        ):
             continue
+
         assignments[cell_index] = track_id
         assigned_cells.add(cell_index)
         assigned_tracks.add(track_id)
@@ -501,15 +596,22 @@ def track_cells(cells, timestamp, history):
         track_id = assignments.get(index)
 
         if track_id is None:
-            track_id = f"IRIDE-{timestamp:%Y%m%dT%H%M}-{index:03d}"
+            track_id = (
+                f"IRIDE-{timestamp:%Y%m%dT%H%M}-{index:03d}"
+            )
+
             while track_id in tracks:
                 track_id += "X"
+
             tracks[track_id] = {"observations": []}
 
         track = tracks[track_id]
         observations = track.setdefault("observations", [])
 
-        if not observations or observations[-1]["timestamp"] != current_stamp:
+        if (
+            not observations
+            or observations[-1]["timestamp"] != current_stamp
+        ):
             observations.append({
                 "timestamp": current_stamp,
                 "lat": cell["lat"],
@@ -531,7 +633,10 @@ def track_cells(cells, timestamp, history):
 
         if len(observations) >= 2:
             a, b = observations[-2], observations[-1]
-            ta, tb = parse_time(a["timestamp"]), parse_time(b["timestamp"])
+
+            ta = parse_time(a["timestamp"])
+            tb = parse_time(b["timestamp"])
+
             minutes = (tb - ta).total_seconds() / 60
 
             if 0 < minutes <= TRACK_MAX_AGE_MIN:
@@ -541,29 +646,44 @@ def track_cells(cells, timestamp, history):
                 if speed <= TRACK_MAX_SPEED_KMH:
                     def predict(future_minutes):
                         factor = future_minutes / minutes
+
                         return [
-                            round(b["lat"] + (b["lat"] - a["lat"]) * factor, 5),
-                            round(b["lon"] + (b["lon"] - a["lon"]) * factor, 5)
+                            round(
+                                b["lat"]
+                                + (b["lat"] - a["lat"]) * factor,
+                                5
+                            ),
+                            round(
+                                b["lon"]
+                                + (b["lon"] - a["lon"]) * factor,
+                                5
+                            )
                         ]
 
                     track_data.update({
-                        "forecast_status": "experimental_linear_extrapolation",
+                        "forecast_status":
+                            "experimental_linear_extrapolation",
                         "real_vector": [
                             [a["lat"], a["lon"]],
                             [b["lat"], b["lon"]]
                         ],
                         "forecast_30m": [
-                            [b["lat"], b["lon"]], predict(30)
+                            [b["lat"], b["lon"]],
+                            predict(30)
                         ],
                         "forecast_60m": [
-                            [b["lat"], b["lon"]], predict(60)
+                            [b["lat"], b["lon"]],
+                            predict(60)
                         ],
-                        "observed_interval_minutes": round(minutes, 1),
+                        "observed_interval_minutes": round(
+                            minutes, 1
+                        ),
                         "speed_kmh": round(speed, 1)
                     })
 
         cell["track_id"] = track_id
         cell["track"] = track_data
+
         cell["vectors"] = {
             "real": track_data["real_vector"],
             "predictive_30m": track_data["forecast_30m"],
@@ -572,8 +692,13 @@ def track_cells(cells, timestamp, history):
         }
 
     history["tracks"] = active | {
-        cell["track_id"]: tracks[cell["track_id"]] for cell in cells
+        cell["track_id"]: tracks[cell["track_id"]]
+        for cell in cells
     }
+
+    return cells, history
+
+
 # ---------------------------------------------------------
 # PUBBLICAZIONE
 # ---------------------------------------------------------
@@ -586,33 +711,46 @@ def main():
         key, size = latest()
 
         key_time = parse_product_time(key)
+
         if key_time is None:
-            raise RuntimeError("Timestamp prodotto OPERA non disponibile.")
+            raise RuntimeError(
+                "Timestamp prodotto OPERA non disponibile."
+            )
 
         age_minutes = (now() - key_time).total_seconds() / 60
 
         if age_minutes < -5:
             raise RuntimeError("Timestamp OPERA nel futuro.")
+
         if age_minutes > 90:
             raise RuntimeError(
-                f"Prodotto OPERA obsoleto: {age_minutes:.1f} minuti. "
-                "Limite massimo 90 minuti."
+                f"Prodotto OPERA obsoleto: {age_minutes:.1f} minuti."
             )
 
         source_path, source_url = fetch(key, size)
-        radar, grid, inverse, origin, decoded_time = decode(source_path)
+
+        radar, grid, inverse, origin, decoded_time = decode(
+            source_path
+        )
 
         if decoded_time is not None:
-            difference = abs((decoded_time - key_time).total_seconds())
+            difference = abs(
+                (decoded_time - key_time).total_seconds()
+            )
+
             if difference > 120:
                 raise RuntimeError(
                     "Timestamp ODIM e archivio non coerenti."
                 )
+
             product_time = decoded_time
         else:
             product_time = key_time
 
-        age_minutes = (now() - product_time).total_seconds() / 60
+        age_minutes = (
+            now() - product_time
+        ).total_seconds() / 60
+
         if age_minutes < -5 or age_minutes > 90:
             raise RuntimeError(
                 f"Età prodotto non valida: {age_minutes:.1f} minuti."
@@ -622,19 +760,27 @@ def main():
 
         if not cells:
             raise RuntimeError(
-                "Nessuna cella rilevata. Pubblicazione precedente conservata."
+                "Nessuna cella rilevata. "
+                "Pubblicazione precedente conservata."
             )
 
         history = read_history()
-        cells, history = track_cells(cells, product_time, history)
+        cells, history = track_cells(
+            cells, product_time, history
+        )
 
         for index, cell in enumerate(cells):
             cell["3d_available"] = index < MAX_3D_CELLS
-            cell["3d_rank"] = index + 1 if index < MAX_3D_CELLS else None
+            cell["3d_rank"] = (
+                index + 1 if index < MAX_3D_CELLS else None
+            )
 
         payload = {
             "schema_version": 5,
-            "product": "I.R.I.D.E. — Integrated Radar Imaging & Detection Engine",
+            "product": (
+                "I.R.I.D.E. — Integrated Radar Imaging "
+                "& Detection Engine"
+            ),
             "status": "ok",
             "timestamp": stamp(product_time),
             "generated_at": stamp(now()),
@@ -648,7 +794,8 @@ def main():
                 "attribution": (
                     "Dati radar EUMETNET OPERA, archivio CloudFerro; "
                     "elaborazione I.R.I.D.E. Licenza e condizioni del "
-                    "prodotto da verificare nella documentazione ufficiale."
+                    "prodotto da verificare nella documentazione "
+                    "ufficiale."
                 )
             },
             "grid": grid,
@@ -658,9 +805,16 @@ def main():
                 "maximum_detected_cells": MAX_CELLS,
                 "maximum_3d_cells": MAX_3D_CELLS,
                 "matrix_size": [MATRIX_SIDE, MATRIX_SIDE],
-                "tracking": "one-to-one spatial and temporal association",
-                "forecast": "experimental linear extrapolation after two observations",
-                "vertical_data": "not available from 2D DBZH composite"
+                "tracking": (
+                    "one-to-one spatial and temporal association"
+                ),
+                "forecast": (
+                    "experimental linear extrapolation "
+                    "after two observations"
+                ),
+                "vertical_data": (
+                    "not available from 2D DBZH composite"
+                )
             },
             "cell_count": len(cells),
             "cells": cells
@@ -669,12 +823,15 @@ def main():
         save(DATA / "iride.json", payload)
         save(ROOT / "docs" / "data" / "iride.json", payload)
         save(HIST, history)
+
         save(DATA / "status.json", {
             "status": "ok",
             "timestamp": payload["timestamp"],
             "cell_count": len(cells),
             "cells_3d": min(len(cells), MAX_3D_CELLS),
-            "elapsed_seconds": round((now() - started).total_seconds(), 1)
+            "elapsed_seconds": round(
+                (now() - started).total_seconds(), 1
+            )
         })
 
         print(
@@ -690,6 +847,7 @@ def main():
             "message": str(error),
             "previous_data_preserved": True
         })
+
         traceback.print_exc()
         raise
 
@@ -700,4 +858,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    return cells, history
