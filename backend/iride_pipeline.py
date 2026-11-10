@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """I.R.I.D.E. — OPERA radar pipeline."""
 
@@ -258,7 +257,7 @@ def decode(path):
         yscale = number(attr(where, "yscale"))
         nx = int(number(attr(where, "xsize"), radar.shape[1]))
         ny = int(number(attr(where, "ysize"), radar.shape[0]))
-
+                
         if radar.shape != (ny, nx):
             raise RuntimeError(
                 "Dimensioni raster e metadati ODIM non coerenti."
@@ -397,46 +396,79 @@ def contextual_matrix(radar, cx, cy, component_slice):
 # PERIMETRO E RILEVAMENTO CELLE
 # ---------------------------------------------------------
 
-def ordered_perimeter(
-    component, x_start, y_start, grid, inverse, origin
-):
-    edge = component & ~ndimage.binary_erosion(
-        component,
-        structure=np.ones((3, 3)),
-        border_value=0
-    )
-
-    yy, xx = np.where(edge)
+def oriented_geometry(component, x_start, y_start, grid, inverse, origin):
+    """Four-corner oriented envelope in ODIM projection; no polar sorting."""
+    yy, xx = np.nonzero(component)
     if len(xx) < 3:
-        return []
+        return [], 0.0, 0.0, 1.0
 
-    cx, cy = float(xx.mean()), float(yy.mean())
-    order = np.argsort(np.arctan2(yy - cy, xx - cx))
+    sx, sy = grid["xscale_m"], grid["yscale_m"]
+    xy = np.column_stack((xx * sx, yy * sy)).astype(np.float64)
+    centre = xy.mean(axis=0)
+    eigenvalues, eigenvectors = np.linalg.eigh(np.cov((xy - centre).T))
+    axes = eigenvectors[:, np.argsort(eigenvalues)[::-1]]
+    uv = (xy - centre) @ axes
 
-    if len(order) > 100:
-        order = order[np.linspace(
-            0, len(order) - 1, 100
-        ).astype(int)]
-
-    ox, oy = origin
+    # Pixel-centre geometry, expanded by a conservative half-pixel margin.
+    margin = 0.5 * np.hypot(sx, sy)
+    lower = uv.min(axis=0) - margin
+    upper = uv.max(axis=0) + margin
+    vertices = np.array([
+        [lower[0], lower[1]], [upper[0], lower[1]],
+        [upper[0], upper[1]], [lower[0], upper[1]]
+    ])
+    pixels = (centre + vertices @ axes.T) / np.array([sx, sy])
     points = []
-
-    for index in order:
-        px = x_start + int(xx[index])
-        py = y_start + int(yy[index])
-
-        gx = ox + (px + 0.5) * grid["xscale_m"]
-        gy = oy + (grid["ysize"] - 0.5 - py) * grid["yscale_m"]
-
+    ox, oy = origin
+    for px, py in pixels:
+        global_x = x_start + px
+        global_y = y_start + py
+        gx = ox + (global_x + 0.5) * sx
+        gy = oy + (grid["ysize"] - 0.5 - global_y) * sy
         lon, lat = inverse.transform(gx, gy)
+        if not (np.isfinite(lat) and np.isfinite(lon)):
+            return [], 0.0, 0.0, 1.0
+        points.append([round(float(lat), 5), round(float(lon), 5)])
 
-        if np.isfinite(lat) and np.isfinite(lon):
-            points.append([
-                round(float(lat), 4),
-                round(float(lon), 4)
-            ])
+    length_km = float(upper[0] - lower[0]) / 1000
+    width_km = float(upper[1] - lower[1]) / 1000
+    elongation = length_km / max(width_km, 0.001)
+    return points, length_km, width_km, elongation
 
-    return points
+
+def classify_mesoscale(component, dbz, sx, sy, length_km, elongation):
+    """Experimental 2D candidates; no unsupported rotation diagnoses."""
+    area_km2 = float(component.sum()) * sx * sy / 1e6
+    strong = component & np.isfinite(dbz) & (dbz >= 40.0)
+    core_labels, count = ndimage.label(
+        strong, structure=np.ones((3, 3), dtype=np.uint8)
+    )
+    sizes = np.bincount(core_labels[core_labels > 0]) if count else []
+    cores = int(np.count_nonzero(np.asarray(sizes) >= 4))
+    category, label = "unclassified_echo", "Eco non classificato"
+    if cores <= 1 and area_km2 < 400:
+        category, label = "isolated_cell_candidate", "Cella isolata candidata"
+    if cores >= 2:
+        category, label = "multicell_candidate", "Multicella candidata"
+    if elongation >= 3 and length_km >= 50:
+        category, label = "linear_echo_candidate", "Eco lineare candidato"
+    if elongation >= 3 and length_km >= 80 and cores >= 3:
+        category, label = "squall_line_candidate", "Squall Line candidata"
+    if area_km2 >= 10000 and cores >= 3 and elongation < 3:
+        category, label = "mcs_candidate", "MCS candidato"
+    return {
+        "class": category,
+        "label": label,
+        "status": "experimental_2d_candidate",
+        "confirmed": False,
+        "convective_cores": cores,
+        "area_km2": round(area_km2, 2),
+        "reason": (
+            "Morfologia del composito DBZH 2D; "
+            "MCC, MCV, hook echo e supercella non confermabili "
+            "senza dati temporali, Doppler o verticali adeguati."
+        )
+    }
 
 
 def detect(radar, grid, inverse, origin):
@@ -481,8 +513,16 @@ def detect(radar, grid, inverse, origin):
             radar, cx, cy, sl
         )
 
-        perimeter = ordered_perimeter(
-            component, xs.start, ys.start, grid, inverse, origin
+        perimeter, length_km, width_km, oriented_elongation = (
+            oriented_geometry(
+                component, xs.start, ys.start, grid, inverse, origin
+        )
+        
+        )
+        mesoscala = classify_mesoscale(
+            component, radar[sl],
+            grid["xscale_m"], grid["yscale_m"],
+            length_km, oriented_elongation
         )
 
         bbox_width = max(1, xs.stop - xs.start)
@@ -493,18 +533,8 @@ def detect(radar, grid, inverse, origin):
         )
         fill_ratio = area / float(bbox_width * bbox_height)
 
-        if area >= 25 and elongation >= 3.0:
-            morphology = "linear_echo_candidate"
-            morphology_label = "Eco lineare candidato"
-        elif area >= 40 and elongation < 3.0:
-            morphology = "clustered_echo"
-            morphology_label = "Eco organizzato / cluster"
-        elif float(values.max()) >= 40 and area < 40:
-            morphology = "isolated_convective_echo"
-            morphology_label = "Eco convettivo isolato"
-        else:
-            morphology = "unclassified_echo"
-            morphology_label = "Eco non classificato"
+        morphology = mesoscala["class"]
+        morphology_label = mesoscala["label"]
 
         cells.append({
             "id": f"OPERA-{label_id:05d}",
@@ -521,23 +551,19 @@ def detect(radar, grid, inverse, origin):
             ),
             "perimeter": perimeter,
             "perimeter_semantics": (
-                "Bordo dei pixel connessi DBZH >= soglia; "
-                "non è un confine mesoscala."
+                "Rettangolo orientato dell'eco DBZH >= soglia; "
+                "inviluppo geometrico, non confine meteorologico."
             ),
             "morphology": {
                 "class": morphology,
                 "label": morphology_label,
-                "elongation_ratio": round(float(elongation), 2),
+                "elongation_ratio": round(float(oriented_elongation), 2),
+                "length_km": round(length_km, 2),
+                "width_km": round(width_km, 2),
                 "fill_ratio": round(float(fill_ratio), 3),
                 "status": "morphological_candidate_not_mcs_diagnosis"
             },
-            "mesoscale_classification": {
-                "class": "not_confirmed",
-                "reason": (
-                    "Un singolo composito DBZH 2D non conferma "
-                    "MCS, MCC, supercella o squall line."
-                )
-            },
+            "mesoscale_classification": mesoscala,
             "grid_matrix": matrix,
             "matrix_sampling": matrix_info,
             "matrix_semantics": {
@@ -752,6 +778,7 @@ def track_cells(cells, timestamp, history):
             while track_id in tracks:
                 suffix += 1
                 track_id = f"{base_id}-{suffix:02d}"
+        
             tracks[track_id] = {"observations": []}
 
         track = tracks[track_id]
@@ -1011,7 +1038,8 @@ def generate_radar_overlay(radar, grid, origin):
             np.isfinite(sampled)
             & (sampled >= lower)
             & (sampled < upper)
-        )
+            )
+    
         rgba[selected, 0] = rgb[0]
         rgba[selected, 1] = rgb[1]
         rgba[selected, 2] = rgb[2]
