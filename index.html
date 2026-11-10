@@ -11,23 +11,33 @@ body{margin:0;background:#07111f;color:#e8f1fb;font:14px system-ui}
 header{padding:12px;background:#0b1726;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 h1{font-size:18px;margin:0}
 small,.muted{color:#9fb2c8}
-.layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:10px;padding:10px}
-#map{height:calc(100vh - 80px);min-height:420px}
-aside{display:flex;flex-direction:column;gap:9px}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:10px;padding:10px}
+#map{height:calc(100vh - 80px);min-height:420px;background:#0b1726}
+aside{display:flex;flex-direction:column;gap:9px;min-width:0}
 .panel{padding:12px;border:1px solid #263a50;border-radius:10px;background:#101d2d}
 .panel h2{font-size:14px;margin:0 0 8px}
 button,select{background:#182b40;color:#fff;border:1px solid #38516b;border-radius:8px;padding:9px;font:inherit}
+button{cursor:pointer}
+button:active{background:#294665}
 .status{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.5}
-#cells{display:flex;flex-direction:column;gap:5px;max-height:30vh;overflow:auto}
-.cellBtn{text-align:left;font-size:12px}
+#cells{display:flex;flex-direction:column;gap:5px;max-height:34vh;overflow:auto}
+.cellBtn{text-align:left;font-size:12px;width:100%}
+.cellBtn.active{border-color:#45d7ff;background:#17384b}
 .fine{font-size:11px;color:#9fb2c8;line-height:1.45}
+.legend{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
+.legend span{font-size:11px;display:flex;align-items:center;gap:4px}
+.swatch{width:10px;height:10px;border-radius:3px;display:inline-block}
 #viewer{display:none;position:fixed;inset:0;z-index:9999;background:#030912;flex-direction:column}
 #viewer.open{display:flex}
 .vhead{padding:9px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 #scene{width:100%;height:100%;flex:1;touch-action:none}
+.leaflet-popup-content{color:#172536}
+.leaflet-tooltip{background:#101d2d;color:#fff;border:1px solid #38516b}
+.cell-label{font-weight:700}
 @media(max-width:800px){
-.layout{grid-template-columns:1fr;padding:6px}
-#map{height:52vh;min-height:320px}
+ .layout{grid-template-columns:1fr;padding:6px}
+ #map{height:52vh;min-height:320px}
+ #cells{max-height:220px}
 }
 </style>
 </head>
@@ -49,26 +59,41 @@ button,select{background:#182b40;color:#fff;border:1px solid #38516b;border-radi
 <aside>
 <section class="panel">
 <h2>Stato</h2>
-<div id="status" class="status">Caricamento…</div>
+<div id="status" class="status">Caricamento dati OPERA…</div>
 </section>
+
 <section class="panel">
-<h2>Riflettività</h2>
+<h2>Riflettività radar</h2>
 <div class="fine">
-Ciano 15–24 · verde 25–29 · giallo 30–34 ·
-arancio 35–39 · rosso 40–44 · magenta ≥45 dBZ
+<div class="legend">
+<span><i class="swatch" style="background:#00e7d0"></i>15–24</span>
+<span><i class="swatch" style="background:#00e58b"></i>25–29</span>
+<span><i class="swatch" style="background:#ffcf00"></i>30–34</span>
+<span><i class="swatch" style="background:#ff7900"></i>35–39</span>
+<span><i class="swatch" style="background:#ff3028"></i>40–44</span>
+<span><i class="swatch" style="background:#ef39c6"></i>≥45 dBZ</span>
+</div>
 </div>
 </section>
+
 <section class="panel">
 <h2>Centroidi e celle</h2>
 <div id="cells">Nessun dato.</div>
 </section>
+
 <section class="panel">
-<h2>Limiti</h2>
+<h2>Informazioni radar</h2>
+<div id="details" class="fine">Seleziona una cella sulla mappa.</div>
+</section>
+
+<section class="panel">
+<h2>Limiti osservativi</h2>
 <p class="fine">
-Composito MAX DBZH 2D: non misura quota, VIL o echo-top.
-Le classi convettive non vengono inferite.
-Vettori +30/+60 min: estrapolazioni sperimentali
-da due osservazioni distinte.
+Composito MAX DBZH bidimensionale. Non misura direttamente
+quota, VIL, echo-top o struttura verticale.
+Le quote del modello 3D sono stime morfologiche.
+I vettori sono mostrati solo quando esistono osservazioni
+temporali sufficienti.
 </p>
 </section>
 </aside>
@@ -90,13 +115,13 @@ da due osservazioni distinte.
 <canvas id="scene"></canvas>
 <div class="fine" style="padding:8px">
 Trascina per ruotare · rotella per zoom ·
-quota e spessore incudine: STIMA parametrica, non misurata.
+quote verticali stimate, non misurate.
 </div>
 </div>
 
 <footer class="fine" style="padding:8px 12px">
 Radar: EUMETNET OPERA via CloudFerro.
-Cartografia © OpenStreetMap contributors.
+Cartografia: OpenTopoMap / OpenStreetMap.
 Nowcasting sperimentale, non servizio di allerta.
 </footer>
 
@@ -107,125 +132,220 @@ Nowcasting sperimentale, non servizio di allerta.
 
 const $=id=>document.getElementById(id);
 
-const map=L.map('map').setView([47,12],4);
+const map=L.map('map',{preferCanvas:true}).setView([43,12],5);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-maxZoom:18,
-attribution:'© OpenStreetMap contributors'
+L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{
+ maxZoom:17,
+ attribution:'© OpenTopoMap · © OpenStreetMap contributors'
 }).addTo(map);
 
 const marks=L.layerGroup().addTo(map);
+const contours=L.layerGroup().addTo(map);
 const lines=L.layerGroup().addTo(map);
 
 let cells=[];
 let active=null;
+let dataTimestamp=null;
 
 const col=v=>
-v>=45?'#ef39c6':
-v>=40?'#ff3028':
-v>=35?'#ff7900':
-v>=30?'#ffcf00':
-v>=25?'#00e58b':
-v>=15?'#00e7d0':
-'#328cff';
+ v>=45?'#ef39c6':
+ v>=40?'#ff3028':
+ v>=35?'#ff7900':
+ v>=30?'#ffcf00':
+ v>=25?'#00e58b':
+ v>=15?'#00e7d0':
+ '#328cff';
 
 const fmt=v=>
-Number.isFinite(+v)?(+v).toFixed(1):'n/d';
+ Number.isFinite(+v)?(+v).toFixed(1):'n/d';
 
-function poly(p,c,d){
-if(Array.isArray(p)&&p.length===2){
-L.polyline(p,{
-color:c,
-weight:3,
-dashArray:d||null
-}).addTo(lines);
+function validPoint(p){
+ return Array.isArray(p)&&p.length>=2&&
+ Number.isFinite(Number(p[0]))&&
+ Number.isFinite(Number(p[1]));
 }
+
+function drawLine(points,color,dash){
+ if(!Array.isArray(points)||points.length<2)return;
+ if(!points.every(validPoint))return;
+
+ L.polyline(points,{
+  color,
+  weight:3,
+  opacity:.9,
+  dashArray:dash||null
+ }).addTo(lines);
+}
+
+function drawPerimeter(cell){
+ const p=cell.perimeter;
+ if(!Array.isArray(p)||p.length<3)return;
+ if(!p.every(validPoint))return;
+
+ L.polygon(p,{
+  color:col(cell.max_dbz),
+  weight:2,
+  opacity:.95,
+  fillColor:col(cell.max_dbz),
+  fillOpacity:.10,
+  smoothFactor:1
+ }).addTo(contours);
+}
+
+function cellDetails(c){
+ const track=c.track||{};
+ const vector=c.vectors||{};
+
+ const real=vector.real;
+ const forecast=vector.predictive_60m;
+
+ const rows=[
+  '<b>'+c.id+'</b>',
+  'Riflettività massima: '+fmt(c.max_dbz)+' dBZ',
+  'Riflettività media: '+fmt(c.mean_dbz)+' dBZ',
+  'Area: '+fmt(c.approx_area_km2)+' km²',
+  'Pixel: '+(c.area_pixels??'n/d'),
+  'Centroide: '+fmt(c.lat)+'°, '+fmt(c.lon)+'°',
+  'Track: '+(track.track_id||c.track_id||'non assegnato'),
+  'Velocità: '+fmt(track.speed_kmh)+' km/h',
+  'VIL: non disponibile',
+  'Echo-top: non disponibile',
+  'Quota: stima morfologica 3D',
+  '3D: '+(c['3d_available']?'disponibile':'non abilitato')
+ ];
+
+ if(Array.isArray(real)&&real.length===2){
+  rows.push('Vettore osservato: disponibile');
+ }else{
+  rows.push('Vettore osservato: dati insufficienti');
+ }
+
+ if(Array.isArray(forecast)&&forecast.length===2){
+  rows.push('Previsione sperimentale +60 min: disponibile');
+ }else{
+  rows.push('Previsione: non disponibile');
+ }
+
+ $('details').innerHTML=rows.join('<br>');
+}
+
+function selectCell(c){
+ active=c;
+ cellDetails(c);
+
+ document.querySelectorAll('.cellBtn').forEach(b=>{
+  b.classList.toggle('active',b.dataset.cell===c.id);
+ });
+
+ if(c['3d_available']===true){
+  open(c.id);
+ }
 }
 
 function render(d){
+ cells=Array.isArray(d.cells)?d.cells:[];
+ dataTimestamp=d.timestamp||null;
 
-cells=d.cells||[];
+ marks.clearLayers();
+ contours.clearLayers();
+ lines.clearLayers();
+ $('cells').replaceChildren();
 
-marks.clearLayers();
-lines.clearLayers();
+ for(const c of cells){
+  if(!Number.isFinite(Number(c.lat))||
+     !Number.isFinite(Number(c.lon)))continue;
 
-$('cells').replaceChildren();
+  drawPerimeter(c);
 
-for(const c of cells){
+  const marker=L.circleMarker([c.lat,c.lon],{
+   radius:Math.max(5,Math.min(13,4+c.max_dbz/9)),
+   color:'#ffffff',
+   weight:1,
+   fillColor:col(c.max_dbz),
+   fillOpacity:.9
+  }).addTo(marks);
 
-const m=L.circleMarker([c.lat,c.lon],{
-radius:Math.max(6,Math.min(14,5+c.max_dbz/8)),
-color:'#fff',
-weight:1,
-fillColor:col(c.max_dbz),
-fillOpacity:.9
-}).addTo(marks);
+  marker.bindTooltip(
+   '<span class="cell-label">'+c.id+'</span>'+
+   ' · '+fmt(c.max_dbz)+' dBZ'
+  );
 
-m.bindTooltip(c.id+' · '+fmt(c.max_dbz)+' dBZ');
-m.on('click',()=>open(c.id));
+  marker.on('click',()=>selectCell(c));
 
-if(c.vectors){
-poly(c.vectors.real,'#37e7ff');
-poly(c.vectors.predictive_30m,'#ffdc54','7 6');
-poly(c.vectors.predictive_60m,'#ff8b4b','3 7');
-}
+  const v=c.vectors||{};
+  drawLine(v.real,'#37e7ff');
+  drawLine(v.predictive_30m,'#ffdc54','7 6');
+  drawLine(v.predictive_60m,'#ff8b4b','3 7');
 
-const b=document.createElement('button');
-b.className='cellBtn';
-b.textContent=c.id+' · '+fmt(c.max_dbz)+' dBZ · '+c.area_pixels+' px';
+  const b=document.createElement('button');
+  b.className='cellBtn';
+  b.dataset.cell=c.id;
+  b.textContent=
+   c.id+' · '+fmt(c.max_dbz)+' dBZ · '+
+   (c.area_pixels??'?')+' px'+
+   (c['3d_available']?' · 3D':'');
+  b.onclick=()=>{
+   map.setView([c.lat,c.lon],Math.max(7,map.getZoom()));
+   selectCell(c);
+  };
+  $('cells').appendChild(b);
+ }
 
-b.onclick=()=>{
-map.setView([c.lat,c.lon],Math.max(7,map.getZoom()));
-open(c.id);
-};
+ $('status').textContent=
+  'Stato: '+(d.status||'n/d')+
+  '\nProdotto UTC: '+(d.timestamp||'n/d')+
+  '\nElaborato UTC: '+(d.generated_at||'n/d')+
+  '\nCelle rilevate: '+cells.length+
+  '\nCelle 3D abilitate: '+
+  cells.filter(c=>c['3d_available']===true).length+
+  '\nSoglia: '+fmt(d.processing?.threshold_dbz)+' dBZ'+
+  '\nFonte: '+(d.source?.provider||'OPERA')+
+  '\nProdotto: '+(d.source?.product||'DBZH');
 
-$('cells').appendChild(b);
-}
-
-$('status').textContent=
-'Prodotto UTC: '+d.timestamp+
-'\nElaborato UTC: '+d.generated_at+
-'\nCelle: '+cells.length+
-'\nFonte: '+(d.source?.provider||'OPERA')+
-'\nOggetto: '+(d.source?.object_key||'—');
+ if(cells.length){
+  const bounds=cells
+   .filter(c=>Number.isFinite(+c.lat)&&Number.isFinite(+c.lon))
+   .map(c=>[c.lat,c.lon]);
+  if(bounds.length)map.fitBounds(bounds,{padding:[25,25],maxZoom:6});
+ }
 }
 
 async function load(){
+ try{
+  $('status').textContent='Caricamento dati OPERA…';
 
-try{
-$('status').textContent='Caricamento…';
+  const r=await fetch('docs/data/iride.json?t='+Date.now(),{
+   cache:'no-store'
+  });
 
-const r=await fetch('docs/data/iride.json?t='+Date.now(),{
-cache:'no-store'
-});
+  if(!r.ok)throw Error('HTTP '+r.status);
 
-if(!r.ok)throw Error('HTTP '+r.status);
+  const d=await r.json();
 
-const d=await r.json();
+  if(d.status!=='ok'||!Array.isArray(d.cells)){
+   throw Error('Struttura JSON non valida');
+  }
 
-if(d.status!=='ok'||!Array.isArray(d.cells)){
-throw Error('JSON non valido');
-}
+  render(d);
 
-render(d);
-
-}catch(e){
-$('status').textContent='Dati non disponibili: '+e.message;
-}
+ }catch(e){
+  $('status').textContent='Dati non disponibili: '+e.message;
+ }
 }
 
 $('reload').onclick=load;
 
 $('fit').onclick=()=>{
-if(cells.length){
-map.fitBounds(
-cells.map(c=>[c.lat,c.lon]),
-{padding:[20,20],maxZoom:7}
-);
-}
-};
-
-const viewer=$('viewer');
+ const valid=cells.filter(c=>
+  Number.isFinite(+c.lat)&&Number.isFinite(+c.lon)
+ );
+ if(valid.length){
+  map.fitBounds(valid.map(c=>[c.lat,c.lon]),{
+   padding:[25,25],
+   maxZoom:7
+  });
+ }
+};const viewer=$('viewer');
 const canvas=$('scene');
 const ctx=canvas.getContext('2d');
 
@@ -235,823 +355,749 @@ let zoom=1.30;
 let drag=null;
 
 function resize(){
-const r=canvas.getBoundingClientRect();
-const d=Math.min(devicePixelRatio||1,2);
-canvas.width=r.width*d;
-canvas.height=r.height*d;
-ctx.setTransform(d,0,0,d,0,0);
+ const r=canvas.getBoundingClientRect();
+ const d=Math.min(devicePixelRatio||1,2);
+ canvas.width=r.width*d;
+ canvas.height=r.height*d;
+ ctx.setTransform(d,0,0,d,0,0);
 }
 
 function open(id){
-active=cells.find(c=>c.id===id);
-if(!active)return;
+ const eligible=cells
+  .filter(c=>c['3d_available']===true)
+  .sort((a,b)=>(a['3d_rank']??999)-(b['3d_rank']??999))
+  .slice(0,30);
 
-viewer.classList.add('open');
-$('vtitle').textContent=
-active.id+' · '+fmt(active.max_dbz)+' dBZ';
+ const candidate=eligible.find(c=>c.id===id);
 
-resize();
-draw();
+ if(!candidate){
+  $('status').textContent=
+   '3D non disponibile per questa cella. Limite: 30 celle abilitate.';
+  return;
+ }
+
+ active=candidate;
+ viewer.classList.add('open');
+
+ $('vtitle').textContent=
+  active.id+' · '+fmt(active.max_dbz)+' dBZ';
+
+ resize();
+ draw();
 }
 
 $('close').onclick=()=>{
-viewer.classList.remove('open');
+ viewer.classList.remove('open');
 };
 
 $('reset').onclick=()=>{
-yaw=-.55;
-pitch=.58;
-zoom=1.30;
-draw();
+ yaw=-.55;
+ pitch=.58;
+ zoom=1.30;
+ draw();
 };
 
 $('mode').onchange=draw;
 
 window.addEventListener('resize',()=>{
-if(viewer.classList.contains('open')){
-resize();
-draw();
-}
+ if(viewer.classList.contains('open')){
+  resize();
+  draw();
+ }
 });
 
 canvas.onpointerdown=e=>{
-drag=[e.clientX,e.clientY];
-canvas.setPointerCapture(e.pointerId);
+ drag=[e.clientX,e.clientY];
+ canvas.setPointerCapture(e.pointerId);
 };
 
 canvas.onpointermove=e=>{
-if(!drag)return;
+ if(!drag)return;
 
-yaw+=(e.clientX-drag[0])*.008;
-pitch=Math.max(
--.1,
-Math.min(1.35,pitch+(e.clientY-drag[1])*.008)
-);
+ yaw+=(e.clientX-drag[0])*.008;
+ pitch=Math.max(
+  -.1,
+  Math.min(1.35,pitch+(e.clientY-drag[1])*.008)
+ );
 
-drag=[e.clientX,e.clientY];
-draw();
+ drag=[e.clientX,e.clientY];
+ draw();
 };
 
 canvas.onpointerup=()=>drag=null;
 canvas.onpointercancel=()=>drag=null;
 
 canvas.addEventListener('wheel',e=>{
-e.preventDefault();
-zoom=Math.max(
-.5,
-Math.min(2.5,zoom*(e.deltaY>0?.92:1.08))
-);
-draw();
-},{passive:false});/* =====================================================
+ e.preventDefault();
+ zoom=Math.max(
+  .5,
+  Math.min(2.5,zoom*(e.deltaY>0?.92:1.08))
+ );
+ draw();
+},{passive:false});
+
+/* =====================================================
    RENDERER 3D MORFOLOGICO INCUDINE + GAMBO
 
-   Il piano radar conserva i campioni DBZH originali.
-
-   Il gambo viene costruito sui nuclei >=35 dBZ.
-
-   L'incudine utilizza i campioni circostanti realmente
-   presenti nella matrice. Non vengono assegnati valori
-   DBZH inventati ai pixel senza osservazione.
+   Piano radar: campioni DBZH originali.
+   Gambo: nuclei >=35 dBZ.
+   Incudine: echi reali circostanti.
 
    QUOTE VERTICALI: STIMA PARAMETRICA.
    ===================================================== */
 
 function draw(){
 
-if(!active)return;
-
-const r=canvas.getBoundingClientRect();
-const w=r.width;
-const h=r.height;
-
-if(w<2||h<2)return;
-
-ctx.clearRect(0,0,w,h);
-
-const bg=ctx.createLinearGradient(0,0,0,h);
-bg.addColorStop(0,'#071a2c');
-bg.addColorStop(.55,'#061321');
-bg.addColorStop(1,'#02070d');
-
-ctx.fillStyle=bg;
-ctx.fillRect(0,0,w,h);
-
-const raw=active.grid_matrix||[];
-const rows=raw.length;
-const cols=Math.max(0,...raw.map(row=>
-Array.isArray(row)?row.length:0
-));
-
-if(!rows||!cols){
-ctx.fillStyle='#fff';
-ctx.font='14px system-ui';
-ctx.fillText('Matrice DBZH non disponibile',18,30);
-return;
-}
-
-const mode=$('mode').value;
-
-/* Lettura e pulizia dei campioni DBZH */
-
-const values=raw.map(row=>
-Array.from({length:cols},(_,x)=>{
-const v=Number(Array.isArray(row)?row[x]:0);
-return Number.isFinite(v)&&v>=8?v:0;
-})
-);
-
-let observedMax=0;
-let occupied=0;
-
-for(let y=0;y<rows;y++){
-for(let x=0;x<cols;x++){
-const v=values[y][x];
-if(v>0){
-observedMax=Math.max(observedMax,v);
-occupied++;
-}
-}
-}
-
-if(!occupied){
-ctx.fillStyle='#fff';
-ctx.font='14px system-ui';
-ctx.fillText('Nessun campione DBZH utile nella matrice',18,30);
-return;
-}
-
-/* =====================================================
-   PARAMETRI VERTICALI: STIMA
-
-   Quota superiore incudine: 8.500 m STIMA.
-   Intervallo configurabile: 8.000–9.000 m.
-   Spessore incudine: 4.500 m STIMA.
-
-   Sono parametri grafici di letteratura, non misure
-   ricavate dal composito radar bidimensionale.
-   ===================================================== */
-
-const ANVIL_TOP_KM=8.5;
-const ANVIL_THICKNESS_KM=4.5;
-const ANVIL_BASE_KM=ANVIL_TOP_KM-ANVIL_THICKNESS_KM;
-
-/* Scala verticale normalizzata */
-
-const VERTICAL_UNITS=15;
-const STEM_TOP=VERTICAL_UNITS*.76;
-const ANVIL_TOP=VERTICAL_UNITS;
-const ANVIL_BASE=ANVIL_TOP-
-(ANVIL_THICKNESS_KM/ANVIL_TOP_KM)*VERTICAL_UNITS;
-
-const baseZ=-.8;
-const cellSize=.82;
-const half=cellSize*.5;
+ if(!active)return;
+
+ const r=canvas.getBoundingClientRect();
+ const w=r.width;
+ const h=r.height;
+
+ if(w<2||h<2)return;
+
+ ctx.clearRect(0,0,w,h);
+
+ const bg=ctx.createLinearGradient(0,0,0,h);
+ bg.addColorStop(0,'#071a2c');
+ bg.addColorStop(.55,'#061321');
+ bg.addColorStop(1,'#02070d');
+
+ ctx.fillStyle=bg;
+ ctx.fillRect(0,0,w,h);
+
+ const raw=active.grid_matrix||[];
+ const rows=raw.length;
+ const cols=Math.max(0,...raw.map(row=>
+  Array.isArray(row)?row.length:0
+ ));
+
+ if(!rows||!cols){
+  ctx.fillStyle='#fff';
+  ctx.font='14px system-ui';
+  ctx.fillText('Matrice DBZH non disponibile',18,30);
+  return;
+ }
+
+ const mode=$('mode').value;
+
+ /* Lettura campioni DBZH */
+
+ const values=raw.map(row=>
+  Array.from({length:cols},(_,x)=>{
+   const v=Number(Array.isArray(row)?row[x]:0);
+   return Number.isFinite(v)&&v>=8?v:0;
+  })
+ );
+
+ let observedMax=0;
+ let occupied=0;
+
+ for(let y=0;y<rows;y++){
+  for(let x=0;x<cols;x++){
+   const v=values[y][x];
+   if(v>0){
+    observedMax=Math.max(observedMax,v);
+    occupied++;
+   }
+  }
+ }
+
+ if(!occupied){
+  ctx.fillStyle='#fff';
+  ctx.font='14px system-ui';
+  ctx.fillText('Nessun campione DBZH utile nella matrice',18,30);
+  return;
+ }
+
+ /* PARAMETRI VERTICALI: STIMA */
 
-/* =====================================================
-   Individuazione dei nuclei convettivi.
+ const ANVIL_TOP_KM=8.5;
+ const ANVIL_THICKNESS_KM=4.5;
+ const ANVIL_BASE_KM=ANVIL_TOP_KM-ANVIL_THICKNESS_KM;
 
-   Si usa il massimo DBZH della matrice e la soglia
-   >=35 dBZ. Non si inventano centroidi aggiuntivi.
-   ===================================================== */
+ const VERTICAL_UNITS=15;
+ const STEM_TOP=VERTICAL_UNITS*.76;
+ const ANVIL_TOP=VERTICAL_UNITS;
+ const ANVIL_BASE=ANVIL_TOP-
+  (ANVIL_THICKNESS_KM/ANVIL_TOP_KM)*VERTICAL_UNITS;
 
-const coreMask=values.map(row=>
-row.map(v=>v>=35?1:0)
-);
+ const baseZ=-.8;
+ const cellSize=.82;
+ const half=cellSize*.5;
 
-let corePixels=0;
-let coreX=0;
-let coreY=0;
+ /* Nuclei convettivi >=35 dBZ */
 
-for(let y=0;y<rows;y++){
-for(let x=0;x<cols;x++){
-if(coreMask[y][x]){
-corePixels++;
-coreX+=x;
-coreY+=y;
-}
-}
-}
+ const coreMask=values.map(row=>
+  row.map(v=>v>=35?1:0)
+ );
 
-if(corePixels){
-coreX/=corePixels;
-coreY/=corePixels;
-}else{
-coreX=cols*.5;
-coreY=rows*.5;
-}
+ let corePixels=0;
+ let coreX=0;
+ let coreY=0;
 
-/* =====================================================
-   Campo di influenza dell'incudine.
+ for(let y=0;y<rows;y++){
+  for(let x=0;x<cols;x++){
+   if(coreMask[y][x]){
+    corePixels++;
+    coreX+=x;
+    coreY+=y;
+   }
+  }
+ }
 
-   L'estensione è vincolata alla presenza di echi reali.
-   I campioni deboli circostanti possono contribuire
-   alla forma dell'incudine, ma non generano nuovi
-   pixel radar o nuovi valori DBZH.
-   ===================================================== */
+ if(corePixels){
+  coreX/=corePixels;
+  coreY/=corePixels;
+ }else{
+  coreX=cols*.5;
+  coreY=rows*.5;
+ }
 
-const anvilField=values.map((row,y)=>
-row.map((v,x)=>{
+ /* Campo di influenza incudine */
 
-if(v<15)return 0;
+ const anvilField=values.map((row,y)=>
+  row.map((v,x)=>{
 
-/* Distanza dal nucleo convettivo */
+   if(v<15)return 0;
 
-const dx=x-coreX;
-const dy=y-coreY;
-const distance=Math.sqrt(dx*dx+dy*dy);
+   const dx=x-coreX;
+   const dy=y-coreY;
+   const distance=Math.sqrt(dx*dx+dy*dy);
 
-/* Gradiente di influenza del nucleo */
+   const influence=Math.max(
+    0,
+    1-distance/Math.max(8,Math.min(rows,cols)*.42)
+   );
 
-const influence=Math.max(
-0,
-1-distance/Math.max(8,Math.min(rows,cols)*.42)
-);
+   if(v<25)return influence*.55;
+   if(v<35)return influence*.78;
 
-/* Echi deboli e intermedi: contributo all'incudine */
+   return influence;
+  })
+ );
 
-if(v<25)return influence*.55;
-if(v<35)return influence*.78;
+ /* Regione di eco collegata al nucleo */
 
-return influence;
-})
-);
+ const anvilMask=values.map((row,y)=>
+  row.map((v,x)=>{
 
-/* Ricerca della regione di eco collegata al nucleo */
+   if(v<15)return 0;
 
-const anvilMask=values.map((row,y)=>
-row.map((v,x)=>{
+   const dx=x-coreX;
+   const dy=y-coreY;
+   const distance=Math.sqrt(dx*dx+dy*dy);
 
-if(v<15)return 0;
+   const nearCore=distance<=Math.max(
+    8,
+    Math.min(rows,cols)*.42
+   );
 
-const dx=x-coreX;
-const dy=y-coreY;
-const distance=Math.sqrt(dx*dx+dy*dy);
+   return nearCore?1:0;
+  })
+ );
 
-const nearCore=distance<=Math.max(
-8,
-Math.min(rows,cols)*.42
-);
+ /* Interpolazione del nucleo */
 
-return nearCore?1:0;
-})
-);
+ function smoothCore(x,y){
 
-/* =====================================================
-   Gambo: campo continuo basato sui pixel intensi.
+  let sum=0;
+  let weight=0;
 
-   Ogni pixel intenso contribuisce alla larghezza.
-   La continuità viene ottenuta con interpolazione
-   spaziale, non con colonne quadrate isolate.
-   ===================================================== */
+  for(let yy=Math.max(0,Math.floor(y)-2);
+      yy<=Math.min(rows-1,Math.ceil(y)+2);yy++){
 
-function smoothCore(x,y){
+   for(let xx=Math.max(0,Math.floor(x)-2);
+       xx<=Math.min(cols-1,Math.ceil(x)+2);xx++){
 
-let sum=0;
-let weight=0;
+    if(values[yy][xx]<35)continue;
 
-for(let yy=Math.max(0,Math.floor(y)-2);
-yy<=Math.min(rows-1,Math.ceil(y)+2);yy++){
+    const dx=xx-x;
+    const dy=yy-y;
+    const d2=dx*dx+dy*dy;
 
-for(let xx=Math.max(0,Math.floor(x)-2);
-xx<=Math.min(cols-1,Math.ceil(x)+2);xx++){
+    const q=Math.exp(-d2/2.2);
 
-if(values[yy][xx]<35)continue;
+    sum+=q;
+    weight+=q;
+   }
+  }
 
-const dx=xx-x;
-const dy=yy-y;
-const d2=dx*dx+dy*dy;
+  return weight>0?Math.min(1,sum/1.8):0;
+ }
 
-const q=Math.exp(-d2/2.2);
+ /* Superficie superiore derivata da DBZH */
 
-sum+=q;
-weight+=q;
-}
-}
+ const radarHeight=values.map(row=>
+  row.map(v=>{
 
-return weight>0?Math.min(1,sum/1.8):0;
-}
+   if(v<=0)return 0;
 
-/* Superficie superiore: altezza derivata da DBZH */
+   if(v>=45)return 15;
+   if(v>=40)return 14;
+   if(v>=35)return 12;
+   if(v>=30)return 10;
+   if(v>=25)return 9;
+   if(v>=15)return 8;
 
-const radarHeight=values.map(row=>
-row.map(v=>{
+   return 0;
+  })
+ );
 
-if(v<=0)return 0;
+ /* Proiezione 3D */
 
-if(v>=45)return 15;
-if(v>=40)return 14;
-if(v>=35)return 12;
-if(v>=30)return 10;
-if(v>=25)return 9;
-if(v>=15)return 8;
+ const scale=Math.min(
+  w/(cols+rows*.72),
+  h/(rows*.85+VERTICAL_UNITS*.75+3)
+ )*zoom*1.05;
 
-return 0;
-})
-);
+ const ox=w*.5;
+ const oy=h*.78;
 
-/* =====================================================
-   Proiezione 3D
-   ===================================================== */
+ function project(x,y,z){
 
-const scale=Math.min(
-w/(cols+rows*.72),
-h/(rows*.85+VERTICAL_UNITS*.75+3)
-)*zoom*1.05;
+  const X=x-cols/2;
+  const Y=y-rows/2;
 
-const ox=w*.5;
-const oy=h*.78;
+  const A=X*Math.cos(yaw)-Y*Math.sin(yaw);
+  const B=X*Math.sin(yaw)+Y*Math.cos(yaw);
 
-function project(x,y,z){
+  const C=B*Math.cos(pitch)-z*Math.sin(pitch);
+  const D=B*Math.sin(pitch)+z*Math.cos(pitch);
 
-const X=x-cols/2;
-const Y=y-rows/2;
+  return{
+   x:ox+(A-C*.48)*scale,
+   y:oy+(A*.22+C*.7-D)*scale
+  };
+ }
 
-const A=X*Math.cos(yaw)-Y*Math.sin(yaw);
-const B=X*Math.sin(yaw)+Y*Math.cos(yaw);
+ function wave(x,y,k){
 
-const C=B*Math.cos(pitch)-z*Math.sin(pitch);
-const D=B*Math.sin(pitch)+z*Math.cos(pitch);
+  return(
+   Math.sin(x*.43+y*.19+k*.24)*.16+
+   Math.cos(y*.37-x*.16+k*.18)*.12
+  );
+ }
 
-return{
-x:ox+(A-C*.48)*scale,
-y:oy+(A*.22+C*.7-D)*scale
-};
-}
+ function shade(hex,factor){
 
-function wave(x,y,k){
+  const c=hex.replace('#','');
+  const n=parseInt(c,16);
 
-return(
-Math.sin(x*.43+y*.19+k*.24)*.16+
-Math.cos(y*.37-x*.16+k*.18)*.12
-);
-}
+  const rr=Math.min(255,Math.round(((n>>16)&255)*factor));
+  const gg=Math.min(255,Math.round(((n>>8)&255)*factor));
+  const bb=Math.min(255,Math.round((n&255)*factor));
 
-function shade(hex,factor){
+  return `rgb(${rr},${gg},${bb})`;
+ }
 
-const c=hex.replace('#','');
-const n=parseInt(c,16);
+ function alphaFor(v){
 
-const rr=Math.min(255,Math.round(((n>>16)&255)*factor));
-const gg=Math.min(255,Math.round(((n>>8)&255)*factor));
-const bb=Math.min(255,Math.round((n&255)*factor));
+  if(mode==='holo')return .32+Math.min(1,v/55)*.40;
+  if(mode==='surface')return .94;
 
-return `rgb(${rr},${gg},${bb})`;
-}
+  if(v>=35)return .96;
+  if(v>=30)return .85;
+  if(v>=25)return .72;
 
-function alphaFor(v){
+  return .48;
+ }
 
-if(mode==='holo')return .32+Math.min(1,v/55)*.40;
-if(mode==='surface')return .94;
+ /* Raccolta facce */
 
-if(v>=35)return .96;
-if(v>=30)return .85;
-if(v>=25)return .72;
+ const faces=[];
 
-return .48;
-}
+ function face(points,fill,alpha,stroke){
 
-/* Raccolta facce con ordinamento di profondità */
+  const depth=
+   points.reduce((sum,p)=>sum+p.depth,0)/points.length;
 
-const faces=[];
+  faces.push({points,fill,alpha,depth,stroke});
+ }
 
-function face(points,fill,alpha,stroke){
+ function drawFace(points,fill,alpha,stroke){
 
-const depth=
-points.reduce((sum,p)=>sum+p.depth,0)/points.length;
+  ctx.globalAlpha=alpha;
+  ctx.fillStyle=fill;
+  ctx.strokeStyle=stroke||'rgba(3,12,22,.48)';
+  ctx.lineWidth=mode==='holo'?.7:.35;
 
-faces.push({points,fill,alpha,depth,stroke});
-}
+  ctx.beginPath();
+  ctx.moveTo(points[0].x,points[0].y);
 
-function drawFace(points,fill,alpha,stroke){
+  for(let i=1;i<points.length;i++){
+   ctx.lineTo(points[i].x,points[i].y);
+  }
 
-ctx.globalAlpha=alpha;
-ctx.fillStyle=fill;
-ctx.strokeStyle=stroke||'rgba(3,12,22,.48)';
-ctx.lineWidth=mode==='holo'?.7:.35;
+  ctx.closePath();
 
-ctx.beginPath();
-ctx.moveTo(points[0].x,points[0].y);
+  if(mode!=='holo')ctx.fill();
+  if(mode==='holo'||stroke)ctx.stroke();
+ }
 
-for(let i=1;i<points.length;i++){
-ctx.lineTo(points[i].x,points[i].y);
-}
+ function P(x,y,z){
+  const p=project(x,y,z);
+  return{x:p.x,y:p.y,depth:p.y};
+ }
 
-ctx.closePath();
+ /* 1. Piano radar inferiore */
 
-if(mode!=='holo')ctx.fill();
+ for(let y=0;y<rows;y++){
 
-if(mode==='holo'||stroke)ctx.stroke();
-}
+  for(let x=0;x<cols;x++){
 
-/* Proietta un punto e conserva la profondità */
+   const v=values[y][x];
+   if(v<=0)continue;
 
-function P(x,y,z){
-const p=project(x,y,z);
-return{x:p.x,y:p.y,depth:p.y};
-}
+   const x0=x+.5-half;
+   const x1=x+.5+half;
+   const y0=y+.5-half;
+   const y1=y+.5+half;
 
-/* =====================================================
-   1. PIANO RADAR INFERIORE
+   const p=[
+    P(x0,y0,baseZ),
+    P(x1,y0,baseZ),
+    P(x1,y1,baseZ),
+    P(x0,y1,baseZ)
+   ];
 
-   Distribuzione e colori originali DBZH.
-   ===================================================== */
+   face(
+    p,
+    shade(col(v),.70),
+    mode==='holo'?.30:.78
+   );
+  }
+ }
 
-for(let y=0;y<rows;y++){
+ /* 2. Gambo convettivo */
 
-for(let x=0;x<cols;x++){
+ const stemSegments=18;
+ const stemSides=12;
 
-const v=values[y][x];
-if(v<=0)continue;
+ for(let s=0;s<stemSegments;s++){
 
-const x0=x+.5-half;
-const x1=x+.5+half;
-const y0=y+.5-half;
-const y1=y+.5+half;
+  const t0=s/stemSegments;
+  const t1=(s+1)/stemSegments;
 
-const p=[
-P(x0,y0,baseZ),
-P(x1,y0,baseZ),
-P(x1,y1,baseZ),
-P(x0,y1,baseZ)
-];
+  const z0=baseZ+(STEM_TOP-baseZ)*t0;
+  const z1=baseZ+(STEM_TOP-baseZ)*t1;
 
-face(
-p,
-shade(col(v),.70),
-mode==='holo'?.30:.78
-);
-}
-}
+  for(let y=0;y<rows;y++){
 
-/* =====================================================
-   2. GAMBO CONVETTIVO CONTINUO
+   for(let x=0;x<cols;x++){
 
-   Il gambo si sviluppa dai pixel >=35 dBZ.
-   La sua sezione viene interpolata nello spazio.
-   ===================================================== */
+    if(values[y][x]<35)continue;
 
-const stemSegments=18;
-const stemSides=12;
+    const intensity=values[y][x];
+    const colour=col(intensity);
 
-for(let s=0;s<stemSegments;s++){
+    const radius0=.20+.34*(1-t0);
+    const radius1=.20+.34*(1-t1);
 
-const t0=s/stemSegments;
-const t1=(s+1)/stemSegments;
+    const bend0=Math.sin(t0*Math.PI*1.2+x*.13)*.10;
+    const bend1=Math.sin(t1*Math.PI*1.2+x*.13)*.10;
 
-const z0=baseZ+(STEM_TOP-baseZ)*t0;
-const z1=baseZ+(STEM_TOP-baseZ)*t1;
+    for(let side=0;side<stemSides;side++){
 
-for(let y=0;y<rows;y++){
+     const a0=side/stemSides*Math.PI*2;
+     const a1=(side+1)/stemSides*Math.PI*2;
 
-for(let x=0;x<cols;x++){
+     const p=[
+      P(x+.5+bend0+Math.cos(a0)*radius0,
+        y+.5+Math.sin(a0)*radius0,z0),
 
-if(values[y][x]<35)continue;
+      P(x+.5+bend0+Math.cos(a1)*radius0,
+        y+.5+Math.sin(a1)*radius0,z0),
 
-const intensity=values[y][x];
-const colour=col(intensity);
+      P(x+.5+bend1+Math.cos(a1)*radius1,
+        y+.5+Math.sin(a1)*radius1,z1),
 
-const radius0=.20+.34*(1-t0);
-const radius1=.20+.34*(1-t1);
+      P(x+.5+bend1+Math.cos(a0)*radius1,
+        y+.5+Math.sin(a0)*radius1,z1)
+     ];
 
-const bend0=Math.sin(t0*Math.PI*1.2+x*.13)*.10;
-const bend1=Math.sin(t1*Math.PI*1.2+x*.13)*.10;
+     face(
+      p,
+      shade(colour,.72+.18*Math.abs(Math.cos(a0))),
+      mode==='holo'?.34:.88
+     );
+    }
+   }
+  }
+ }
 
-for(let side=0;side<stemSides;side++){
+ /* 3. Incudine: superficie irregolare */
 
-const a0=side/stemSides*Math.PI*2;
-const a1=(side+1)/stemSides*Math.PI*2;
+ const capGrid=values.map((row,y)=>
+  row.map((v,x)=>{
 
-const p=[
-P(x+.5+bend0+Math.cos(a0)*radius0,
-y+.5+Math.sin(a0)*radius0,z0),
+   if(!anvilMask[y][x])return 0;
+   if(v>=35)return 0;
 
-P(x+.5+bend0+Math.cos(a1)*radius0,
-y+.5+Math.sin(a1)*radius0,z0),
+   return anvilField[y][x];
+  })
+ );
 
-P(x+.5+bend1+Math.cos(a1)*radius1,
-y+.5+Math.sin(a1)*radius1,z1),
+ const capHeight=ANVIL_BASE;
+ const capThickness=ANVIL_TOP-ANVIL_BASE;
 
-P(x+.5+bend1+Math.cos(a0)*radius1,
-y+.5+Math.sin(a0)*radius1,z1)
-];
+ function capZ(x,y){
 
-face(
-p,
-shade(colour,.72+.18*Math.abs(Math.cos(a0))),
-mode==='holo'?.34:.88
-);
-}
-}
-}
-}
+  const field=capGrid[y]?.[x]||0;
+  if(field<=0)return 0;
 
-/* =====================================================
-   3. INCUDINE: SUPERFICIE AMPIA E IRREGOLARE
+  const undulation=
+   Math.sin(x*.37+y*.21)*.20+
+   Math.cos(y*.31-x*.17)*.14+
+   Math.sin(x*.13-y*.29)*.12;
 
-   Si utilizzano solo pixel con eco >=15 dBZ e
-   appartenenti alla regione spaziale collegata
-   al nucleo convettivo.
+  return capHeight+
+   field*capThickness*.30+
+   undulation;
+ }
 
-   La quota è parametrica: STIMA.
-   ===================================================== */
+ for(let y=0;y<rows-1;y++){
 
-const capGrid=values.map((row,y)=>
-row.map((v,x)=>{
+  for(let x=0;x<cols-1;x++){
 
-if(!anvilMask[y][x])return 0;
+   const v00=values[y][x];
+   const v10=values[y][x+1];
+   const v11=values[y+1][x+1];
+   const v01=values[y+1][x];
 
-/* La parte più intensa resta sotto il cappello */
+   const c00=capGrid[y][x];
+   const c10=capGrid[y][x+1];
+   const c11=capGrid[y+1][x+1];
+   const c01=capGrid[y+1][x];
 
-if(v>=35)return 0;
+   if(c00<=0&&c10<=0&&c11<=0&&c01<=0)continue;
 
-/* Profilo verticale del cappello */
+   const z00=capZ(x,y);
+   const z10=capZ(x+1,y);
+   const z11=capZ(x+1,y+1);
+   const z01=capZ(x,y+1);
 
-const influence=anvilField[y][x];
+   const samples=[v00,v10,v11,v01].filter(v=>v>=15);
+   if(!samples.length)continue;
 
-return influence;
-})
-);
+   const mean=samples.reduce((a,b)=>a+b,0)/samples.length;
+   const colour=col(mean);
 
-const capHeight=ANVIL_BASE;
-const capThickness=ANVIL_TOP-ANVIL_BASE;
+   const p=[
+    P(x+.5,y+.5,z00),
+    P(x+1.5,y+.5,z10),
+    P(x+1.5,y+1.5,z11),
+    P(x+.5,y+1.5,z01)
+   ];
 
-function capZ(x,y){
+   face(
+    p,
+    colour,
+    mode==='holo'?.48:
+    mode==='surface'?.96:.88
+   );
+  }
+   } /* 4. Bordo irregolare dell'incudine */
 
-const field=capGrid[y]?.[x]||0;
-if(field<=0)return 0;
+ for(let y=0;y<rows;y++){
 
-const undulation=
-Math.sin(x*.37+y*.21)*.20+
-Math.cos(y*.31-x*.17)*.14+
-Math.sin(x*.13-y*.29)*.12;
+  for(let x=0;x<cols;x++){
 
-return capHeight+
-field*capThickness*.30+
-undulation;
-}
+   const v=values[y][x];
+   if(v<15||!anvilMask[y][x]||v>=35)continue;
 
-for(let y=0;y<rows-1;y++){
+   const z=capZ(x,y);
+   const colour=col(v);
 
-for(let x=0;x<cols-1;x++){
+   const neighbours=[
+    {dx:0,dy:-1,a:0,b:1,f:.70},
+    {dx:1,dy:0,a:1,b:2,f:.53},
+    {dx:0,dy:1,a:2,b:3,f:.64},
+    {dx:-1,dy:0,a:3,b:0,f:.44}
+   ];
 
-const v00=values[y][x];
-const v10=values[y][x+1];
-const v11=values[y+1][x+1];
-const v01=values[y+1][x];
+   const x0=x+.5-half;
+   const x1=x+.5+half;
+   const y0=y+.5-half;
+   const y1=y+.5+half;
 
-const c00=capGrid[y][x];
-const c10=capGrid[y][x+1];
-const c11=capGrid[y+1][x+1];
-const c01=capGrid[y+1][x];
+   const top=[
+    P(x0,y0,z),
+    P(x1,y0,z),
+    P(x1,y1,z),
+    P(x0,y1,z)
+   ];
 
-if(c00<=0&&c10<=0&&c11<=0&&c01<=0)continue;
+   for(const n of neighbours){
 
-const z00=capZ(x,y);
-const z10=capZ(x+1,y);
-const z11=capZ(x+1,y+1);
-const z01=capZ(x,y+1);
+    const nx=x+n.dx;
+    const ny=y+n.dy;
 
-/* Valore DBZH medio dei campioni reali */
+    const neighbour=
+     ny>=0&&ny<rows&&nx>=0&&nx<cols?
+     capGrid[ny][nx]:0;
 
-const samples=[v00,v10,v11,v01].filter(v=>v>=15);
-if(!samples.length)continue;
+    if(neighbour>0)continue;
 
-const mean=samples.reduce((a,b)=>a+b,0)/samples.length;
-const colour=col(mean);
+    const bottomZ=Math.max(baseZ,z-capThickness*.35);
 
-const p=[
-P(x+.5,y+.5,z00),
-P(x+1.5,y+.5,z10),
-P(x+1.5,y+1.5,z11),
-P(x+.5,y+1.5,z01)
-];
+    const bottom=[
+     P(x0,y0,bottomZ),
+     P(x1,y0,bottomZ),
+     P(x1,y1,bottomZ),
+     P(x0,y1,bottomZ)
+    ];
 
-face(
-p,
-colour,
-mode==='holo'?.48:
-mode==='surface'?.96:.88
-);
-}
-   }/* =====================================================
-   4. BORDO IRREGOLARE DELL'INCUDINE
+    face(
+     [
+      bottom[n.a],
+      bottom[n.b],
+      top[n.b],
+      top[n.a]
+     ],
+     shade(colour,n.f),
+     mode==='holo'?.28:.62
+    );
+   }
+  }
+ }
 
-   I bordi seguono la distribuzione degli echi reali.
-   Non viene costruito un cilindro o un disco artificiale.
-   ===================================================== */
+ /* 5. Reticolo e contorni */
 
-for(let y=0;y<rows;y++){
+ if(mode!=='surface'){
 
-for(let x=0;x<cols;x++){
+  ctx.globalAlpha=mode==='holo'?.68:.30;
+  ctx.strokeStyle='rgba(220,245,255,.72)';
+  ctx.lineWidth=.42;
 
-const v=values[y][x];
-if(v<15||!anvilMask[y][x]||v>=35)continue;
+  for(let y=0;y<rows;y++){
 
-const z=capZ(x,y);
-const colour=col(v);
+   for(let x=0;x<cols;x++){
 
-const neighbours=[
-{dx:0,dy:-1,a:0,b:1,f:.70},
-{dx:1,dy:0,a:1,b:2,f:.53},
-{dx:0,dy:1,a:2,b:3,f:.64},
-{dx:-1,dy:0,a:3,b:0,f:.44}
-];
+    if(values[y][x]<=0)continue;
 
-const x0=x+.5-half;
-const x1=x+.5+half;
-const y0=y+.5-half;
-const y1=y+.5+half;
+    const z=radarHeight[y][x]*.47;
+    if(z<=0)continue;
 
-const top=[
-P(x0,y0,z),
-P(x1,y0,z),
-P(x1,y1,z),
-P(x0,y1,z)
-];
+    const p=[
+     P(x+.5-half,y+.5-half,z),
+     P(x+.5+half,y+.5-half,z),
+     P(x+.5+half,y+.5+half,z),
+     P(x+.5-half,y+.5+half,z)
+    ];
 
-for(const n of neighbours){
+    ctx.beginPath();
+    ctx.moveTo(p[0].x,p[0].y);
 
-const nx=x+n.dx;
-const ny=y+n.dy;
+    for(let i=1;i<p.length;i++){
+     ctx.lineTo(p[i].x,p[i].y);
+    }
 
-const neighbour=
-ny>=0&&ny<rows&&nx>=0&&nx<cols?
-capGrid[ny][nx]:0;
+    ctx.closePath();
+    ctx.stroke();
+   }
+  }
+ }
 
-if(neighbour>0)continue;
+ /* 6. Rendering facce */
 
-const bottomZ=Math.max(baseZ,z-capThickness*.35);
+ faces.sort((a,b)=>a.depth-b.depth);
 
-const bottom=[
-P(x0,y0,bottomZ),
-P(x1,y0,bottomZ),
-P(x1,y1,bottomZ),
-P(x0,y1,bottomZ)
-];
+ for(const f of faces){
+  drawFace(f.points,f.fill,f.alpha,f.stroke);
+ }
 
-face(
-[
-bottom[n.a],
-bottom[n.b],
-top[n.b],
-top[n.a]
-],
-shade(colour,n.f),
-mode==='holo'?.28:.62
-);
-}
-}
-}
+ /* 7. Indicatore nucleo convettivo */
 
-/* =====================================================
-   5. RETICOLO E CONTORNI
+ if(corePixels){
 
-   ===================================================== */
+  const center=P(coreX+.5,coreY+.5,STEM_TOP);
 
-if(mode!=='surface'){
+  ctx.globalAlpha=.95;
+  ctx.strokeStyle='#ffffff';
+  ctx.lineWidth=1.3;
 
-ctx.globalAlpha=mode==='holo'?.68:.30;
-ctx.strokeStyle='rgba(220,245,255,.72)';
-ctx.lineWidth=.42;
+  ctx.beginPath();
+  ctx.arc(center.x,center.y,5,0,Math.PI*2);
+  ctx.stroke();
 
-for(let y=0;y<rows;y++){
+  ctx.beginPath();
+  ctx.moveTo(center.x-9,center.y);
+  ctx.lineTo(center.x+9,center.y);
+  ctx.moveTo(center.x,center.y-9);
+  ctx.lineTo(center.x,center.y+9);
+  ctx.stroke();
+ }
 
-for(let x=0;x<cols;x++){
+ /* 8. Reticolo holographic */
 
-if(values[y][x]<=0)continue;
+ if(mode==='holo'){
 
-const z=radarHeight[y][x]*.47;
-if(z<=0)continue;
+  ctx.globalAlpha=.58;
+  ctx.strokeStyle='rgba(100,210,255,.8)';
+  ctx.lineWidth=.6;
 
-const p=[
-P(x+.5-half,y+.5-half,z),
-P(x+.5+half,y+.5-half,z),
-P(x+.5+half,y+.5+half,z),
-P(x+.5-half,y+.5+half,z)
-];
+  const step=Math.max(2,Math.floor(Math.min(rows,cols)/18));
 
-ctx.beginPath();
-ctx.moveTo(p[0].x,p[0].y);
+  for(let y=0;y<rows;y+=step){
 
-for(let i=1;i<p.length;i++){
-ctx.lineTo(p[i].x,p[i].y);
-}
+   const a=P(.5,y+.5,baseZ);
+   const b=P(cols-.5,y+.5,baseZ);
 
-ctx.closePath();
-ctx.stroke();
-}
-}
-}
+   ctx.beginPath();
+   ctx.moveTo(a.x,a.y);
+   ctx.lineTo(b.x,b.y);
+   ctx.stroke();
+  }
 
-/* =====================================================
-   6. RENDERING DELLE FACCE
+  for(let x=0;x<cols;x+=step){
 
-   Tutte le modalità utilizzano la stessa geometria.
-   ===================================================== */
+   const a=P(x+.5,.5,baseZ);
+   const b=P(x+.5,rows-.5,baseZ);
 
-faces.sort((a,b)=>a.depth-b.depth);
+   ctx.beginPath();
+   ctx.moveTo(a.x,a.y);
+   ctx.lineTo(b.x,b.y);
+   ctx.stroke();
+  }
+ }
 
-for(const f of faces){
-drawFace(f.points,f.fill,f.alpha,f.stroke);
-}
+ /* 9. Informazioni */
 
-/* =====================================================
-   7. INDICATORE DEL NUCLEO CONVETTIVO
-   ===================================================== */
+ ctx.globalAlpha=1;
+ ctx.fillStyle='#f0f7ff';
+ ctx.font='12px system-ui';
 
-if(corePixels){
+ ctx.fillText(
+  active.id+
+  ' · matrice '+rows+'×'+cols+
+  ' · max '+fmt(active.max_dbz)+' dBZ',
+  12,20
+ );
 
-const center=P(coreX+.5,coreY+.5,STEM_TOP);
+ ctx.fillStyle='#a9bfd3';
+ ctx.font='11px system-ui';
 
-ctx.globalAlpha=.95;
-ctx.strokeStyle='#ffffff';
-ctx.lineWidth=1.3;
+ ctx.fillText(
+  'Campioni DBZH: '+occupied+
+  ' · nuclei ≥35 dBZ: '+corePixels,
+  12,38
+ );
 
-ctx.beginPath();
-ctx.arc(center.x,center.y,5,0,Math.PI*2);
-ctx.stroke();
+ ctx.fillText(
+  'Incudine: quota superiore STIMA '+
+  ANVIL_TOP_KM.toFixed(1)+
+  ' km · spessore STIMA '+
+  ANVIL_THICKNESS_KM.toFixed(1)+' km',
+  12,h-30
+ );
 
-ctx.beginPath();
-ctx.moveTo(center.x-9,center.y);
-ctx.lineTo(center.x+9,center.y);
-ctx.moveTo(center.x,center.y-9);
-ctx.lineTo(center.x,center.y+9);
-ctx.stroke();
-}
+ ctx.fillText(
+  'Morfologia pseudo-3D ricostruita da DBZH 2D',
+  12,h-14
+ );
 
-/* =====================================================
-   8. RETICOLO HOLOGRAPHIC
-   ===================================================== */
-
-if(mode==='holo'){
-
-ctx.globalAlpha=.58;
-ctx.strokeStyle='rgba(100,210,255,.8)';
-ctx.lineWidth=.6;
-
-const step=Math.max(2,Math.floor(Math.min(rows,cols)/18));
-
-for(let y=0;y<rows;y+=step){
-
-const a=P(.5,y+.5,baseZ);
-const b=P(cols-.5,y+.5,baseZ);
-
-ctx.beginPath();
-ctx.moveTo(a.x,a.y);
-ctx.lineTo(b.x,b.y);
-ctx.stroke();
-}
-
-for(let x=0;x<cols;x+=step){
-
-const a=P(x+.5,.5,baseZ);
-const b=P(x+.5,rows-.5,baseZ);
-
-ctx.beginPath();
-ctx.moveTo(a.x,a.y);
-ctx.lineTo(b.x,b.y);
-ctx.stroke();
-}
-}
-
-/* =====================================================
-   9. INFORMAZIONI E PARAMETRI STIMATI
-   ===================================================== */
-
-ctx.globalAlpha=1;
-
-ctx.fillStyle='#f0f7ff';
-ctx.font='12px system-ui';
-
-ctx.fillText(
-active.id+
-' · matrice '+rows+'×'+cols+
-' · max '+fmt(active.max_dbz)+' dBZ',
-12,20
-);
-
-ctx.fillStyle='#a9bfd3';
-ctx.font='11px system-ui';
-
-ctx.fillText(
-'Campioni DBZH: '+occupied+
-' · nuclei ≥35 dBZ: '+corePixels,
-12,38
-);
-
-ctx.fillText(
-'Incudine: quota superiore STIMA '+ANVIL_TOP_KM.toFixed(1)+
-' km · spessore STIMA '+ANVIL_THICKNESS_KM.toFixed(1)+' km',
-12,h-30
-);
-
-ctx.fillText(
-'Gambo convettivo e incudine: morfologia pseudo-3D da DBZH 2D',
-12,h-14
-);
-
-ctx.globalAlpha=1;
-
+ ctx.globalAlpha=1;
 }
 
 load();
