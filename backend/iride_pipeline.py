@@ -263,7 +263,20 @@ def decode(path):
         ll_y = number(attr(where, "LL_y"))
 
         if ll_x is None or ll_y is None:
-            raise RuntimeError("Coordinate LL_x/LL_y ODIM mancanti.")
+            ll_lon = number(attr(where, "LL_lon"))
+            ll_lat = number(attr(where, "LL_lat"))
+
+            if ll_lon is None or ll_lat is None:
+                raise RuntimeError(
+                    "Coordinate geografiche LL ODIM mancanti."
+                )
+
+            forward = Transformer.from_crs(
+                CRS.from_epsg(4326),
+                CRS.from_user_input(projection),
+                always_xy=True
+            )
+            ll_x, ll_y = forward.transform(ll_lon, ll_lat)
 
         if xscale <= 0 or yscale <= 0:
             raise RuntimeError("Risoluzione spaziale ODIM non valida.")
