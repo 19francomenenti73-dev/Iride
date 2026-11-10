@@ -90,6 +90,8 @@ L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{
 
 const radarLayer=L.layerGroup().addTo(map);
 const centroidLayer=L.layerGroup().addTo(map);
+const vectorLayer=L.layerGroup().addTo(map);
+let radarImage=null;
 
 let cells=[];
 let selected=null;
@@ -123,40 +125,44 @@ function popupContent(c,index){
  <div class="popup-line">Area eco: ${areaText}</div>
  <div class="popup-line">Centroide: ${number(c.lat,3)}°, ${number(c.lon,3)}°</div>
  ${hasSpeed?`<div class="popup-line">Velocità track: ${number(speed)} km/h</div>`:''}
- <div class="popup-note">Perimetro: area connessa con DBZH ≥25 dBZ. Non è una classificazione mesoscala.</div>
+ <div class="popup-line">Struttura: ${safe(c.morphology?.label||'Non classificata')}</div>
+ <div class="popup-note">Contorno: bordo dei pixel DBZH ≥25 dBZ. Classe morfologica preliminare, non diagnosi MCS.</div>
  ${c['3d_available']===true?`<button class="popup-action" id="open3d-${index}">Apri ricostruzione 3D</button>`:''}
  `;
 }
 
 function addCell(c,index){
- if(!Array.isArray(c.perimeter)||c.perimeter.length<3)return;
- const points=c.perimeter.filter(p=>
-  Array.isArray(p)&&p.length>=2&&
-  Number.isFinite(+p[0])&&Number.isFinite(+p[1])
- );
- if(points.length<3)return;
-
  const stroke=color(c.max_dbz);
+ const points=Array.isArray(c.perimeter)?c.perimeter.filter(p=>
+  Array.isArray(p)&&p.length>=2&&Number.isFinite(+p[0])&&Number.isFinite(+p[1])
+ ):[];
 
- L.polygon(points,{
-  color:stroke,
-  weight:1.5,
-  opacity:.95,
-  fillColor:stroke,
-  fillOpacity:.27,
-  smoothFactor:0.5
- }).addTo(radarLayer);
+ if(points.length>=3){
+  L.polygon(points,{
+   color:stroke,weight:1.4,opacity:.9,
+   fillColor:stroke,fillOpacity:.10,smoothFactor:.5
+  }).addTo(radarLayer);
+ }
+
+ const vectors=c.vectors||{};
+ if(Array.isArray(vectors.real)&&vectors.real.length>=2){
+  L.polyline(vectors.real,{
+   color:'#42a5ff',weight:3,opacity:.95
+  }).addTo(vectorLayer);
+ }
+
+ if(Array.isArray(vectors.predictive_180m)&&vectors.predictive_180m.length>=2){
+  L.polyline(vectors.predictive_180m,{
+   color:'#ffd166',weight:2.5,opacity:.95,dashArray:'7 7'
+  }).addTo(vectorLayer);
+ }
 
  const marker=L.circleMarker([c.lat,c.lon],{
-  radius:6,
-  color:'#ffffff',
-  weight:1.5,
-  fillColor:stroke,
-  fillOpacity:1
+  radius:6,color:'#ffffff',weight:1.5,
+  fillColor:stroke,fillOpacity:1
  }).addTo(centroidLayer);
 
- marker.bindPopup(popupContent(c,index),{maxWidth:260});
-
+ marker.bindPopup(popupContent(c,index),{maxWidth:270});
  marker.on('popupopen',()=>{
   const button=$('open3d-'+index);
   if(button)button.onclick=()=>open3D(c);
@@ -167,6 +173,28 @@ function render(data){
  cells=Array.isArray(data.cells)?data.cells:[];
  radarLayer.clearLayers();
  centroidLayer.clearLayers();
+ vectorLayer.clearLayers();
+
+ if(radarImage){
+  map.removeLayer(radarImage);
+  radarImage=null;
+ }
+
+ const overlay=data.radar_overlay;
+
+ if(overlay&&overlay.image&&Array.isArray(overlay.bounds)){
+  const imagePath=overlay.image.startsWith('docs/')
+   ?overlay.image:'docs/'+overlay.image;
+
+  radarImage=L.imageOverlay(
+   imagePath+'?t='+Date.now(),
+   overlay.bounds,
+   {
+    opacity:overlay.opacity||.82,
+    interactive:false
+   }
+  ).addTo(map);
+ }
 
  cells.forEach((c,i)=>{
   if(Number.isFinite(+c.lat)&&Number.isFinite(+c.lon))addCell(c,i);
@@ -180,28 +208,37 @@ function render(data){
   const bounds=cells
    .filter(c=>Number.isFinite(+c.lat)&&Number.isFinite(+c.lon))
    .map(c=>[+c.lat,+c.lon]);
+
   if(bounds.length)map.fitBounds(bounds,{padding:[25,25],maxZoom:7});
  }
 }
 
 async function load(){
  $('status').textContent='OPERA · aggiornamento';
+
  try{
   const response=await fetch('docs/data/iride.json?t='+Date.now(),{
    cache:'no-store'
   });
+
   if(!response.ok)throw Error('HTTP '+response.status);
+
   const data=await response.json();
+
   if(data.status!=='ok'||!Array.isArray(data.cells))
    throw Error('Dati non validi');
+
   render(data);
+
  }catch(error){
   $('status').textContent='OPERA · dati non disponibili';
   console.error(error);
  }
 }
 
-$('reload').onclick=load;/* =====================================================
+$('reload').onclick=load;
+
+/* =====================================================
    RENDERER 3D
    La texture alla base è la matrice DBZH osservata.
    La quota è una ricostruzione morfologica, non misurata.
@@ -230,7 +267,6 @@ void main(){
 
 const fragmentShader=`#version 300 es
 precision highp float;
-
 in vec2 uv;
 out vec4 outputColor;
 
@@ -367,12 +403,15 @@ function compileShader(type,source){
  const shader=gl.createShader(type);
  gl.shaderSource(shader,source);
  gl.compileShader(shader);
+
  if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))
   throw Error(gl.getShaderInfoLog(shader));
+
  return shader;
 }
 
 const program=gl.createProgram();
+
 gl.attachShader(program,compileShader(gl.VERTEX_SHADER,vertexShader));
 gl.attachShader(program,compileShader(gl.FRAGMENT_SHADER,fragmentShader));
 gl.linkProgram(program);
@@ -393,6 +432,7 @@ gl.enableVertexAttribArray(position);
 gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
 
 const uniform={};
+
 [
  'resolution','cameraPosition','cameraRight','cameraUp',
  'cameraForward','fov','radarTexture','renderMode'
@@ -422,6 +462,7 @@ function radarColor(dbz){
 
 function uploadRadarMatrix(cell){
  const matrix=cell.grid_matrix;
+
  if(!Array.isArray(matrix)||matrix.length===0)
   throw Error('Matrice DBZH non presente');
 
@@ -436,10 +477,12 @@ function uploadRadarMatrix(cell){
 
  for(let y=0;y<height;y++){
   const row=matrix[y]||[];
+
   for(let x=0;x<width;x++){
    const value=Number(row[x]);
    const rgba=radarColor(Number.isFinite(value)?value:0);
    const offset=((height-1-y)*width+x)*4;
+
    pixels[offset]=rgba[0];
    pixels[offset+1]=rgba[1];
    pixels[offset+2]=rgba[2];
@@ -482,8 +525,10 @@ function cross(a,b){
 function resizeCanvas(){
  const rect=canvas.getBoundingClientRect();
  const ratio=Math.min(window.devicePixelRatio||1,1.5);
+
  canvas.width=Math.max(1,Math.round(rect.width*ratio));
  canvas.height=Math.max(1,Math.round(rect.height*ratio));
+
  gl.viewport(0,0,canvas.width,canvas.height);
 }
 
@@ -492,6 +537,7 @@ function drawScene(){
 
  const width=canvas.width;
  const height=canvas.height;
+
  if(!width||!height)return;
 
  const target=[0,.95,0];
@@ -543,6 +589,7 @@ function open3D(cell){
   viewer.classList.add('open');
   resizeCanvas();
   drawScene();
+
  }catch(error){
   console.error(error);
   alert('Errore nella ricostruzione: '+error.message);
@@ -588,6 +635,7 @@ canvas.addEventListener('pointermove',event=>{
 
  lastX=event.clientX;
  lastY=event.clientY;
+
  drawScene();
 });
 
@@ -596,7 +644,12 @@ canvas.addEventListener('pointercancel',()=>dragging=false);
 
 canvas.addEventListener('wheel',event=>{
  event.preventDefault();
- distance=Math.max(4.2,Math.min(13,distance+event.deltaY*.008));
+
+ distance=Math.max(
+  4.2,
+  Math.min(13,distance+event.deltaY*.008)
+ );
+
  drawScene();
 },{passive:false});
 
@@ -621,9 +674,13 @@ canvas.addEventListener('touchmove',event=>{
  );
 
  if(touchDistance>0&&next>0){
-  distance=Math.max(4.2,Math.min(13,distance*touchDistance/next));
+  distance=Math.max(
+   4.2,
+   Math.min(13,distance*touchDistance/next)
+  );
   drawScene();
  }
+
  touchDistance=next;
 },{passive:false});
 
