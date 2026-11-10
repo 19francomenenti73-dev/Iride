@@ -48,7 +48,10 @@ header{
  border-radius:6px;display:grid;place-items:center;
  color:#8ccbe8;font-size:17px;font-weight:800
 }
-.brand-name{font-size:17px;font-weight:750;letter-spacing:.8px}
+.brand-name{font-size:17px;font-weight:750;letter-spacing:.8px;
+ color:#48a9ef;animation:iridePulse 3s ease-in-out infinite}
+@keyframes iridePulse{50%{color:#8edbff;text-shadow:0 0 12px #397ee888}}
+@media(prefers-reduced-motion:reduce){.brand-name{animation:none}}
 .brand-sub{
  color:var(--muted);font-size:9px;letter-spacing:1.2px;
  margin-top:2px
@@ -305,7 +308,7 @@ header{
   <b id="vtitle">RICOSTRUZIONE RADAR</b>
   <div class="vcontrols">
    <select id="mode">
-    <option value="0">Voxel 3D</option>
+    <option value="0">Volume V11</option>
     <option value="1">Iso-superficie</option>
     <option value="2">Holographic</option>
    </select>
@@ -394,8 +397,7 @@ function pointDistanceKm(a,b){
  const dp=(Number(b[0])-Number(a[0]))*rad;
  const dl=(Number(b[1])-Number(a[1]))*rad;
  const q=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
- return 6371*2*Math.asin(Math.min(1,Math.sqrt(q)));
-}
+ return 6371*2*Math.asin(Math.min(1,Math.sqrt(q)));}
 
 function drawVector(c){
  const v=c.vectors;
@@ -460,7 +462,7 @@ function addCell(c,index){
 
  const marker=L.circleMarker([Number(c.lat),Number(c.lon)],{
   radius:5,color:'#fff',weight:1.4,
-  fillColor:stroke,fillOpacity:1
+  fillColor:stroke,fillOpacity:0
  }).addTo(cellLayer);
 
  marker.bindPopup(popupContent(c,index),{maxWidth:280});
@@ -472,22 +474,13 @@ function addCell(c,index){
  if(showVectors&&vectorIsUsable(c))drawVector(c);
 }
 
-/* Correzione del percorso radar: GitHub Pages pubblica docs/ come radice. */
+/* Resolve the raster beside the JSON actually loaded, in both Pages layouts. */
 function overlayUrl(path){
  if(!path)return '';
-
  const value=String(path).trim();
-
- if(/^https?:\/\//i.test(value)){
-  return value;
- }
-
- const relative=value
-  .replace(/^\.\/+/,'')
-  .replace(/^\/+/,'')
-  .replace(/^docs\//,'');
-
- return relative;
+ if(/^https?:\/\//i.test(value))return value;
+ const name=value.replace(/^\.?\//,'').replace(/^docs\//,'').replace(/^data\//,'');
+ return new URL(name,new URL(jsonLocation,document.baseURI)).href;
 }
 
 function render(data){
@@ -697,76 +690,68 @@ uniform vec3 cameraUp;
 uniform vec3 cameraForward;
 uniform float fov;
 uniform sampler2D radarTexture;
+uniform sampler2D distanceTexture;
 uniform int renderMode;
 const vec3 BG=vec3(.008,.018,.031);
-vec4 radar(vec2 p){return texture(radarTexture,clamp(p,vec2(0.),vec2(1.)));}
+vec4 radar(vec2 p){
+ if(any(lessThan(p,vec2(0.)))||any(greaterThan(p,vec2(1.))))return vec4(0.);
+ return texture(radarTexture,p);
+}
 float echoClass(vec3 c){
  if(c.b>c.r*1.22 && c.b>c.g*1.12)return 1.;
  if(c.g>c.r*1.12 && c.g>c.b*1.05)return 2.;
  if(c.r>.65 && c.g>.55 && c.b<.35)return 3.;
- if(c.r>.65 && c.g<.48 && c.b<.35)return 4.;
+ if(c.r>.65 && c.g<.50 && c.b<.35)return 4.;
  if(c.r>.60 && c.b>.35 && c.g<.40)return 5.;
  return 0.;
 }
-float echoTop(float k){
- if(k==1.)return 3.0;
- if(k==2.)return 2.65;
- if(k==3.)return 2.15;
- if(k==4.)return 1.7;
- if(k==5.)return 1.25;
- return 0.;
+vec4 masks(vec2 uv){
+ vec4 r=radar(uv);float k=echoClass(r.rgb);
+ return vec4(k==1.?r.a:0.,k==2.?r.a:0.,k==3.?r.a:0.,k>=4.?r.a:0.);
 }
-/* Geometria V11: blu/verde si allargano salendo;
-   giallo -10%, arancio -20%, magenta -30%. */
-float footprintScale(float k,float h,float top){
- float f=clamp(h/max(top,.01),0.,1.);
- if(k==1.)return 1.0+.14*f;
- if(k==2.)return 1.0+.11*f;
- if(k==3.)return 1.0-.10*f;
- if(k==4.)return 1.0-.20*f;
- if(k==5.)return 1.0-.30*f;
- return 1.;
-}
-/* Campo volumetrico comune. La quota è morfologica stimata. */
+/* V11 local dilation: every echo stays anchored to its own pixels.
+   Blue and green expand above the observed footprint, never from its centre. */
 float densityAt(vec3 p,out vec3 cellColor,out float klass){
  cellColor=vec3(0.);klass=0.;
- if(p.y<.04||p.y>3.15)return 0.;
- vec2 local=vec2((p.x+2.25)/4.5,(p.z+1.40)/2.8);
- vec4 base=radar(local);
- float baseClass=echoClass(base.rgb);
- if(base.a<.1||baseClass<1.)return 0.;
- float top=echoTop(baseClass);
- if(top<=0.||p.y>top)return 0.;
- float scale=footprintScale(baseClass,p.y,top);
- vec2 expanded=vec2(.5)+(local-vec2(.5))/scale;
- if(any(lessThan(expanded,vec2(0.)))||any(greaterThan(expanded,vec2(1.))))return 0.;
- vec4 sampleColor=radar(expanded);
- klass=echoClass(sampleColor.rgb);
- if(sampleColor.a<.1||klass<1.)return 0.;
- cellColor=sampleColor.rgb;
- float vertical=p.y/top;
- float lower=smoothstep(.025,.24,p.y);
- float upper=1.-smoothstep(.82,1.,vertical);
- float density=lower*upper;
- if(klass==1.)density*=.13;
- if(klass==2.)density*=.19;
- if(klass==3.)density*=.54;
- if(klass==4.)density*=.67;
- if(klass==5.)density*=.77;
- if(renderMode==0){
-  float layer=floor(vertical*12.)/12.;
-  density*=smoothstep(0.,.10,layer)*.92;
- }else if(renderMode==2){
-  float layer=abs(fract(vertical*10.)-.5);
-  float shell=1.-smoothstep(.035,.13,layer);
-  density*=.20+shell*.58;
-  density*=.82+.18*sin(p.y*58.);
+ if(p.y<.04||p.y>3.75)return 0.;
+ vec2 uvMap=vec2((p.x+2.25)/4.5,(p.z+2.25)/4.5);
+ float h=p.y;
+ vec4 direct=masks(uvMap),spread=direct;
+ vec2 edge=clamp(uvMap,0.,1.);
+ vec2 distances=texture(distanceTexture,edge).rg*1.414214+length(uvMap-edge);
+ float rb=.012+.09*smoothstep(.25,3.,h);
+ float rg=.009+.055*smoothstep(.20,2.5,h);
+ spread.r=exp(-pow(distances.r/max(rb,.001),2.)*2.);
+ spread.g=exp(-pow(distances.g/max(rg,.001),2.)*2.);
+ vec4 eroded=direct;
+ for(int i=0;i<4;i++){
+  float angle=float(i)*1.5707963;
+  eroded=min(eroded,masks(uvMap+vec2(cos(angle),sin(angle))/72.));
  }
- return clamp(density,0.,.95);
+ vec4 base=radar(uvMap);
+ float k=echoClass(base.rgb);
+ float blue=direct.r*.025*exp(-pow((h-.48)/.34,2.))+
+  spread.r*.18*exp(-pow((h-2.55)/.66,2.));
+ float green=direct.g*.035*exp(-pow((h-.72)/.42,2.))+
+  spread.g*.26*exp(-pow((h-1.95)/.62,2.));
+ float yellow=mix(direct.b,eroded.b,.10)*.54*exp(-pow((h-1.10)/.48,2.));
+ float hot=mix(direct.a,eroded.a,k==5.?.30:.20)*
+  (k==5.?.92:.78)*exp(-pow((h-1.04)/.43,2.));
+ float density=max(max(blue,green),max(yellow,hot));
+ if(density<=.001)return 0.;
+ if(density==hot){cellColor=base.rgb;klass=k;}
+ else if(density==yellow){cellColor=vec3(.957,.831,.243);klass=3.;}
+ else if(density==green){cellColor=vec3(.141,.741,.439);klass=2.;}
+ else{cellColor=vec3(.224,.494,.910);klass=1.;}
+ if(renderMode==2){
+  float line=1.-smoothstep(.04,.16,abs(fract(h*9.)-.5));
+  density*=.12+.88*line;
+ }
+ return density;
 }
 float fieldAt(vec3 p){vec3 c;float k;return densityAt(p,c,k);}
 bool intersectBox(vec3 ro,vec3 rd,out float nearT,out float farT){
- vec3 low=vec3(-2.25,.04,-1.40),high=vec3(2.25,3.15,1.40);
+ vec3 low=vec3(-2.8,.04,-2.8),high=vec3(2.8,3.75,2.8);
  vec3 inv=1./rd,a=(low-ro)*inv,b=(high-ro)*inv;
  vec3 mn=min(a,b),mx=max(a,b);
  nearT=max(max(mn.x,mn.y),mn.z);
@@ -778,7 +763,7 @@ vec3 surfaceNormal(vec3 p){
  vec3 n=vec3(fieldAt(p+vec3(e,0.,0.))-fieldAt(p-vec3(e,0.,0.)),
   fieldAt(p+vec3(0.,e,0.))-fieldAt(p-vec3(0.,e,0.)),
   fieldAt(p+vec3(0.,0.,e))-fieldAt(p-vec3(0.,0.,e)));
- return normalize(n+vec3(.00001));
+ return normalize(-n+vec3(.00001));
 }
 void main(){
  vec2 screen=uv*2.-1.;screen.x*=resolution.x/resolution.y;
@@ -787,19 +772,19 @@ void main(){
  if(direction.y<-.0001)floorT=(.04-cameraPosition.y)/direction.y;
  if(floorT>0.){
   vec3 fp=cameraPosition+direction*floorT;
-  if(abs(fp.x)<=2.25&&abs(fp.z)<=1.40){
-   vec2 floorUV=vec2((fp.x+2.25)/4.5,(fp.z+1.40)/2.8);
+  if(abs(fp.x)<=2.25&&abs(fp.z)<=2.25){
+   vec2 floorUV=vec2((fp.x+2.25)/4.5,(fp.z+2.25)/4.5);
    vec4 base=radar(floorUV);result=mix(BG,base.rgb,base.a);
   }
  }
  if(intersectBox(cameraPosition,direction,nearT,farT)){
   float startT=max(nearT,0.),endT=farT;
   if(floorT>startT)endT=min(endT,floorT);
-  float stepSize=max((endT-startT)/220.,.001);
+  float stepSize=max((endT-startT)/112.,.001);
   float transparency=1.;vec3 volume=vec3(0.);
   if(renderMode==1){
    float previous=0.;
-   for(int i=0;i<220;i++){
+   for(int i=0;i<112;i++){
     float t=startT+(float(i)+.5)*stepSize;
     vec3 p=cameraPosition+direction*t;
     float d=fieldAt(p);
@@ -808,13 +793,15 @@ void main(){
      vec3 normal=surfaceNormal(p),light=normalize(vec3(-.45,.85,.55));
      float diffuse=max(dot(normal,light),0.);
      float rim=pow(1.-abs(dot(normal,-direction)),2.);
-     result=cellColor*(.42+.52*diffuse+.22*rim);
-     break;
-    }
+     float alpha=klass<=2.?.20:(klass==3.?.55:.88);
+     volume+=transparency*alpha*cellColor*(.55+.40*diffuse+.15*rim);
+     transparency*=1.-alpha;
+     if(transparency<.03)break;    }
     previous=d;
    }
+   result=volume+transparency*result;
   }else{
-   for(int i=0;i<220;i++){
+   for(int i=0;i<112;i++){
     float t=startT+(float(i)+.5)*stepSize;
     vec3 p=cameraPosition+direction*t,cellColor;float klass;
     float density=densityAt(p,cellColor,klass);
@@ -897,12 +884,14 @@ const uniforms={};
  'cameraForward',
  'fov',
  'radarTexture',
+ 'distanceTexture',
  'renderMode'
 ].forEach(name=>{
  uniforms[name]=gl.getUniformLocation(program,name);
 });
 
 const texture=gl.createTexture();
+const distanceTexture=gl.createTexture();
 
 gl.activeTexture(gl.TEXTURE0);
 gl.bindTexture(gl.TEXTURE_2D,texture);
@@ -952,7 +941,7 @@ function uploadRadarMatrix(cell){
   for(let x=0;x<width;x++){
    const value=Number(row[x]);
    const rgba=radarColor(Number.isFinite(value)?value:0);
-   const offset=((height-1-y)*width+x)*4;
+   const offset=(y*width+x)*4;
 
    pixels[offset]=rgba[0];
    pixels[offset+1]=rgba[1];
@@ -960,6 +949,32 @@ function uploadRadarMatrix(cell){
    pixels[offset+3]=rgba[3];
   }
  }
+
+ // Distances to observed blue/green pixels allow smooth local expansion.
+ const distances=new Uint8Array(width*height*4);
+ const seeds=[[],[]];
+ for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+  const v=Number(matrix[y][x]);
+  if(v>=15&&v<25)seeds[0].push([x,y]);
+  if(v>=25&&v<30)seeds[1].push([x,y]);
+ }
+ for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+  const offset=(y*width+x)*4;
+  for(let k=0;k<2;k++){
+   let best=width*width*2;
+   for(const [sx,sy] of seeds[k])best=Math.min(best,(x-sx)**2+(y-sy)**2);
+   distances[offset+k]=Math.round(Math.sqrt(best)/width/Math.SQRT2*255);
+  }
+  distances[offset+3]=255;
+ }
+ gl.activeTexture(gl.TEXTURE1);
+ gl.bindTexture(gl.TEXTURE_2D,distanceTexture);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,distances);
+ gl.uniform1i(uniforms.distanceTexture,1);
 
  gl.activeTexture(gl.TEXTURE0);
  gl.bindTexture(gl.TEXTURE_2D,texture);
@@ -1005,7 +1020,7 @@ function cross(a,b){
 
 function resizeCanvas(){
  const rect=canvas.getBoundingClientRect();
- const ratio=Math.min(window.devicePixelRatio||1,2);
+ const ratio=Math.min(window.devicePixelRatio||1,1.35);
 
  canvas.width=Math.max(1,Math.round(rect.width*ratio));
  canvas.height=Math.max(1,Math.round(rect.height*ratio));
@@ -1180,8 +1195,7 @@ canvas.addEventListener('touchmove',event=>{
 
  const next=Math.hypot(
   event.touches[0].clientX-event.touches[1].clientX,
-  event.touches[0].clientY-event.touches[1].clientY
- );
+  event.touches[0].clientY-event.touches[1].clientY );
 
  if(pinchDistance>0&&next>0){
   distance=Math.max(
