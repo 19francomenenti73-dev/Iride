@@ -41,7 +41,7 @@ jobs:
       - name: Acquire, decode, detect and track OPERA
         run: python backend/iride_pipeline.py
 
-      - name: Validate published JSON
+      - name: Validate published data and radar image
         run: |
           python -m json.tool data/iride.json >/dev/null
           python -m json.tool docs/data/iride.json >/dev/null
@@ -56,10 +56,16 @@ jobs:
           public = json.loads(Path("docs/data/iride.json").read_text())
           status = json.loads(Path("data/status.json").read_text())
 
-          assert data == public, "I JSON pubblici e interni non coincidono"
+          radar = Path("docs/data/iride_radar.png")
+
+          assert data == public, "JSON interni e pubblici diversi"
           assert data["status"] == "ok"
           assert data["schema_version"] == 6
           assert status["status"] == "ok"
+
+          assert radar.exists(), "PNG radar non generato"
+          assert radar.stat().st_size > 1000, "PNG radar vuoto"
+          assert radar.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), "PNG non valido"
 
           cells = data["cells"]
           assert 1 <= len(cells) <= 100
@@ -86,8 +92,7 @@ jobs:
                       assert isinstance(value, (int, float))
                       assert math.isfinite(value)
 
-              morphology = cell["morphology"]
-              assert morphology["class"]
+              assert cell["morphology"]["class"]
               assert cell["perimeter_semantics"]
 
               if cell["3d_available"]:
@@ -96,39 +101,43 @@ jobs:
               else:
                   assert cell["3d_rank"] is None
 
-              for vector_name in (
+              for name in (
                   "real",
                   "predictive_30m",
                   "predictive_60m",
                   "predictive_180m"
               ):
-                  vector = cell["vectors"][vector_name]
+                  vector = cell["vectors"][name]
                   if vector is not None:
                       assert len(vector) == 2
                       for point in vector:
                           assert len(point) == 2
-                          assert all(
-                              math.isfinite(float(v))
-                              for v in point
-                          )
+                          assert all(math.isfinite(float(v)) for v in point)
 
           assert count_3d <= 30
           assert status["cell_count"] == len(cells)
 
           print(
               f"Validazione superata: {len(cells)} celle, "
-              f"{count_3d} abilitate 3D"
+              f"{count_3d} celle 3D, radar PNG {radar.stat().st_size} byte"
           )
           PY
 
-      - name: Commit data and history
+      - name: Commit data, radar image and history
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/iride.json data/iride_history.json data/status.json docs/data/iride.json
+
+          git add \
+            data/iride.json \
+            data/iride_history.json \
+            data/status.json \
+            docs/data/iride.json \
+            docs/data/iride_radar.png
+
           if git diff --cached --quiet; then
             echo "No new data changes."
           else
-            git commit -m "Update I.R.I.D.E. OPERA nowcasting data"
+            git commit -m "Update I.R.I.D.E. OPERA radar data"
             git push
           fi
