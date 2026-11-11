@@ -675,7 +675,7 @@ float densityV11(vec3 p,out vec3 cellColor,out float klass){
  }
  return density;
 }
-// Continuous 3D fields built from overlapping rounded radar lobes.
+// Continuous 3D fields reconstructed from the complete radar matrix.
 void echoFields(vec3 p,out float layers[5]){
  for(int k=0;k<5;k++)layers[k]=0.;
  vec3 q=vec3((p.x+2.8)/5.6,p.y/3.75,(p.z+2.8)/5.6);
@@ -791,10 +791,10 @@ void main(){
     }
     if(transparency<.018)break;
    }
-   result=volume+transparency*result;  }else{
+   result=volume+transparency*result;
+  }else{
    for(int i=0;i<160;i++){
-    float t=startT+(float(i)+.5)*stepSize;
-    vec3 p=cameraPosition+direction*t,cellColor;float klass;
+    float t=startT+(float(i)+.5)*stepSize;    vec3 p=cameraPosition+direction*t,cellColor;float klass;
     float density=densityV11(p,cellColor,klass);
     if(density>.012){
      float alpha=1.-exp(-density*stepSize*(renderMode==0?5.2:2.2));
@@ -1129,75 +1129,72 @@ function radarColor(dbz){
   gl.TEXTURE_2D,0,gl.RGBA,width,height,0,
   gl.RGBA,gl.UNSIGNED_BYTE,pixels
  );
- }function uploadRoundedVolume(matrix){
- const n=64,count=n*n*n;
- const shells=new Uint8Array(count*4);
- const cores=new Uint8Array(count*4);
+}
+
+function uploadContinuousVolume(matrix){
+ const n=64,w=72;
+ const shells=new Uint8Array(n*n*n*4);
+ const cores=new Uint8Array(n*n*n*4);
  const thresholds=[15,25,30,35,45];
- const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
- const smooth=(a,b,v)=>{const t=clamp((v-a)/(b-a),0,1);return t*t*(3-2*t);};
- for(let k=0;k<5;k++){
-  const threshold=thresholds[k],candidates=[];
-  for(let y=0;y<72;y++)for(let x=0;x<72;x++){
-   const value=Number(matrix[y][x]);
-   if(Number.isFinite(value)&&value>=threshold)candidates.push({x,y,value});
+ const smooth=(a,b,v)=>{
+  const t=Math.max(0,Math.min(1,(v-a)/(b-a)));
+  return t*t*(3-2*t);
+ };
+ const source=new Float64Array(w*w);
+ for(let z=0;z<w;z++)for(let x=0;x<w;x++){
+  const v=Number(matrix[z][x]);
+  source[z*w+x]=Number.isFinite(v)&&v>=15?Math.min(80,v)**4:0;
+ }
+ const temp=new Float64Array(w*w),field=new Float64Array(w*w);
+ const coordinates=Float64Array.from({length:n},(_,i)=>
+  (((i+.5)/n*5.6-2.8+2.25)/4.5*w-.5));
+ for(let y=1;y<n-1;y++){
+  const h=(y+.5)/n*3.75,sigma=.9+1.8*h;
+  const radius=Math.floor(4*sigma+.5);
+  const kernel=new Float64Array(radius*2+1);
+  let sum=0;
+  for(let j=-radius;j<=radius;j++){
+   const v=Math.exp(-.5*(j/sigma)**2);
+   kernel[j+radius]=v;sum+=v;
   }
-  candidates.sort((a,b)=>b.value-a.value||a.y-b.y||a.x-b.x);
-  const lobes=[];
-  for(const seed of candidates){
-   if(lobes.some(l=>((seed.x-l.px)/l.sx)**2+((seed.y-l.pz)/l.sz)**2<.65))continue;
-   let weight=0,mx=0,mz=0,xx=0,zz=0;
-   for(let dy=-6;dy<=6;dy++)for(let dx=-6;dx<=6;dx++){
-    const value=Number(matrix[seed.y+dy]?.[seed.x+dx]);
-    if(!Number.isFinite(value)||value<threshold)continue;
-    const w=(1+(value-threshold)/20)*Math.exp(-(dx*dx+dy*dy)/40);
-    weight+=w;mx+=dx*w;mz+=dy*w;xx+=dx*dx*w;zz+=dy*dy*w;
+  for(let j=0;j<kernel.length;j++)kernel[j]/=sum;
+  // Same zero-padded Gaussian filter as the approved visual prototype.
+  for(let z=0;z<w;z++)for(let x=0;x<w;x++){
+   let value=0;
+   for(let j=-radius;j<=radius;j++){
+    const row=z+j;
+    if(row>=0&&row<w)value+=source[row*w+x]*kernel[j+radius];
    }
-   if(!weight)continue;
-   mx/=weight;mz/=weight;
-   const sx=clamp(3+2.4*Math.sqrt(Math.max(0,xx/weight-mx*mx)),4,12);
-   const sz=clamp(3+2.4*Math.sqrt(Math.max(0,zz/weight-mz*mz)),4,12);
-   const px=seed.x+mx*.5,pz=seed.y+mz*.5;
-   lobes.push({px,pz,sx,sz,value:seed.value});
-   if(lobes.length>=32)break;
+   temp[z*w+x]=value;
   }
-  const target=k===4?cores:shells,channel=k===4?0:k;
-  for(const l of lobes){
-   const spread=[1.55,1.28,1.03,.90,.80][k];
-   const rx=l.sx/72*4.5*spread,rz=l.sz/72*4.5*spread;
-   const size=clamp((rx+rz)/1.6,.65,1.15);
-   const vigor=.85+.15*clamp((l.value-threshold)/25,0,1);
-   const cy=[1.12,.78,.47,.31,.22][k]*size*vigor;
-   const ry=[1.34,1.05,.72,.53,.39][k]*size*vigor;
-   const cx=(l.px+.5)/72*4.5-2.25,cz=(l.pz+.5)/72*4.5-2.25;
-   const x0=clamp(Math.floor((cx-rx*1.4+2.8)/5.6*n),1,n-2);
-   const x1=clamp(Math.ceil((cx+rx*1.4+2.8)/5.6*n),1,n-2);
-   const z0=clamp(Math.floor((cz-rz*1.4+2.8)/5.6*n),1,n-2);
-   const z1=clamp(Math.ceil((cz+rz*1.4+2.8)/5.6*n),1,n-2);
-   const y1=clamp(Math.ceil((cy+ry)/3.75*n),1,n-2);
-   for(let y=1;y<=y1;y++){
-    const h=(y+.5)/n*3.75,vertical=((h-cy)/ry)**2;
-    if(vertical>=1)continue;
-    const flare=k<2?.70+.65*smooth(0,cy+ry,h):1;
-    const base=smooth(.04,k<2?.32:.12,h);
-    for(let z=z0;z<=z1;z++)for(let x=x0;x<=x1;x++){
-     const dx=((x+.5)/n*5.6-2.8-cx)/(rx*flare);
-     const dz=((z+.5)/n*5.6-2.8-cz)/(rz*flare);
-     const r2=dx*dx+dz*dz+vertical;
-     if(r2>=1)continue;
-     const density=(1-r2)*base;
-     const offset=((z*n+y)*n+x)*4+channel;
-     const old=target[offset]/255;
-     const blend=Math.max(.18-Math.abs(old-density),0);
-     const joined=Math.max(old,density)+blend*blend/.72;
-     target[offset]=Math.round(Math.min(1,joined)*255);
-    }
+  for(let z=0;z<w;z++)for(let x=0;x<w;x++){
+   let value=0;
+   for(let j=-radius;j<=radius;j++){
+    const col=x+j;
+    if(col>=0&&col<w)value+=temp[z*w+col]*kernel[j+radius];
+   }
+   field[z*w+x]=Math.sqrt(Math.sqrt(value));
+  }
+  for(let z=1;z<n-1;z++)for(let x=1;x<n-1;x++){
+   const qx=coordinates[x],qz=coordinates[z];
+   if(qx<0||qx>w-1||qz<0||qz>w-1)continue;
+   const x0=Math.floor(qx),z0=Math.floor(qz);
+   const x1=Math.min(w-1,x0+1),z1=Math.min(w-1,z0+1);
+   const fx=qx-x0,fz=qz-z0;
+   const lower=field[z0*w+x0]*(1-fx)+field[z0*w+x1]*fx;
+   const upper=field[z1*w+x0]*(1-fx)+field[z1*w+x1]*fx;
+   const dbz=lower*(1-fz)+upper*fz-h*14;
+   const offset=((z*n+y)*n+x)*4;
+   for(let k=0;k<5;k++){
+    const density=smooth(thresholds[k]-3,thresholds[k]+3,dbz)*
+     smooth(.04,k<2?.40:.12,h);
+    if(k<4)shells[offset+k]=Math.round(density*255);
+    else cores[offset]=Math.round(density*255);
    }
   }
  }
  for(const [unit,tex,data] of [[3,shellVolume,shells],[4,coreVolume,cores]]){
-  gl.activeTexture(gl.TEXTURE0+unit);
-  gl.bindTexture(gl.TEXTURE_3D,tex);
+  gl.activeTexture(gl.TEXTURE0+unit);  gl.bindTexture(gl.TEXTURE_3D,tex);
   gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
@@ -1287,7 +1284,7 @@ function open3D(cell){
  try{
   activeCell=cell;
   uploadRadarMatrix(cell);
-  uploadRoundedVolume(cell.grid_matrix);
+  uploadContinuousVolume(cell.grid_matrix);
   $('vtitle').textContent=
    (cell.track_id||cell.id||'CELLA')+
    ' · '+fmt(cell.max_dbz)+' dBZ';
