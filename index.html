@@ -616,6 +616,8 @@ uniform float fov;
 uniform sampler2D radarTexture;
 uniform sampler2D distanceTexture;
 uniform sampler2D shapeTexture;
+uniform highp sampler3D shellVolume;
+uniform highp sampler3D coreVolume;
 uniform int renderMode;
 const vec3 BG=vec3(.008,.018,.031);
 
@@ -673,35 +675,14 @@ float densityV11(vec3 p,out vec3 cellColor,out float klass){
  }
  return density;
 }
-// Independent, nested experimental fields: the outer shell cannot hide
-// crossings of a stronger echo. V11 uses its original field unchanged.
+// Continuous 3D fields built from overlapping rounded radar lobes.
 void echoFields(vec3 p,out float layers[5]){
  for(int k=0;k<5;k++)layers[k]=0.;
- if(p.y<.04||p.y>3.75)return;
- vec2 q=(p.xz+2.25)/4.5;
- if(any(lessThan(q,vec2(0.)))||any(greaterThan(q,vec2(1.))))return;
- vec3 field=texture(shapeTexture,q).rgb*90.;
- float core=mix(field.x,field.z,.45);
- float h=p.y;
- float widening=smoothstep(.20,2.4,h);
- float outer=mix(field.x,field.y,.15+.85*widening);
- float middle=mix(field.x,field.y,.10+.48*widening);
- float localTop=smoothstep(14.,48.,field.y);
- // Smooth domes and weak bases, with wider upper outer envelopes.
- float edgeFade=smoothstep(0.,.025,min(min(q.x,q.y),min(1.-q.x,1.-q.y)));
- float blueMask=smoothstep(5.,20.,outer)*edgeFade;
- float greenMask=smoothstep(15.,29.,middle)*edgeFade;
- float dome=1.55+.40*localTop;
- layers[0]=blueMask*1.25*smoothstep(.06,.65,h)*
-  exp(-pow((h-dome)/1.35,2.));
- layers[1]=greenMask*1.25*smoothstep(.05,.30,h)*
-  exp(-pow((h-(.95+.30*localTop))/1.10,2.));
- layers[2]=smoothstep(26.,34.,core)*1.25*smoothstep(.04,.14,h)*
-  exp(-pow((h-.65)/.85,2.));
- layers[3]=smoothstep(33.,43.,core)*1.25*smoothstep(.04,.12,h)*
-  exp(-pow((h-.44)/.66,2.));
- layers[4]=smoothstep(43.,53.,core)*1.25*smoothstep(.04,.10,h)*
-  exp(-pow((h-.32)/.48,2.));
+ vec3 q=vec3((p.x+2.8)/5.6,p.y/3.75,(p.z+2.8)/5.6);
+ if(any(lessThan(q,vec3(0.)))||any(greaterThan(q,vec3(1.))))return;
+ vec4 shells=texture(shellVolume,q);
+ for(int k=0;k<4;k++)layers[k]=shells[k];
+ layers[4]=texture(coreVolume,q).r;
 }
 vec3 layerColor(int k){
  if(k==0)return vec3(.224,.494,.910);
@@ -795,9 +776,10 @@ void main(){
     vec3 p=cameraPosition+direction*t;
     float fields[5];echoFields(p,fields);
     float extinction=0.;vec3 emission=vec3(0.);
-    for(int k=0;k<5;k++){     float strength=k==0?.10:(k==1?.19:(k==2?.85:(k==3?2.5:3.5)));
+    for(int k=0;k<5;k++){
+     float strength=k==0?.13:(k==1?.24:(k==2?1.15:(k==3?3.0:4.0)));
      float shell=exp(-pow((fields[k]-.5)/.14,2.));
-     float density=strength*(fields[k]*.75+shell*.25);
+     float density=strength*(smoothstep(.12,.78,fields[k])*.85+shell*.15);
      extinction+=density;
      emission+=layerColor(k)*density;
     }
@@ -809,8 +791,7 @@ void main(){
     }
     if(transparency<.018)break;
    }
-   result=volume+transparency*result;
-  }else{
+   result=volume+transparency*result;  }else{
    for(int i=0;i<160;i++){
     float t=startT+(float(i)+.5)*stepSize;
     vec3 p=cameraPosition+direction*t,cellColor;float klass;
@@ -1040,7 +1021,7 @@ let uniforms={};
 [
  'resolution','cameraPosition','cameraRight','cameraUp',
  'cameraForward','fov','radarTexture','distanceTexture',
- 'shapeTexture','renderMode'
+ 'shapeTexture','renderMode','shellVolume','coreVolume'
 ].forEach(name=>{
  uniforms[name]=gl.getUniformLocation(program,name);
 });
@@ -1054,6 +1035,8 @@ Object.keys(uniforms).forEach(name=>{
 const texture=gl.createTexture();
 const distanceTexture=gl.createTexture();
 const shapeTexture=gl.createTexture();
+const shellVolume=gl.createTexture();
+const coreVolume=gl.createTexture();
 gl.activeTexture(gl.TEXTURE0);
 gl.bindTexture(gl.TEXTURE_2D,texture);
 gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
@@ -1103,38 +1086,6 @@ function radarColor(dbz){
   shape[(y*width+x)*4]=Math.round(Math.min(90,total/256)/90*255);
   shape[(y*width+x)*4+3]=255;
  }
- // Separable broad smoothing creates a continuous upper envelope.
- // This does not alter the radar floor or the V11 distance maps.
- const kernel=[1,4,9,15,20,22,20,15,9,4,1];
- const kernelSum=kernel.reduce((a,b)=>a+b,0);
- const expanded=new Float32Array(width*height);
- for(let y=0;y<height;y++)for(let x=0;x<width;x++){
-  let peak=0;
-  for(let dy=-5;dy<=5;dy++)for(let dx=-5;dx<=5;dx++){
-   if(dx*dx+dy*dy>25)continue;
-   const v=Number(matrix[y+dy]?.[x+dx]);
-   if(Number.isFinite(v))peak=Math.max(peak,Math.min(90,v));
-  }
-  expanded[y*width+x]=peak;
- }
- const horizontal=new Float32Array(width*height);
- for(let y=0;y<height;y++)for(let x=0;x<width;x++){
-  let sum=0;
-  for(let d=-5;d<=5;d++){
-   const v=x+d>=0&&x+d<width?expanded[y*width+x+d]:0;
-   sum+=(Number.isFinite(v)?Math.max(0,Math.min(90,v)):0)*kernel[d+5];
-  }
-  horizontal[y*width+x]=sum/kernelSum;
- }
- for(let y=0;y<height;y++)for(let x=0;x<width;x++){
-  let sum=0;
-  for(let d=-5;d<=5;d++){
-   if(y+d>=0&&y+d<height)sum+=horizontal[(y+d)*width+x]*kernel[d+5];
-  }
-  shape[(y*width+x)*4+1]=Math.round(sum/kernelSum/90*255);
-  const raw=Number(matrix[y][x]);
-  shape[(y*width+x)*4+2]=Math.round((Number.isFinite(raw)?Math.max(0,Math.min(90,raw)):0)/90*255);
- }
  gl.activeTexture(gl.TEXTURE2);
  gl.bindTexture(gl.TEXTURE_2D,shapeTexture);
  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
@@ -1178,6 +1129,83 @@ function radarColor(dbz){
   gl.TEXTURE_2D,0,gl.RGBA,width,height,0,
   gl.RGBA,gl.UNSIGNED_BYTE,pixels
  );
+ }function uploadRoundedVolume(matrix){
+ const n=64,count=n*n*n;
+ const shells=new Uint8Array(count*4);
+ const cores=new Uint8Array(count*4);
+ const thresholds=[15,25,30,35,45];
+ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+ const smooth=(a,b,v)=>{const t=clamp((v-a)/(b-a),0,1);return t*t*(3-2*t);};
+ for(let k=0;k<5;k++){
+  const threshold=thresholds[k],candidates=[];
+  for(let y=0;y<72;y++)for(let x=0;x<72;x++){
+   const value=Number(matrix[y][x]);
+   if(Number.isFinite(value)&&value>=threshold)candidates.push({x,y,value});
+  }
+  candidates.sort((a,b)=>b.value-a.value||a.y-b.y||a.x-b.x);
+  const lobes=[];
+  for(const seed of candidates){
+   if(lobes.some(l=>((seed.x-l.px)/l.sx)**2+((seed.y-l.pz)/l.sz)**2<.65))continue;
+   let weight=0,mx=0,mz=0,xx=0,zz=0;
+   for(let dy=-6;dy<=6;dy++)for(let dx=-6;dx<=6;dx++){
+    const value=Number(matrix[seed.y+dy]?.[seed.x+dx]);
+    if(!Number.isFinite(value)||value<threshold)continue;
+    const w=(1+(value-threshold)/20)*Math.exp(-(dx*dx+dy*dy)/40);
+    weight+=w;mx+=dx*w;mz+=dy*w;xx+=dx*dx*w;zz+=dy*dy*w;
+   }
+   if(!weight)continue;
+   mx/=weight;mz/=weight;
+   const sx=clamp(3+2.4*Math.sqrt(Math.max(0,xx/weight-mx*mx)),4,12);
+   const sz=clamp(3+2.4*Math.sqrt(Math.max(0,zz/weight-mz*mz)),4,12);
+   const px=seed.x+mx*.5,pz=seed.y+mz*.5;
+   lobes.push({px,pz,sx,sz,value:seed.value});
+   if(lobes.length>=32)break;
+  }
+  const target=k===4?cores:shells,channel=k===4?0:k;
+  for(const l of lobes){
+   const spread=[1.55,1.28,1.03,.90,.80][k];
+   const rx=l.sx/72*4.5*spread,rz=l.sz/72*4.5*spread;
+   const size=clamp((rx+rz)/1.6,.65,1.15);
+   const vigor=.85+.15*clamp((l.value-threshold)/25,0,1);
+   const cy=[1.12,.78,.47,.31,.22][k]*size*vigor;
+   const ry=[1.34,1.05,.72,.53,.39][k]*size*vigor;
+   const cx=(l.px+.5)/72*4.5-2.25,cz=(l.pz+.5)/72*4.5-2.25;
+   const x0=clamp(Math.floor((cx-rx*1.4+2.8)/5.6*n),1,n-2);
+   const x1=clamp(Math.ceil((cx+rx*1.4+2.8)/5.6*n),1,n-2);
+   const z0=clamp(Math.floor((cz-rz*1.4+2.8)/5.6*n),1,n-2);
+   const z1=clamp(Math.ceil((cz+rz*1.4+2.8)/5.6*n),1,n-2);
+   const y1=clamp(Math.ceil((cy+ry)/3.75*n),1,n-2);
+   for(let y=1;y<=y1;y++){
+    const h=(y+.5)/n*3.75,vertical=((h-cy)/ry)**2;
+    if(vertical>=1)continue;
+    const flare=k<2?.70+.65*smooth(0,cy+ry,h):1;
+    const base=smooth(.04,k<2?.32:.12,h);
+    for(let z=z0;z<=z1;z++)for(let x=x0;x<=x1;x++){
+     const dx=((x+.5)/n*5.6-2.8-cx)/(rx*flare);
+     const dz=((z+.5)/n*5.6-2.8-cz)/(rz*flare);
+     const r2=dx*dx+dz*dz+vertical;
+     if(r2>=1)continue;
+     const density=(1-r2)*base;
+     const offset=((z*n+y)*n+x)*4+channel;
+     const old=target[offset]/255;
+     const blend=Math.max(.18-Math.abs(old-density),0);
+     const joined=Math.max(old,density)+blend*blend/.72;
+     target[offset]=Math.round(Math.min(1,joined)*255);
+    }
+   }
+  }
+ }
+ for(const [unit,tex,data] of [[3,shellVolume,shells],[4,coreVolume,cores]]){
+  gl.activeTexture(gl.TEXTURE0+unit);
+  gl.bindTexture(gl.TEXTURE_3D,tex);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
+  gl.texImage3D(gl.TEXTURE_3D,0,gl.RGBA8,n,n,n,0,gl.RGBA,gl.UNSIGNED_BYTE,data);
+ }
+ gl.activeTexture(gl.TEXTURE0);
 }
 
 let yaw=-.35;
@@ -1194,7 +1222,8 @@ function normalize(v){
  return v.map(n=>n/length);
 }
 function cross(a,b){
- return [  a[1]*b[2]-a[2]*b[1],
+ return [
+  a[1]*b[2]-a[2]*b[1],
   a[2]*b[0]-a[0]*b[2],
   a[0]*b[1]-a[1]*b[0]
  ];
@@ -1238,6 +1267,8 @@ function drawScene(){
  gl.uniform1i(uniforms.radarTexture,0);
  gl.uniform1i(uniforms.distanceTexture,1);
  gl.uniform1i(uniforms.shapeTexture,2);
+ gl.uniform1i(uniforms.shellVolume,3);
+ gl.uniform1i(uniforms.coreVolume,4);
  gl.uniform2f(uniforms.resolution,width,height);
  gl.uniform3fv(uniforms.cameraPosition,camera);
  gl.uniform3fv(uniforms.cameraRight,right);
@@ -1256,6 +1287,7 @@ function open3D(cell){
  try{
   activeCell=cell;
   uploadRadarMatrix(cell);
+  uploadRoundedVolume(cell.grid_matrix);
   $('vtitle').textContent=
    (cell.track_id||cell.id||'CELLA')+
    ' · '+fmt(cell.max_dbz)+' dBZ';
