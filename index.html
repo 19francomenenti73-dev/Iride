@@ -678,15 +678,15 @@ float densityV11(vec3 p,out vec3 cellColor,out float klass){
 // Continuous 3D fields reconstructed from the complete radar matrix.
 void echoFields(vec3 p,out float layers[5]){
  for(int k=0;k<5;k++)layers[k]=0.;
- vec3 q=vec3((p.x+2.8)/5.6,p.y/3.75,(p.z+2.8)/5.6);
+ vec3 q=vec3((p.x+2.8)/5.6,(.04+(p.y-.04)/1.35)/3.75,(p.z+2.8)/5.6);
  if(any(lessThan(q,vec3(0.)))||any(greaterThan(q,vec3(1.))))return;
  vec4 shells=texture(shellVolume,q);
  for(int k=0;k<4;k++)layers[k]=shells[k];
  layers[4]=texture(coreVolume,q).r;
 }
 vec3 layerColor(int k){
- if(k==0)return vec3(.224,.494,.910);
- if(k==1)return vec3(.141,.741,.439);
+ if(k==0)return vec3(.224,.494,.910)*1.25;
+ if(k==1)return vec3(.141,.741,.439)*1.20;
  if(k==2)return vec3(.957,.831,.243);
  if(k==3)return vec3(.96,.20,.075);
  return vec3(.93,.16,.76);
@@ -703,7 +703,7 @@ vec3 layerNormal(vec3 p,int k){
  return normalize(-gradient+vec3(.00001));
 }
 bool intersectBox(vec3 ro,vec3 rd,out float nearT,out float farT){
- vec3 low=vec3(-2.8,.04,-2.8),high=vec3(2.8,3.75,2.8);
+ vec3 low=vec3(-2.8,.04,-2.8),high=vec3(2.8,.04+(3.75-.04)*1.35,2.8);
  vec3 inv=1./rd,a=(low-ro)*inv,b=(high-ro)*inv;
  vec3 mn=min(a,b),mx=max(a,b);
  nearT=max(max(mn.x,mn.y),mn.z);
@@ -760,7 +760,7 @@ void main(){
      vec3 normal=layerNormal(hit,k);
      float diffuse=max(dot(normal,normalize(vec3(-.45,.85,.55))),0.);
      float rim=pow(1.-abs(dot(normal,-direction)),2.);
-     float alpha=k==0?.105:(k==1?.15:(k==2?.34:(k==3?.66:.80)));
+     float alpha=k==0?.13:(k==1?.18:(k==2?.34:(k==3?.66:.80)));
      if(fields[k]<previous[k])alpha*=.55;
      vec3 lit=layerColor(k)*(.66+.30*diffuse)+layerColor(k)*.10*rim;
      volume+=transparency*alpha*lit;
@@ -777,7 +777,7 @@ void main(){
     float fields[5];echoFields(p,fields);
     float extinction=0.;vec3 emission=vec3(0.);
     for(int k=0;k<5;k++){
-     float strength=k==0?.13:(k==1?.24:(k==2?1.15:(k==3?3.0:4.0)));
+     float strength=k==0?.16:(k==1?.29:(k==2?1.15:(k==3?3.0:4.0)));
      float shell=exp(-pow((fields[k]-.5)/.14,2.));
      float density=strength*(smoothstep(.12,.78,fields[k])*.85+shell*.15);
      extinction+=density;
