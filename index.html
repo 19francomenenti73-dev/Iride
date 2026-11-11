@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#101d2b">
 <title>I.R.I.D.E. | Nowcasting Italia</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -81,10 +81,10 @@ header{
 .toolbar button{font-size:11px;padding:6px 10px}
 #reload{border-color:#477d9a}
 .workspace{
- display:grid;grid-template-columns:minmax(0,1fr) 320px;
+ display:grid;grid-template-columns:minmax(0,1fr);
  gap:12px;padding:12px;min-height:0;overflow:hidden
 }
-.map-panel,.side-panel{
+.map-panel{
  background:var(--surface);border:1px solid var(--border);
  border-radius:7px;min-height:0;overflow:hidden
 }
@@ -119,43 +119,6 @@ header{
  color:#c5d1dc;font-size:10px;white-space:nowrap
 }
 .legend-swatch{width:10px;height:10px;border-radius:2px}
-.side-panel{display:flex;flex-direction:column}
-.side-section{
- padding:12px 13px;border-bottom:1px solid var(--border)
-}
-.side-title{
- color:#c7d5e2;font-size:10px;font-weight:750;
- letter-spacing:.65px;text-transform:uppercase;
- margin-bottom:10px
-}
-.metrics{
- display:grid;grid-template-columns:1fr 1fr;gap:8px
-}
-.metric{
- background:#20354a;border:1px solid #30485d;
- border-radius:5px;padding:9px
-}
-.metric-label{font-size:9px;color:var(--muted)}
-.metric-value{font-size:20px;font-weight:700;margin-top:3px}
-.metric-unit{font-size:9px;color:var(--muted);margin-left:3px}
-#cell-list{display:none}
-.cell-row{
- width:100%;display:grid;grid-template-columns:8px minmax(0,1fr) auto;
- align-items:center;gap:9px;text-align:left;
- padding:10px 12px;background:transparent;
- border:0;border-bottom:1px solid #2b4054;border-radius:0
-}
-.cell-row:hover{background:#20364a}
-.cell-color{width:7px;height:32px;border-radius:3px}
-.cell-main{min-width:0}
-.cell-name{font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis}
-.cell-detail{font-size:9px;color:var(--muted);margin-top:3px}
-.cell-dbz{font-size:12px;font-weight:700;white-space:nowrap}
-.empty-list{padding:18px 12px;color:var(--muted);font-size:11px}
-.side-footer{
- padding:9px 12px;color:var(--muted);font-size:9px;
- border-top:1px solid var(--border);line-height:1.45
-}
 .leaflet-popup-content-wrapper{
  background:#17283a;color:var(--text);
  border:1px solid #49647a;border-radius:6px
@@ -194,7 +157,7 @@ header{
  color:var(--muted);font-size:10px
 }
 @media(max-width:900px){
- .workspace{grid-template-columns:minmax(0,1fr) 270px}
+ .workspace{grid-template-columns:minmax(0,1fr)}
 }
 @media(max-width:650px){
  header{height:54px;padding:0 10px}
@@ -204,14 +167,13 @@ header{
  #status{font-size:9px}
  .app-shell{height:calc(100% - 54px);grid-template-rows:42px minmax(0,1fr)}
  .toolbar{padding:0 9px}
- .breadcrumb{font-size:10px}
+ .breadcrumb{display:none}.toolbar-actions{width:100%;justify-content:space-between}.brand-sub{display:none}
  .toolbar button{font-size:10px;padding:6px 8px}
  .workspace{
   display:flex;flex-direction:column;gap:7px;
-  padding:7px;overflow:auto
+  padding:4px;overflow:hidden
  }
- .map-panel{flex:0 0 62vh;min-height:330px}
- .side-panel{flex:0 0 auto;min-height:0}
+ .map-panel{flex:1;min-height:0}
  .map-legend{gap:9px}
  .legend-item{font-size:9px}
  .vhead{min-height:54px;padding:6px}
@@ -222,7 +184,6 @@ header{
 </style>
 </head>
 <body>
-
 <header>
  <div class="brand">
   <div class="brand-mark">I</div>
@@ -235,17 +196,16 @@ header{
   <div id="status"><span class="status-dot"></span>OPERA · caricamento</div>
  </div>
 </header>
-
 <div class="app-shell">
  <div class="toolbar">
   <div class="breadcrumb">NOWCASTING ITALIA / <strong>RADAR EUROPA</strong></div>
   <div class="toolbar-actions">
    <button id="vectorsToggle">Vettori: ON</button>
+   <button id="mesoToggle">Mesoscala: ON</button>
    <button id="cellsToggle">Celle: ON</button>
    <button id="reload">Aggiorna</button>
   </div>
  </div>
-
  <main class="workspace">
   <section class="map-panel">
    <div class="panel-heading">
@@ -266,37 +226,8 @@ header{
     <div class="legend-item"><span class="legend-swatch" style="background:#ed42c8"></span>≥45 dBZ</div>
    </div>
   </section>
-
-  <aside class="side-panel">
-   <div class="side-section">
-    <div class="side-title">STATO OPERATIVO</div>
-    <div class="metrics">
-     <div class="metric">
-      <div class="metric-label">CELLE RILEVATE</div>
-      <div class="metric-value" id="metric-cells">—</div>
-     </div>
-     <div class="metric">
-      <div class="metric-label">MAX RIFLETTIVITÀ</div>
-      <div class="metric-value"><span id="metric-max">—</span><span class="metric-unit">dBZ</span></div>
-     </div>
-     <div class="metric">
-      <div class="metric-label">VETTORI VALIDI</div>
-      <div class="metric-value" id="metric-vectors">—</div>
-     </div>
-     <div class="metric">
-      <div class="metric-label">CELLE 3D</div>
-      <div class="metric-value" id="metric-3d">—</div>
-     </div>
-    </div>
-   </div>
-   
-    DBZH osservato. La quota del modello 3D è una ricostruzione morfologica,
-    non una misura verticale radar.
-   </div>
-  </aside>
  </main>
 </div>
-
 <div id="viewer">
  <div class="vhead">
   <b id="vtitle">RICOSTRUZIONE RADAR</b>
@@ -312,18 +243,17 @@ header{
  </div>
  <canvas id="scene"></canvas>
  <div class="vfoot">
-  ROTAZIONE 360° · INCLINAZIONE · ZOOM · DBZH OSSERVATO · QUOTA MORFOLOGICA STIMATA
+  Quota ricostruita da DBZH 2D · non misurata
  </div>
 </div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script>
 (()=>{
 'use strict';
 
 const $=id=>document.getElementById(id);
 const finite=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v));
-const fmt=(v,d=1)=>finite(v)?Number(v).toFixed(d):'—';const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({
+const fmt=(v,d=1)=>finite(v)?Number(v).toFixed(d):'—';
+const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({
  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
 })[c]);
 
@@ -343,6 +273,11 @@ const radarLayer=L.layerGroup().addTo(map);
 const cellLayer=L.layerGroup().addTo(map);
 const centroidLayer=L.layerGroup().addTo(map);
 const vectorLayer=L.layerGroup().addTo(map);
+const mesoLayer=L.layerGroup().addTo(map);
+let showMeso=true;
+map.createPane('motion');map.getPane('motion').style.zIndex=460;
+map.createPane('mesoscale');map.getPane('mesoscale').style.zIndex=430;
+new ResizeObserver(()=>map.invalidateSize()).observe($('map'));
 
 const REGION_BOUNDS=[[30,-15],[72,38]];
 let radarImage=null;
@@ -392,36 +327,50 @@ function pointDistanceKm(a,b){
  const dp=(Number(b[0])-Number(a[0]))*rad;
  const dl=(Number(b[1])-Number(a[1]))*rad;
  const q=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
- return 6371*2*Math.asin(Math.min(1,Math.sqrt(q)));}
+ return 6371*2*Math.asin(Math.min(1,Math.sqrt(q)));
+}
+
+function observedPath(c){
+ const obs=c.track?.observations||[];
+ const path=[];
+ let last=null;
+ for(const o of obs){
+  const point=[Number(o.lat),Number(o.lon)],time=Date.parse(o.timestamp);
+  if(!validPoint(point)||!Number.isFinite(time)){path.length=0;last=null;continue;}
+  if(last){
+   const minutes=(time-last.time)/60000;
+   const speed=pointDistanceKm(last.point,point)*60/minutes;
+   if(minutes<=0||minutes>45||speed>140)path.length=0;
+  }
+  path.push(point);last={point,time};
+ }
+ return path.length>=2?path:[];
+}
+
+function arrow(points,color,dashed=false){
+ if(points.length<2)return;
+ const options={pane:'motion',interactive:false,lineCap:'round',lineJoin:'round'};
+ L.polyline(points,{...options,color:'#081421',weight:6,opacity:.85}).addTo(vectorLayer);
+ L.polyline(points,{...options,color,weight:3,opacity:1,dashArray:dashed?'8 6':null}).addTo(vectorLayer);
+ const a=map.latLngToLayerPoint(points.at(-2)),b=map.latLngToLayerPoint(points.at(-1));
+ const angle=Math.atan2(b.y-a.y,b.x-a.x),size=10;
+ const wings=[-.55,.55].map(d=>map.layerPointToLatLng(L.point(b.x-size*Math.cos(angle+d),b.y-size*Math.sin(angle+d))));
+ L.polyline([wings[0],points.at(-1),wings[1]],{...options,color,weight:3}).addTo(vectorLayer);
+}
 
 function drawVector(c){
- const v=c.vectors;
- const real=v.real;
- const forecast=v.predictive_180m;
+ arrow(observedPath(c),'#47e6ff');
+ if(vectorIsUsable(c))arrow(c.vectors.predictive_180m,'#ffbe54',true);
+}
 
- L.polyline(real,{
-  color:'#36b6df',weight:3,opacity:.95,
-  lineCap:'round',lineJoin:'round'
- }).addTo(vectorLayer);
-
- L.circleMarker(real[0],{
-  radius:3,color:'#36b6df',weight:1,fillOpacity:1
- }).addTo(vectorLayer);
-
- L.circleMarker(real[1],{
-  radius:4,color:'#eaf7ff',weight:1.5,
-  fillColor:'#36b6df',fillOpacity:1
- }).addTo(vectorLayer);
-
- L.polyline(forecast,{
-  color:'#e6a34a',weight:2.5,opacity:.95,
-  dashArray:'7 6',lineCap:'round'
- }).addTo(vectorLayer);
-
- L.circleMarker(forecast[1],{
-  radius:4,color:'#e6a34a',weight:1.5,
-  fillColor:'#e6a34a',fillOpacity:1
- }).addTo(vectorLayer);
+function drawMeso(c,index){
+ const cls=c.mesoscale_classification||{};
+ if(!Array.isArray(c.perimeter)||c.perimeter.length<3||!c.perimeter.every(validPoint))return;
+ if(!cls.class||cls.class==='unclassified_echo'||cls.class==='isolated_cell_candidate')return;
+ const line=cls.class==='squall_line_candidate'?'#ffad42':cls.class==='mcs_candidate'?'#ee8cff':'#68e6db';
+ L.polygon(c.perimeter,{pane:'mesoscale',color:line,weight:2,dashArray:'6 5',fillOpacity:.035})
+  .bindPopup('<b>'+safe(cls.label)+'</b><br>Area di verifica morfologica · candidata da DBZH 2D<br>Il contorno è un inviluppo orientato, non il bordo esatto dell’eco.')
+  .addTo(mesoLayer);
 }
 
 function popupContent(c,index){
@@ -446,9 +395,6 @@ function popupContent(c,index){
 function addCell(c,index){
  const stroke=color(Number(c.max_dbz));
  const centre=[Number(c.lat),Number(c.lon)];
- // No rectangular envelope: it is not the real echo boundary.
- // The visible ring stays hollow; an invisible 20 px touch target
- // makes selection reliable on mobile devices.
  const hit=L.circleMarker(centre,{
   radius:20,stroke:false,fillColor:'#ffffff',fillOpacity:0.001,
   interactive:true,bubblingMouseEvents:false
@@ -463,10 +409,9 @@ function addCell(c,index){
   const button=$('open3d-'+index);
   if(button)button.onclick=()=>open3D(c);
  });
- if(showVectors&&vectorIsUsable(c))drawVector(c);
+ if(showVectors)drawVector(c);
 }
 
-/* Resolve the raster beside the JSON actually loaded, in both Pages layouts. */
 function overlayUrl(path){
  if(!path)return '';
  const value=String(path).trim();
@@ -478,11 +423,11 @@ function overlayUrl(path){
 function render(data){
  currentData=data;
  cells=Array.isArray(data.cells)?data.cells:[];
-
  radarLayer.clearLayers();
  cellLayer.clearLayers();
  centroidLayer.clearLayers();
  vectorLayer.clearLayers();
+ mesoLayer.clearLayers();
 
  if(radarImage){
   map.removeLayer(radarImage);
@@ -490,10 +435,8 @@ function render(data){
  }
 
  const overlay=data.radar_overlay;
-
  if(overlay?.image&&Array.isArray(overlay.bounds)){
   const url=overlayUrl(overlay.image);
-
   radarImage=L.imageOverlay(
    url+'?t='+Date.now(),
    overlay.bounds,
@@ -504,11 +447,9 @@ function render(data){
     crossOrigin:false
    }
   ).addTo(radarLayer);
-
   radarImage.once('load',()=>{
    console.info('Overlay radar caricato:',url);
   });
-
   radarImage.once('error',()=>{
    console.error('Errore caricamento overlay:',url);
    $('status').textContent='OPERA · errore raster radar';
@@ -521,17 +462,10 @@ function render(data){
   .sort((a,b)=>(Number(b.c.max_dbz)||0)-(Number(a.c.max_dbz)||0));
 
  ordered.forEach(({c,i})=>{
+  if(showMeso)drawMeso(c,i);
   if(showCells)addCell(c,i);
-  else if(showVectors&&vectorIsUsable(c))drawVector(c);
+  else if(showVectors)drawVector(c);
  });
-
- $('metric-cells').textContent=cells.length;
- $('metric-max').textContent=cells.length
-  ?fmt(Math.max(...cells.map(c=>Number(c.max_dbz)||0))):'—';
- $('metric-vectors').textContent=
-  cells.filter(vectorIsUsable).length;
- $('metric-3d').textContent=
-  cells.filter(c=>c['3d_available']===true).length;
 
  const productTime=Date.parse(data.timestamp||'');
  const ageMinutes=Number.isFinite(productTime)
@@ -540,7 +474,7 @@ function render(data){
 
  $('status').innerHTML=
   '<span class="status-dot"></span>OPERA · '+
-  safe(data.timestamp||'orario n/d')+' · '+cells.length+' celle'+
+  safe(data.timestamp||'orario n/d')+
   (stale?' · DATI OBSOLETI':'')+
   (!webgl2Available?' · 3D NON DISPONIBILE':'');
 
@@ -555,26 +489,18 @@ function render(data){
 }
 
 async function fetchJson(path){
- const response=await fetch(path+'?t='+Date.now(),{
-  cache:'no-store'
- });
-
+ const response=await fetch(path+'?t='+Date.now(),{cache:'no-store'});
  if(!response.ok)throw Error('HTTP '+response.status);
-
  const data=await response.json();
-
  if(data.status!=='ok'||data.schema_version!==6||!Array.isArray(data.cells))
   throw Error('Struttura JSON non valida o schema non supportato');
-
  return data;
 }
 
 async function load(){
  $('status').textContent='OPERA · aggiornamento';
-
  try{
   let data;
-
   try{
    jsonLocation='docs/data/iride.json';
    data=await fetchJson(jsonLocation);
@@ -582,9 +508,7 @@ async function load(){
    jsonLocation='data/iride.json';
    data=await fetchJson(jsonLocation);
   }
-
   render(data);
- 
  }catch(error){
   $('status').textContent='OPERA · dati non disponibili';
   console.error(error);
@@ -592,38 +516,34 @@ async function load(){
 }
 
 $('reload').onclick=load;
-
 $('vectorsToggle').onclick=()=>{
  showVectors=!showVectors;
  $('vectorsToggle').textContent='VETTORI: '+(showVectors?'ON':'OFF');
  if(currentData)render(currentData);
 };
-
 $('cellsToggle').onclick=()=>{
  showCells=!showCells;
  $('cellsToggle').textContent='CELLE: '+(showCells?'ON':'OFF');
  if(currentData)render(currentData);
 };
-
-$('fitRegion').onclick=()=>{
- map.fitBounds(REGION_BOUNDS);
-};load();
-setInterval(load,20*60*1000);
-
-/* =====================================================
-   RENDERER WEBGL 2 — TRE MODALITÀ DISTINTE
-   La quota è morfologica e stimata, non misurata.
-   ===================================================== */
-
-const viewer=$('viewer');
+$('mesoToggle').onclick=()=>{
+ showMeso=!showMeso;
+ $('mesoToggle').textContent='Mesoscala: '+(showMeso?'ON':'OFF');
+ if(currentData)render(currentData);
+};
+map.on('zoomend',()=>{
+ vectorLayer.clearLayers();
+ if(showVectors)cells.forEach(drawVector);
+});
+$('fitRegion').onclick=()=>{map.fitBounds(REGION_BOUNDS);};
+load();
+setInterval(load,20*60*1000);const viewer=$('viewer');
 const canvas=$('scene');
-
 const gl=canvas.getContext('webgl2',{
  antialias:true,
  alpha:false,
  powerPreference:'high-performance'
 });
-
 if(!gl){
  webgl2Available=false;
  $('status').textContent='WebGL2 non disponibile';
@@ -650,8 +570,10 @@ uniform vec3 cameraForward;
 uniform float fov;
 uniform sampler2D radarTexture;
 uniform sampler2D distanceTexture;
+uniform sampler2D shapeTexture;
 uniform int renderMode;
 const vec3 BG=vec3(.008,.018,.031);
+
 vec4 radar(vec2 p){
  if(any(lessThan(p,vec2(0.)))||any(greaterThan(p,vec2(1.))))return vec4(0.);
  return texture(radarTexture,p);
@@ -668,9 +590,7 @@ vec4 masks(vec2 uv){
  vec4 r=radar(uv);float k=echoClass(r.rgb);
  return vec4(k==1.?r.a:0.,k==2.?r.a:0.,k==3.?r.a:0.,k>=4.?r.a:0.);
 }
-/* V11 local dilation: every echo stays anchored to its own pixels.
-   Blue and green expand above the observed footprint, never from its centre. */
-float densityAt(vec3 p,out vec3 cellColor,out float klass){
+float densityV11(vec3 p,out vec3 cellColor,out float klass){
  cellColor=vec3(0.);klass=0.;
  if(p.y<.04||p.y>3.75)return 0.;
  vec2 uvMap=vec2((p.x+2.25)/4.5,(p.z+2.25)/4.5);
@@ -708,6 +628,32 @@ float densityAt(vec3 p,out vec3 cellColor,out float klass){
  }
  return density;
 }
+float densityAt(vec3 p,out vec3 cellColor,out float klass){
+ if(renderMode==0)return densityV11(p,cellColor,klass);
+ cellColor=vec3(0.);klass=0.;
+ if(p.y<.04||p.y>3.75)return 0.;
+ vec2 q=(p.xz+2.25)/4.5;
+ if(any(lessThan(q,vec2(0.)))||any(greaterThan(q,vec2(1.))))return 0.;
+ float h=p.y;
+ vec4 field=texture(shapeTexture,q);
+ float dbz=field.r*90.;
+ float localTop=clamp(dbz/55.,0.,1.);
+ vec2 ds=texture(distanceTexture,q).rg*1.414214;
+ float blue=exp(-pow(ds.r/(.012+.085*smoothstep(.25,3.,h)),2.)*2.)*
+  .20*exp(-pow((h-(1.85+.65*localTop))/.62,2.));
+ float green=exp(-pow(ds.g/(.009+.05*smoothstep(.20,2.5,h)),2.)*2.)*
+  .30*exp(-pow((h-(1.40+.55*localTop))/.62,2.));
+ float yellow=smoothstep(27.,34.,dbz)*.60*exp(-pow((h-1.05)/.58,2.));
+ float red=smoothstep(33.,43.,dbz)*.82*exp(-pow((h-.85)/.52,2.));
+ float magenta=smoothstep(43.,55.,dbz)*.98*exp(-pow((h-.68)/.43,2.));
+ float d=max(max(blue,green),max(yellow,max(red,magenta)));
+ if(d==magenta){cellColor=vec3(.93,.16,.76);klass=5.;}
+ else if(d==red){cellColor=vec3(.95,.20,.12);klass=4.;}
+ else if(d==yellow){cellColor=vec3(.96,.83,.24);klass=3.;}
+ else if(d==green){cellColor=vec3(.14,.74,.44);klass=2.;}
+ else{cellColor=vec3(.22,.49,.91);klass=1.;}
+ return d;
+}
 float fieldAt(vec3 p){vec3 c;float k;return densityAt(p,c,k);}
 bool intersectBox(vec3 ro,vec3 rd,out float nearT,out float farT){
  vec3 low=vec3(-2.8,.04,-2.8),high=vec3(2.8,3.75,2.8);
@@ -739,28 +685,34 @@ void main(){
  if(intersectBox(cameraPosition,direction,nearT,farT)){
   float startT=max(nearT,0.),endT=farT;
   if(floorT>startT)endT=min(endT,floorT);
-  float stepSize=max((endT-startT)/112.,.001);
+  float stepSize=max((endT-startT)/160.,.001);
   float transparency=1.;vec3 volume=vec3(0.);
-  if(renderMode==1){
+  if(renderMode==1||renderMode==2){
    float previous=0.;
-   for(int i=0;i<112;i++){
+   for(int i=0;i<160;i++){
     float t=startT+(float(i)+.5)*stepSize;
     vec3 p=cameraPosition+direction*t;
     float d=fieldAt(p);
-    if(d>=.07&&previous<.07){
+    if((d>=.075&&previous<.075)||(renderMode==2&&d>=.38&&previous<.38)){
+     float level=d>=.38&&previous<.38&&renderMode==2?.38:.075;
+     float blend=clamp((level-previous)/max(d-previous,.00001),0.,1.);
+     p-=direction*stepSize*(1.-blend);
      vec3 cellColor;float klass;densityAt(p,cellColor,klass);
      vec3 normal=surfaceNormal(p),light=normalize(vec3(-.45,.85,.55));
      float diffuse=max(dot(normal,light),0.);
      float rim=pow(1.-abs(dot(normal,-direction)),2.);
-     float alpha=klass<=2.?.20:(klass==3.?.55:.88);
+     float alpha=klass<=2.?.16:(klass==3.?.45:.78);
+     if(renderMode==2)alpha=klass<=2.?.09:(klass==3.?.23:.48);
+     if(renderMode==2)cellColor*=1.05+.45*rim;
      volume+=transparency*alpha*cellColor*(.55+.40*diffuse+.15*rim);
      transparency*=1.-alpha;
-     if(transparency<.03)break;    }
+     if(transparency<.03)break;
+    }
     previous=d;
    }
    result=volume+transparency*result;
   }else{
-   for(int i=0;i<112;i++){
+   for(int i=0;i<160;i++){
     float t=startT+(float(i)+.5)*stepSize;
     vec3 p=cameraPosition+direction*t,cellColor;float klass;
     float density=densityAt(p,cellColor,klass);
@@ -775,99 +727,59 @@ void main(){
    result=volume+transparency*result;
   }
  }
- if(renderMode==2){
-  float gx=abs(fract((uv.x*resolution.x)/48.)-.5);
-  float gy=abs(fract((uv.y*resolution.y)/48.)-.5);
-  float gridLine=1.-smoothstep(.47,.50,min(gx,gy));
-  result+=vec3(.0,.10,.15)*gridLine*.10;
-  float scanLine=1.-smoothstep(.0,.035,abs(fract(uv.y*resolution.y/5.)-.5));
-  result+=vec3(.02,.10,.13)*scanLine*.045;
- }
  outputColor=vec4(result,1.);
 }`;
-
 
 function compileShader(type,source){
  const shader=gl.createShader(type);
  gl.shaderSource(shader,source);
  gl.compileShader(shader);
-
  if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS)){
   const message=gl.getShaderInfoLog(shader);
   gl.deleteShader(shader);
   throw Error(message);
  }
-
  return shader;
 }
 
 const program=gl.createProgram();
-
-gl.attachShader(
- program,compileShader(gl.VERTEX_SHADER,vertexShader)
-);
-gl.attachShader(
- program,compileShader(gl.FRAGMENT_SHADER,fragmentShader)
-);
-
+gl.attachShader(program,compileShader(gl.VERTEX_SHADER,vertexShader));
+gl.attachShader(program,compileShader(gl.FRAGMENT_SHADER,fragmentShader));
 gl.linkProgram(program);
-
 if(!gl.getProgramParameter(program,gl.LINK_STATUS)){
  throw Error(gl.getProgramInfoLog(program));
 }
-
 gl.useProgram(program);
-
 const buffer=gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
-
 gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
  -1,-1,
   1,-1,
  -1, 1,
   1, 1
 ]),gl.STATIC_DRAW);
-
 const position=gl.getAttribLocation(program,'position');
-
 gl.enableVertexAttribArray(position);
 gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
 
 const uniforms={};
-
 [
- 'resolution',
- 'cameraPosition',
- 'cameraRight',
- 'cameraUp',
- 'cameraForward',
- 'fov',
- 'radarTexture',
- 'distanceTexture',
- 'renderMode'
+ 'resolution','cameraPosition','cameraRight','cameraUp',
+ 'cameraForward','fov','radarTexture','distanceTexture',
+ 'shapeTexture','renderMode'
 ].forEach(name=>{
  uniforms[name]=gl.getUniformLocation(program,name);
 });
 
 const texture=gl.createTexture();
 const distanceTexture=gl.createTexture();
-
+const shapeTexture=gl.createTexture();
 gl.activeTexture(gl.TEXTURE0);
 gl.bindTexture(gl.TEXTURE_2D,texture);
-
-gl.texParameteri(
- gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST
-);
-gl.texParameteri(
- gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST
-);
-gl.texParameteri(
- gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE
-);
-gl.texParameteri(
- gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE
-);
-
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
 gl.uniform1i(uniforms.radarTexture,0);
 
 function radarColor(dbz){
@@ -877,31 +789,24 @@ function radarColor(dbz){
  if(dbz>=25)return [36,189,112,255];
  if(dbz>=15)return [57,126,232,255];
  return [0,0,0,0];
-}
-
-function uploadRadarMatrix(cell){
+}function uploadRadarMatrix(cell){
  const matrix=cell.grid_matrix;
-
  if(!Array.isArray(matrix)||matrix.length!==72){
   throw Error('Matrice DBZH 72×72 non disponibile');
  }
- 
  const width=72;
  const height=72;
  const pixels=new Uint8Array(width*height*4);
 
  for(let y=0;y<height;y++){
   const row=matrix[y]||[];
-
   if(!Array.isArray(row)||row.length!==72){
    throw Error('Riga matrice DBZH non valida');
   }
-
   for(let x=0;x<width;x++){
    const value=Number(row[x]);
    const rgba=radarColor(Number.isFinite(value)?value:0);
    const offset=(y*width+x)*4;
-
    pixels[offset]=rgba[0];
    pixels[offset+1]=rgba[1];
    pixels[offset+2]=rgba[2];
@@ -909,7 +814,26 @@ function uploadRadarMatrix(cell){
   }
  }
 
- // Distances to observed blue/green pixels allow smooth local expansion.
+ const shape=new Uint8Array(width*height*4);
+ const weights=[1,4,6,4,1];
+ for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+  let total=0;
+  for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+   const v=Number(matrix[y+dy]?.[x+dx])||0;
+   total+=Math.max(0,v)*weights[dy+2]*weights[dx+2];
+  }
+  shape[(y*width+x)*4]=Math.round(Math.min(90,total/256)/90*255);
+  shape[(y*width+x)*4+3]=255;
+ }
+ gl.activeTexture(gl.TEXTURE2);
+ gl.bindTexture(gl.TEXTURE_2D,shapeTexture);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,shape);
+ gl.uniform1i(uniforms.shapeTexture,2);
+
  const distances=new Uint8Array(width*height*4);
  const seeds=[[],[]];
  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
@@ -938,26 +862,15 @@ function uploadRadarMatrix(cell){
  gl.activeTexture(gl.TEXTURE0);
  gl.bindTexture(gl.TEXTURE_2D,texture);
  gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
-
  gl.texImage2D(
-  gl.TEXTURE_2D,
-  0,
-  gl.RGBA,
-  width,
-  height,
-  0,
-  gl.RGBA,
-  gl.UNSIGNED_BYTE,
-  pixels
+  gl.TEXTURE_2D,0,gl.RGBA,width,height,0,
+  gl.RGBA,gl.UNSIGNED_BYTE,pixels
  );
 }
 
-/* =====================================================
-   CAMERA, ROTAZIONE E INTERAZIONE
-   ===================================================== */
-
 let yaw=-.35;
-let pitch=.34;let distance=7.1;
+let pitch=.34;
+let distance=7.1;
 let activeCell=null;
 let dragging=false;
 let lastX=0;
@@ -980,63 +893,45 @@ function cross(a,b){
 function resizeCanvas(){
  const rect=canvas.getBoundingClientRect();
  const ratio=Math.min(window.devicePixelRatio||1,1.35);
-
  canvas.width=Math.max(1,Math.round(rect.width*ratio));
  canvas.height=Math.max(1,Math.round(rect.height*ratio));
-
  gl.viewport(0,0,canvas.width,canvas.height);
 }
 
 function drawScene(){
  if(!activeCell||!viewer.classList.contains('open'))return;
-
  const width=canvas.width;
  const height=canvas.height;
-
  if(!width||!height)return;
 
  gl.clearColor(.008,.018,.031,1);
  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-
  const target=[0,.9,0];
  const cp=Math.cos(pitch);
  const sp=Math.sin(pitch);
  const sy=Math.sin(yaw);
  const cy=Math.cos(yaw);
-
  const camera=[
   distance*cp*sy,
   target[1]+distance*sp,
   distance*cp*cy
  ];
-
  const forward=normalize([
   target[0]-camera[0],
   target[1]-camera[1],
   target[2]-camera[2]
  ]);
-
  const right=normalize(cross(forward,[0,1,0]));
  const up=normalize(cross(right,forward));
 
  gl.useProgram(program);
-
  gl.uniform2f(uniforms.resolution,width,height);
  gl.uniform3fv(uniforms.cameraPosition,camera);
  gl.uniform3fv(uniforms.cameraRight,right);
  gl.uniform3fv(uniforms.cameraUp,up);
  gl.uniform3fv(uniforms.cameraForward,forward);
-
- gl.uniform1f(
-  uniforms.fov,
-  Math.tan(32*Math.PI/180)
- );
-
- gl.uniform1i(
-  uniforms.renderMode,
-  Number($('mode').value)||0
- );
-
+ gl.uniform1f(uniforms.fov,Math.tan(32*Math.PI/180));
+ gl.uniform1i(uniforms.renderMode,Number($('mode').value)||0);
  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
 }
 
@@ -1045,27 +940,21 @@ function open3D(cell){
   alert('Questa cella non è inclusa nelle 30 selezionate per il 3D.');
   return;
  }
-
  try{
   activeCell=cell;
   uploadRadarMatrix(cell);
-
   $('vtitle').textContent=
    (cell.track_id||cell.id||'CELLA')+
    ' · '+fmt(cell.max_dbz)+' dBZ';
-
   yaw=-.35;
   pitch=.34;
   distance=7.1;
-
   $('mode').value='0';
   viewer.classList.add('open');
-
   requestAnimationFrame(()=>{
    resizeCanvas();
    drawScene();
   });
-
  }catch(error){
   console.error(error);
   alert('Ricostruzione 3D: '+error.message);
@@ -1073,19 +962,16 @@ function open3D(cell){
 }
 
 $('mode').onchange=drawScene;
-
 $('close').onclick=()=>{
  viewer.classList.remove('open');
  activeCell=null;
 };
-
 $('reset').onclick=()=>{
  yaw=-.35;
  pitch=.34;
  distance=7.1;
  drawScene();
 };
-
 window.addEventListener('resize',()=>{
  if(viewer.classList.contains('open')){
   resizeCanvas();
@@ -1097,47 +983,31 @@ canvas.addEventListener('pointerdown',event=>{
  dragging=true;
  lastX=event.clientX;
  lastY=event.clientY;
-
  if(canvas.setPointerCapture){
   canvas.setPointerCapture(event.pointerId);
  }
 });
-
 canvas.addEventListener('pointermove',event=>{
  if(!dragging)return;
-
  const dx=event.clientX-lastX;
  const dy=event.clientY-lastY;
-
  yaw-=dx*.006;
  pitch=Math.max(-.12,Math.min(1.12,pitch+dy*.004));
-
  lastX=event.clientX;
  lastY=event.clientY;
-
  drawScene();
 });
-
-function stopDragging(){
- dragging=false;
-}
-
+function stopDragging(){dragging=false;}
 canvas.addEventListener('pointerup',stopDragging);
 canvas.addEventListener('pointercancel',stopDragging);
 canvas.addEventListener('lostpointercapture',stopDragging);
 
 canvas.addEventListener('wheel',event=>{
  event.preventDefault();
-
- distance=Math.max(
-  4.0,
-  Math.min(13,distance+event.deltaY*.008)
- );
-
+ distance=Math.max(4.0,Math.min(13,distance+event.deltaY*.008));
  drawScene();
 },{passive:false});
 
-/* Zoom pinch a due dita. */
 canvas.addEventListener('touchstart',event=>{
  if(event.touches.length===2){
   pinchDistance=Math.hypot(
@@ -1146,35 +1016,23 @@ canvas.addEventListener('touchstart',event=>{
   );
  }
 },{passive:true});
-
 canvas.addEventListener('touchmove',event=>{
  if(event.touches.length!==2)return;
-
  event.preventDefault();
-
  const next=Math.hypot(
   event.touches[0].clientX-event.touches[1].clientX,
-  event.touches[0].clientY-event.touches[1].clientY );
-
+  event.touches[0].clientY-event.touches[1].clientY
+ );
  if(pinchDistance>0&&next>0){
-  distance=Math.max(
-   4.0,
-   Math.min(13,distance*pinchDistance/next)
-  );
-
+  distance=Math.max(4.0,Math.min(13,distance*pinchDistance/next));
   drawScene();
  }
-
  pinchDistance=next;
 },{passive:false});
-
 canvas.addEventListener('touchend',()=>{
  pinchDistance=0;
 },{passive:true});
-
-/* Fine frontend I.R.I.D.E. */
 })();
 </script>
 </body>
 </html>
-
