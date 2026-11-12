@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 # I.R.I.D.E. — Diagnostica Radar-DPC
 # Fonte: Dipartimento della Protezione Civile
@@ -8,8 +7,8 @@
 # https://creativecommons.org/licenses/by-sa/4.0/
 #
 # Elaborazione: I.R.I.D.E. / Nowcasting Italia
-# I dati sono ricampionati sulle celle radar.
-# Non altera CAPPI, radar 2D o renderer 3D.
+# Prodotti ricampionati sulle celle radar.
+# Nessuna modifica ai dati originali DPC.
 
 import ipaddress
 import json
@@ -40,9 +39,11 @@ PRODUCTS = ("VIL", "ETM", "POH", "VMI")
 LICENSE = "CC BY-SA 4.0"
 CREDIT = "Dipartimento della Protezione Civile — Radar-DPC"
 SOURCE_URL = "https://radar.protezionecivile.it/"
-LICENSE_URL = (
-    "https://creativecommons.org/licenses/by-sa/4.0/"
-)
+LICENSE_URL = "https://creativecommons.org/licenses/by-sa/4.0/"
+
+MAX_PRODUCT_AGE_MS = 90 * 60 * 1000
+MAX_CELL_DIFFERENCE_MS = 10 * 60 * 1000
+MAX_RADAR_AGE_MS = 90 * 60 * 1000
 
 UNITS = {
     "VIL": {
@@ -80,11 +81,16 @@ def write_json(path, obj):
 
 
 def parse_time(value):
+    if isinstance(value, (int, float)):
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError("Timestamp non finito")
+        return int(number * (1000 if abs(number) < 1e11 else 1))
     if not isinstance(value, str):
-        raise ValueError("Timestamp radar non valido")
-    dt = datetime.fromisoformat(
-        value.replace("Z", "+00:00")
-    )
+        raise ValueError("Timestamp non valido")
+    if value.isdigit():
+        return parse_time(int(value))
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if dt.tzinfo is None:
         raise ValueError("Timestamp senza timezone")
     return int(dt.timestamp() * 1000)
@@ -96,6 +102,10 @@ def iso(ms):
     ).isoformat()
 
 
+def current_ms():
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
 def last_product(name):
     response = requests.get(
         API + "findLastProductByType",
@@ -104,11 +114,16 @@ def last_product(name):
         timeout=(10, 20),
     )
     response.raise_for_status()
-    items = response.json().get("lastProducts", [])
+    body = response.json()
+    items = body.get("lastProducts", [])
+    if not isinstance(items, list):
+        raise ValueError("Risposta API inattesa")
     times = [
-        int(item["time"])
+        parse_time(item["time"])
         for item in items
-        if item.get("productType") == name
+        if isinstance(item, dict)
+        and item.get("productType") == name
+        and item.get("time") is not None
     ]
     if not times:
         raise ValueError("Prodotto non disponibile")
@@ -116,8 +131,9 @@ def last_product(name):
 
 
 def safe_download_url(url):
+    if not isinstance(url, str):
+        raise ValueError("URL download mancante")
     parsed = urlparse(url)
-
     if (
         parsed.scheme != "https"
         or not parsed.hostname
@@ -129,21 +145,21 @@ def safe_download_url(url):
         raise ValueError("URL download non sicuro")
 
     host = parsed.hostname.lower().rstrip(".")
-
-    # Solo endpoint HTTPS Amazon S3.
-    # Non sono consentiti URL generici.
     allowed = (
         host == "s3.amazonaws.com"
-        or host.startswith("s3.")
-        and host.endswith(".amazonaws.com")
+        or (
+            host.startswith("s3.")
+            and host.endswith(".amazonaws.com")
+        )
         or host.endswith(".s3.amazonaws.com")
-        or ".s3." in host
-        and host.endswith(".amazonaws.com")
+        or (
+            ".s3." in host
+            and host.endswith(".amazonaws.com")
+        )
     )
     if not allowed:
         raise ValueError("Host download non autorizzato")
 
-    # Difesa contro indirizzi IP locali o privati.
     addresses = socket.getaddrinfo(
         host, 443, type=socket.SOCK_STREAM
     )
@@ -151,7 +167,6 @@ def safe_download_url(url):
         ip = ipaddress.ip_address(address[4][0])
         if not ip.is_global:
             raise ValueError("Indirizzo non pubblico")
-
     return url
 
 
@@ -166,14 +181,11 @@ def get_tiff(name, timestamp):
         timeout=(10, 25),
     )
     response.raise_for_status()
-
     info = response.json()
     url = safe_download_url(info.get("url", ""))
 
     chunks = []
     size = 0
-
-    # Nessun redirect automatico verso host diversi.
     with requests.get(
         url,
         stream=True,
@@ -181,9 +193,8 @@ def get_tiff(name, timestamp):
         allow_redirects=False,
     ) as download:
         if 300 <= download.status_code < 400:
-            raise ValueError("Redirect S3 non consentito")
+            raise ValueError("Redirect non consentito")
         download.raise_for_status()
-
         for chunk in download.iter_content(1024 * 1024):
             if not chunk:
                 continue
@@ -193,15 +204,11 @@ def get_tiff(name, timestamp):
             chunks.append(chunk)
 
     content = b"".join(chunks)
-
     if len(content) < 8 or content[:4] not in (
-        b"II*\x00",
-        b"MM\x00*",
-        b"II+\x00",
-        b"MM\x00+",
+        b"II*\x00", b"MM\x00*",
+        b"II+\x00", b"MM\x00+",
     ):
         raise ValueError("Il download non è un TIFF")
-
     return content
 
 
@@ -219,8 +226,7 @@ def identify_unit(name, tags, band_tags):
                 "unit", "units", "unit_type",
                 "unitofmeasure", "unit_of_measure",
             ):
-                normalized = normalize_unit(value)
-                unit = UNITS[name].get(normalized)
+                unit = UNITS[name].get(normalize_unit(value))
                 if unit:
                     return unit
     return None
@@ -228,7 +234,6 @@ def identify_unit(name, tags, band_tags):
 
 def read_product(name, timestamp):
     content = get_tiff(name, timestamp)
-
     with MemoryFile(content) as memory:
         with memory.open() as dataset:
             if dataset.count != 1:
@@ -241,9 +246,8 @@ def read_product(name, timestamp):
             tags = dataset.tags()
             band_tags = dataset.tags(1)
             unit = identify_unit(name, tags, band_tags)
-
-            scale = dataset.scales[0]
-            offset = dataset.offsets[0]
+            scale = float(dataset.scales[0])
+            offset = float(dataset.offsets[0])
 
             if not (
                 math.isfinite(scale)
@@ -255,30 +259,24 @@ def read_product(name, timestamp):
             raw = dataset.read(1, masked=True)
             valid = ~np.ma.getmaskarray(raw)
             valid &= np.isfinite(raw.data)
-
-            values = (
-                raw.data.astype(np.float64) * scale
-                + offset
-            )
+            values = raw.data.astype(np.float64) * scale + offset
             valid &= np.isfinite(values)
 
-            transform = Transformer.from_crs(
-                "EPSG:4326",
-                dataset.crs,
+            project = Transformer.from_crs(
+                "EPSG:4326", dataset.crs,
                 always_xy=True,
             )
-
             return {
                 "values": values,
                 "valid": valid,
                 "transform": dataset.transform,
-                "project": transform,
+                "project": project,
                 "width": dataset.width,
                 "height": dataset.height,
                 "crs": str(dataset.crs),
                 "unit": unit,
-                "scale": float(scale),
-                "offset": float(offset),
+                "scale": scale,
+                "offset": offset,
                 "nodata": (
                     str(dataset.nodata)
                     if dataset.nodata is not None
@@ -288,17 +286,14 @@ def read_product(name, timestamp):
                     str(k): str(v)[:200]
                     for k, v in tags.items()
                 },
-            }
+                                                      }
             
 def sample_cell(product, cell):
     lon = float(cell["lon"])
     lat = float(cell["lat"])
-
     x, y = product["project"].transform(lon, lat)
     col, row = (~product["transform"]) * (x, y)
-
-    col = math.floor(col)
-    row = math.floor(row)
+    col, row = math.floor(col), math.floor(row)
 
     if (
         row < 0 or col < 0
@@ -306,15 +301,11 @@ def sample_cell(product, cell):
         or col >= product["width"]
     ):
         return None
-
     if not product["valid"][row, col]:
         return None
 
     value = float(product["values"][row, col])
-    if not math.isfinite(value):
-        return None
-
-    return round(value, 3)
+    return round(value, 3) if math.isfinite(value) else None
 
 
 def plausible(name, value, unit):
@@ -323,14 +314,58 @@ def plausible(name, value, unit):
     if name == "VIL":
         return unit in ("kg/m²", "mm") and 0 <= value <= 500
     if name == "ETM":
-        if unit == "m":
-            return 0 <= value <= 30000
-        if unit == "km":
-            return 0 <= value <= 30
-        return False
+        return (
+            unit == "m" and 0 <= value <= 30000
+        ) or (
+            unit == "km" and 0 <= value <= 30
+        )
     if name == "VMI":
         return unit == "dBZ" and -40 <= value <= 95
     return False
+
+
+def read_cells(report):
+    try:
+        payload = json.loads(
+            SOURCE.read_text(encoding="utf-8")
+        )
+        radar_time = parse_time(payload["timestamp"])
+        age = current_ms() - radar_time
+        report["base_timestamp"] = iso(radar_time)
+        report["radar_age_minutes"] = round(age / 60000, 1)
+
+        if not -300000 <= age <= MAX_RADAR_AGE_MS:
+            report["radar_status"] = "stale"
+            print(
+                "Radar principale obsoleto: "
+                "acquisizione prodotti indipendente"
+            )
+            return [], radar_time
+
+        report["radar_status"] = "ok"
+        cells = [
+            cell for cell in payload.get("cells", [])
+            if isinstance(cell, dict)
+            and cell.get("3d_available")
+        ]
+        valid_cells = []
+        for cell in cells:
+            track = str(cell.get("track_id", ""))
+            if (
+                re.fullmatch(r"[A-Za-z0-9_-]+", track)
+                and "lat" in cell
+                and "lon" in cell
+            ):
+                report["cells"][track] = {}
+                valid_cells.append(cell)
+
+        return valid_cells, radar_time
+
+    except Exception as exc:
+        report["radar_status"] = "unavailable"
+        report["radar_reason"] = str(exc)[:180]
+        print("Radar principale non disponibile:", exc)
+        return [], None
 
 
 def main():
@@ -341,101 +376,103 @@ def main():
         "source_url": SOURCE_URL,
         "license": LICENSE,
         "license_url": LICENSE_URL,
+        "processing": (
+            "Prodotti DPC campionati sulle celle IRIDE; "
+            "valori originali non modificati"
+        ),
+        "generated_at": iso(current_ms()),
+        "radar_status": "unavailable",
         "products": {},
         "cells": {},
     }
 
-    try:
-        payload = json.loads(
-            SOURCE.read_text(encoding="utf-8")
-        )
-        radar_time = parse_time(payload["timestamp"])
-        now = int(datetime.now(timezone.utc).timestamp() * 1000)
+    cells, radar_time = read_cells(report)
+    acquired = 0
+    verified = 0
 
-        if not -300000 <= now - radar_time <= 5400000:
-            raise ValueError("Radar principale obsoleto")
+    for name in PRODUCTS:
+        try:
+            latest = last_product(name)
+            age = current_ms() - latest
 
-        report["base_timestamp"] = payload["timestamp"]
-        cells = [
-            c for c in payload.get("cells", [])
-            if c.get("3d_available")
-        ]
-
-        for cell in cells:
-            track = str(cell.get("track_id", ""))
-            if re.fullmatch(r"[A-Za-z0-9_-]+", track):
-                report["cells"][track] = {}
-
-        for name in PRODUCTS:
-            try:
-                latest = last_product(name)
-
-                if abs(latest - radar_time) > 600000:
-                    raise ValueError(
-                        "Prodotto non sincronizzato"
-                    )
-
-                product = read_product(name, latest)
-                unit = product["unit"]
-
-                report["products"][name] = {
-                    "status": (
-                        "ok" if unit
-                        else "unit_unverified"
-                    ),
-                    "timestamp": iso(latest),
-                    "unit": unit,
-                    "crs": product["crs"],
-                    "scale": product["scale"],
-                    "offset": product["offset"],
-                    "nodata": product["nodata"],
-                    "metadata": product["tags"],
-                }
-
-                if unit:
-                    for cell in cells:
-                        track = str(cell.get("track_id", ""))
-                        if track not in report["cells"]:
-                            continue
-
-                        value = sample_cell(product, cell)
-                        if (
-                            value is not None
-                            and plausible(name, value, unit)
-                        ):
-                            report["cells"][track][name] = {
-                                "value": value,
-                                "unit": unit,
-                                "timestamp": iso(latest),
-                            }
-
-                print(
-                    f"{name}: acquisito, "
-                    f"unità={unit or 'non verificata'}"
+            if not -300000 <= age <= MAX_PRODUCT_AGE_MS:
+                raise ValueError(
+                    f"Prodotto obsoleto: {age / 60000:.0f} minuti"
                 )
 
-            except Exception as exc:
-                report["products"][name] = {
-                    "status": "unavailable",
-                    "reason": str(exc)[:180],
-                }
-                print(f"{name}: {exc}")
+            product = read_product(name, latest)
+            unit = product["unit"]
+            acquired += 1
 
-        report["status"] = (
-            "ok" if any(
-                item.get("status") == "ok"
-                for item in report["products"].values()
+            synchronized = (
+                radar_time is not None
+                and report["radar_status"] == "ok"
+                and abs(latest - radar_time)
+                <= MAX_CELL_DIFFERENCE_MS
             )
-            else "unavailable"
-        )
 
-    except Exception as exc:
-        report["reason"] = str(exc)[:180]
-        print("Diagnostica:", exc)
+            status = (
+                "ok" if unit
+                else "unit_unverified"
+            )
+            report["products"][name] = {
+                "status": status,
+                "timestamp": iso(latest),
+                "age_minutes": round(age / 60000, 1),
+                "unit": unit,
+                "crs": product["crs"],
+                "scale": product["scale"],
+                "offset": product["offset"],
+                "nodata": product["nodata"],
+                "metadata": product["tags"],
+                "cell_synchronized": synchronized,
+            }
+
+            if unit:
+                verified += 1
+
+            if unit and synchronized:
+                for cell in cells:
+                    track = str(cell["track_id"])
+                    value = sample_cell(product, cell)
+                    if (
+                        value is not None
+                        and plausible(name, value, unit)
+                    ):
+                        report["cells"][track][name] = {
+                            "value": value,
+                            "unit": unit,
+                            "timestamp": iso(latest),
+                        }
+
+            print(
+                f"{name}: acquisito; "
+                f"unità={unit or 'non verificata'}; "
+                f"celle sincronizzate={synchronized}"
+            )
+
+        except Exception as exc:
+            report["products"][name] = {
+                "status": "unavailable",
+                "reason": str(exc)[:180],
+            }
+            print(f"{name}: {exc}")
+
+    report["status"] = (
+        "ok" if verified
+        else "unit_unverified" if acquired
+        else "unavailable"
+    )
 
     write_json(DEST, report)
+    print(
+        f"Diagnostica completata: "
+        f"{acquired}/4 prodotti acquisiti, "
+        f"{verified}/4 unità verificate"
+    )
     print("Report:", DEST)
 
 
 if __name__ == "__main__":
     main()
+    
