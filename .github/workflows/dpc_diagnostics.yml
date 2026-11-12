@@ -1,9 +1,10 @@
+
 name: IRIDE DPC Diagnostics
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "7,27,47 * * * *"
+    - cron: "12,32,52 * * * *"
 
 permissions:
   contents: write
@@ -37,29 +38,80 @@ jobs:
         run: |
           python backend/dpc_diagnostics.py
 
+      - name: Validate diagnostics output
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path(
+              "docs/data/dpc3d/diagnostics.json"
+          )
+
+          assert path.is_file(), (
+              "Missing diagnostics JSON"
+          )
+
+          data = json.loads(
+              path.read_text(encoding="utf-8")
+          )
+
+          assert data.get("source") == "Radar-DPC"
+          assert data.get("license") == "CC BY-SA 4.0"
+
+          products = data.get("products", {})
+          assert isinstance(products, dict)
+
+          for name in ("VIL", "ETM", "POH", "VMI"):
+              assert name in products, (
+                  f"Missing product: {name}"
+              )
+
+          print("DPC diagnostics JSON validated")
+          print("Status:", data.get("status"))
+
+          for name, item in products.items():
+              print(
+                  name,
+                  item.get("status"),
+                  item.get("timestamp", ""),
+                  item.get("reason", "")
+              )
+          PY
+
       - name: Publish diagnostics
         run: |
           set -e
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add docs/data/dpc3d/diagnostics.json
 
           if git diff --cached --quiet; then
-            echo "No diagnostics changes"
+            echo "Diagnostics unchanged."
             exit 0
           fi
+
+          BASE_SHA=$(git rev-parse HEAD)
 
           git commit -m "Update IRIDE DPC diagnostics"
 
-          BASE=$(git rev-parse HEAD^)
           git fetch origin main
-          REMOTE=$(git rev-parse origin/main)
 
-          if [ "$REMOTE" != "$BASE" ]; then
-            echo "Concurrent update; skip publication"
+          REMOTE_SHA=$(git rev-parse refs/remotes/origin/main)
+
+          if [ "$REMOTE_SHA" != "$BASE_SHA" ]; then
+            echo "::error::Concurrent update detected."
+            echo "::error::Diagnostics NOT published."
+            exit 1
+          fi
+
+          if git push origin HEAD:main; then
+            echo "DPC diagnostics published."
             exit 0
           fi
 
-          git push origin HEAD:main
+          echo "::error::DPC publication failed."
+          exit 1
           
