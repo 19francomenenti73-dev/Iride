@@ -4,7 +4,7 @@ name: I.R.I.D.E. radar nowcasting
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/20 * * * *"
+    - cron: "3,23,43 * * * *"
   push:
     branches: [main]
     paths:
@@ -227,7 +227,7 @@ jobs:
               f"radar {len(raw)} bytes"
           )
           PY
-
+          
       - name: Optional synchronized CAPPI
         id: cappi
         timeout-minutes: 4
@@ -260,7 +260,6 @@ jobs:
             if [ -d docs/data/dpc3d ]; then
               git add -A docs/data/dpc3d
             fi
-
           fi
 
           if git diff --cached --quiet; then
@@ -272,41 +271,27 @@ jobs:
 
           git commit -m "Update I.R.I.D.E. radar state"
 
-          echo "Checking remote main before publishing..."
+          echo "Checking remote main..."
 
           git fetch origin main
 
           REMOTE_SHA=$(git rev-parse refs/remotes/origin/main)
 
           if [ "$REMOTE_SHA" != "$BASE_SHA" ]; then
-            echo "::warning::Remote main changed during radar processing."
-            echo "::warning::Skipping stale radar publication."
-            echo "The next scheduled run will regenerate fresh data."
-            exit 0
+            echo "::error::Remote main changed."
+            echo "::error::Radar data NOT published."
+            exit 1
           fi
 
-          echo "Publishing validated radar data..."
+          echo "Publishing radar data..."
 
           if git push origin HEAD:main; then
             echo "Radar publication successful."
             exit 0
           fi
 
-          echo "Push rejected. Checking remote state..."
-
-          git fetch origin main
-
-          NEW_REMOTE_SHA=$(git rev-parse refs/remotes/origin/main)
-
-          if [ "$NEW_REMOTE_SHA" != "$BASE_SHA" ]; then
-            echo "::warning::Concurrent commit detected."
-            echo "::warning::Keeping newer remote main unchanged."
-            echo "Radar data will be regenerated on the next run."
-            exit 0
-          fi
-
-          echo "::error::Push failed without a remote update."
-          echo "Check GitHub permissions or connectivity."
+          echo "::error::Radar publication failed."
+          echo "Check concurrent commits and permissions."
           exit 1
 
   deploy:
