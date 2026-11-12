@@ -296,9 +296,7 @@ const motionRenderer=L.svg({pane:'motion'});
 const mesoRenderer=L.svg({pane:'mesoscale'});
 const cellRenderer=L.svg({pane:'cellTargets'});
 
-new ResizeObserver(()=>map.invalidateSize()).observe($('map'));
-
-const REGION_BOUNDS=[[30,-15],[72,38]];
+new ResizeObserver(()=>map.invalidateSize()).observe($('map'));const REGION_BOUNDS=[[30,-15],[72,38]];
 let radarImage=null;
 let cells=[];
 let currentData=null;
@@ -478,7 +476,88 @@ function overlayUrl(path){
  return new URL(name,new URL(jsonLocation,document.baseURI)).href;
 }
 
+let loadingRadar=false;
+let fallbackActive=false;
+let radarAttribution='';
+let fallbackTime=null;
+const originalLegend=document.querySelector('.map-legend').innerHTML;
+const MAX_RADAR_AGE_MIN=90;
+function freshTimestamp(timestamp){
+ const value=Date.parse(timestamp);
+ const age=(Date.now()-value)/60000;
+ return Number.isFinite(value)&&age>=-5&&age<=MAX_RADAR_AGE_MIN;
+}
+function setRadarCredit(credit){
+ if(radarAttribution)map.attributionControl.removeAttribution(radarAttribution);
+ radarAttribution=credit;
+ if(credit)map.attributionControl.addAttribution(credit);
+}
+function clearRadar(){
+ currentData=null;cells=[];
+ radarLayer.clearLayers();cellLayer.clearLayers();centroidLayer.clearLayers();
+ vectorLayer.clearLayers();mesoLayer.clearLayers();radarImage=null;
+ $('viewer').classList.remove('open');
+}
+async function requestJson(url){
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),15000);
+ try{
+  const response=await fetch(url,{cache:'no-store',signal:controller.signal});
+  if(!response.ok)throw Error('HTTP '+response.status);
+  return await response.json();
+ }finally{clearTimeout(timer);}
+}
+function checkImage(url){
+ return new Promise((resolve,reject)=>{
+  const picture=new Image();
+  const timer=setTimeout(()=>{picture.onload=picture.onerror=null;reject(Error('Timeout radar'));},15000);
+  picture.onload=()=>{clearTimeout(timer);resolve();};
+  picture.onerror=()=>{clearTimeout(timer);reject(Error('Immagine radar non disponibile'));};
+  picture.src=url;
+ });
+}
+async function showRainViewer(){
+ const data=await requestJson('https://api.rainviewer.com/public/weather-maps.json');
+ const host=new URL(data.host);
+ if(host.protocol!=='https:'||!host.hostname.endsWith('.rainviewer.com'))
+  throw Error('Host RainViewer non valido');
+ const frames=(data.radar?.past||[]).filter(frame=>
+  Number.isFinite(frame.time)&&typeof frame.path==='string'&&
+  /^\/v2\/radar\/[a-zA-Z0-9_-]+$/.test(frame.path)&&
+  freshTimestamp(new Date(frame.time*1000).toISOString()));
+ frames.sort((a,b)=>b.time-a.time);
+ if(!frames.length)throw Error('RainViewer non aggiornato');
+ const frame=frames[0];
+ const base=host.origin+frame.path;
+ await checkImage(base+'/256/5/17/11/2/0_0.png');
+ clearRadar();
+ fallbackActive=true;
+ fallbackTime=new Date(frame.time*1000).toISOString();
+ setRadarCredit('Weather data by <a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a>');
+ const tiles=L.tileLayer(base+'/256/{z}/{x}/{y}/2/0_0.png',{
+  tileSize:256,maxNativeZoom:7,maxZoom:12,opacity:.85,
+  updateWhenIdle:true,updateWhenZooming:false,keepBuffer:1
+ });
+ tiles.on('tileerror',()=>{
+  if(fallbackActive)$('status').textContent='RainViewer · copertura parziale o errore tessere';
+ });
+ tiles.addTo(radarLayer);
+ document.querySelector('.map-legend').textContent=
+  'RainViewer · palette Universal Blue · sola mappa radar · celle e 3D sospesi';
+ $('status').textContent='RainViewer · riserva 2D · '+fallbackTime;
+ $('map-time').textContent='Fotogramma: '+fallbackTime+' · orari dei singoli radar variabili';
+}
+
 function render(data){
+ if(!freshTimestamp(data.timestamp)){
+  clearRadar();load();return;
+ }
+ fallbackActive=false;fallbackTime=null;
+ document.querySelector('.map-legend').innerHTML=originalLegend;
+ const dpc=data.source?.provider==='Radar-DPC';
+ setRadarCredit(dpc?
+  '<a href="https://radar.protezionecivile.it/">Radar-DPC</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a> · elaborazione I.R.I.D.E.':
+  '<a href="https://www.eumetnet.eu/observations/weather-radar-network/">EUMETNET OPERA</a> · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> · elaborazione I.R.I.D.E.');
  currentData=data;
  cells=Array.isArray(data.cells)?data.cells:[];
  radarLayer.clearLayers();
@@ -502,7 +581,7 @@ function render(data){
   radarImage.once('load',()=>console.info('Overlay radar caricato:',url));
   radarImage.once('error',()=>{
    console.error('Errore caricamento overlay:',url);
-   $('status').textContent='OPERA · errore raster radar';
+   clearRadar();load(true);
   });
  }
 
@@ -516,12 +595,11 @@ function render(data){
   else if(showVectors)drawVector(c);
  });
 
- const productTime=Date.parse(data.timestamp||'');
- const ageMinutes=Number.isFinite(productTime)?
+ const productTime=Date.parse(data.timestamp||''); const ageMinutes=Number.isFinite(productTime)?
   (Date.now()-productTime)/60000:Infinity;
  const stale=ageMinutes>90||ageMinutes< -5;
  $('status').innerHTML=
-  '<span class="status-dot"></span>OPERA · '+
+  '<span class="status-dot"></span>'+safe(data.source?.provider||'Radar')+' · '+
   safe(data.timestamp||'orario n/d')+
   (stale?' · DATI OBSOLETI':'')+
   (!webgl2Available?' · 3D NON DISPONIBILE':'');
@@ -536,30 +614,40 @@ function render(data){
 }
 
 async function fetchJson(path){
- const response=await fetch(path+'?t='+Date.now(),{cache:'no-store'});
- if(!response.ok)throw Error('HTTP '+response.status);
- const data=await response.json();
+ const data=await requestJson(path+'?t='+Date.now());
  if(data.status!=='ok'||data.schema_version!==6||!Array.isArray(data.cells))
   throw Error('Struttura JSON non valida o schema non supportato');
+ if(!freshTimestamp(data.timestamp))throw Error('Dati numerici obsoleti');
+ if(!data.radar_overlay?.image||!Array.isArray(data.radar_overlay.bounds))
+  throw Error('Raster numerico assente');
  return data;
 }
 
-async function load(){
- $('status').textContent='OPERA · aggiornamento';
+async function load(forceFallback=false){
+ if(loadingRadar)return;
+ loadingRadar=true;
+ $('status').textContent='Radar · aggiornamento';
  try{
-  let data;
-  try{
-   jsonLocation='docs/data/iride.json';
-   data=await fetchJson(jsonLocation);
-  }catch(firstError){
-   jsonLocation='data/iride.json';
-   data=await fetchJson(jsonLocation);
+  let loaded=false;
+  if(forceFallback!==true){
+   for(const path of ['docs/data/iride.json','data/iride.json']){
+    try{
+     const data=await fetchJson(path);
+     jsonLocation=path;
+     await checkImage(overlayUrl(data.radar_overlay.image)+'?t='+Date.now());
+     render(data);loaded=true;break;
+    }catch(error){console.warn('Radar numerico:',error.message);}
+   }
   }
-  render(data);
+  if(!loaded)await showRainViewer();
  }catch(error){
-  $('status').textContent='OPERA · dati non disponibili';
+  clearRadar();fallbackActive=false;fallbackTime=null;
+  setRadarCredit('');
+  document.querySelector('.map-legend').textContent='Nessun radar aggiornato disponibile';
+  $('status').textContent='Radar non disponibile · riprovo automaticamente';
+  $('map-time').textContent='Nessun dato radar corrente';
   console.error(error);
- }
+ }finally{loadingRadar=false;}
 }
 
 $('reload').onclick=load;
@@ -584,7 +672,14 @@ map.on('zoomend',()=>{
 });
 $('fitRegion').onclick=()=>map.fitBounds(REGION_BOUNDS);
 load();
-setInterval(load,20*60*1000);const viewer=$('viewer');
+setInterval(load,5*60*1000);
+setInterval(()=>{
+ const timestamp=fallbackActive?fallbackTime:currentData?.timestamp;
+ if(timestamp&&!freshTimestamp(timestamp)){
+  clearRadar();fallbackActive=false;fallbackTime=null;
+  load();
+ }
+},60*1000);const viewer=$('viewer');
 const canvas=$('scene');
 const gl=canvas.getContext('webgl2',{
  antialias:true,alpha:false,powerPreference:'high-performance'
@@ -799,8 +894,7 @@ void main(){
     if(density>.012){
      float alpha=1.-exp(-density*stepSize*(renderMode==0?5.2:2.2));
      alpha=renderMode==0?min(.88,alpha):min(.42,alpha);
-     volume+=transparency*alpha*cellColor;
-     transparency*=1.-alpha;
+     volume+=transparency*alpha*cellColor;     transparency*=1.-alpha;
     }
     if(transparency<.018)break;
    }
@@ -1099,8 +1193,7 @@ function radarColor(dbz){
  const seeds=[[],[]];
  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
   const v=Number(matrix[y][x]);
-  if(v>=15&&v<25)seeds[0].push([x,y]);
-  if(v>=25&&v<30)seeds[1].push([x,y]);
+  if(v>=15&&v<25)seeds[0].push([x,y]);  if(v>=25&&v<30)seeds[1].push([x,y]);
  }
  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
   const offset=(y*width+x)*4;
