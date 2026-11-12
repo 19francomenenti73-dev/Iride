@@ -1,45 +1,52 @@
 
-/* I.R.I.D.E. V12.1 — Volume DPC CAPPI.
-   Radar-DPC, CC BY-SA 4.0.
-   Volume migliorato; ISO, OLO e sezione DPC conservati.
-   Fallback V11 in index.html. */
+/* I.R.I.D.E. V13 — Radar-DPC CAPPI 3D
+   Dati reali, CC BY-SA 4.0.
+   Volume, ISO, Olografico, Sezione verticale.
+   Nessuna riflettivita' sintetica. */
 (()=>{
 'use strict';
 const $=id=>document.getElementById(id);
-const viewer=$('viewer'),mode=$('mode'),original=$('scene');
-if(!viewer||!mode||!original)return;
-
+const viewer=$('viewer'),mode=$('mode'),old=$('scene');
+if(!viewer||!mode||!old)return;
 const foot=viewer.querySelector('.vfoot');
+if(!foot)return;
 const oldFoot=foot.textContent;
 const panel=document.createElement('div');
-panel.style.cssText='display:none;flex:1;min-height:0;position:relative;background:#020509';
+panel.style.cssText=
+ 'display:none;flex:1;min-height:0;position:relative;background:#020509';
+old.after(panel);
 const canvas=document.createElement('canvas');
 const section=document.createElement('canvas');
 for(const c of [canvas,section]){
- c.style.cssText='width:100%;height:100%;display:block;touch-action:none';
+ c.style.cssText=
+  'width:100%;height:100%;display:block;touch-action:none';
  panel.append(c);
 }
 const ruler=document.createElement('canvas');
-ruler.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
+ruler.style.cssText=
+ 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
 panel.append(ruler);
-original.after(panel);
-
 const controls=document.createElement('div');
-controls.style.cssText='display:none;gap:8px;flex-wrap:wrap;align-items:center;padding:6px 10px;background:#17283a;font-size:11px';
-controls.innerHTML='<label>Verticale ×<output id="cap-scale-value"></output> <input id="cap-scale" type="range" min="1" max="30" step="1" value="5"></label><label id="cap-cut-controls">Taglio <select id="cap-direction"><option value="ew">Ovest → Est</option><option value="ns">Nord → Sud</option></select> <input id="cap-offset" type="range" min="0" max="31" value="16"></label><span>15 blu · 25 verde · 30 giallo · 35 arancio · 45 magenta dBZ</span>';
+controls.style.cssText=
+ 'display:none;gap:8px;flex-wrap:wrap;align-items:center;padding:6px 10px;background:#17283a;font-size:11px';
+controls.innerHTML=
+ '<label>Verticale ×<output id="cap-scale-value"></output> '+
+ '<input id="cap-scale" type="range" min="1" max="30" value="5"></label>'+
+ '<label id="cap-cut-controls">Taglio '+
+ '<select id="cap-direction"><option value="ew">Ovest → Est</option>'+
+ '<option value="ns">Nord → Sud</option></select> '+
+ '<input id="cap-offset" type="range" min="0" max="31" value="16"></label>'+
+ '<span>15 blu · 25 verde · 30 giallo · 35 arancio · 45 magenta dBZ</span>';
 panel.before(controls);
-
-const opt=new Option('Sezione verticale DPC','3');
-opt.disabled=true;
-mode.add(opt);
-
+const option=new Option('Sezione verticale DPC','3');
+option.disabled=true;
+mode.add(option);
 const gl=canvas.getContext('webgl2',{
- alpha:false,antialias:false
+ alpha:false,antialias:false,preserveDrawingBuffer:false
 });
 if(!gl){
- opt.remove();controls.remove();panel.remove();return;
+ option.remove();controls.remove();panel.remove();return;
 }
-
 const vertex=`#version 300 es
 in vec2 a;
 out vec2 uv;
@@ -47,7 +54,6 @@ void main(){
  uv=a*.5+.5;
  gl_Position=vec4(a,0.,1.);
 }`;
-
 const fragment=`#version 300 es
 precision highp float;
 precision highp sampler3D;
@@ -60,74 +66,44 @@ uniform vec3 eye,right,up,forward;
 uniform float height;
 uniform int mode;
 const vec3 bg=vec3(.008,.018,.031);
-float levels[5]=float[5](15.,25.,30.,35.,45.);
 
-vec3 palette(int k){
- if(k==0)return vec3(.224,.494,.910);
- if(k==1)return vec3(.141,.741,.439);
- if(k==2)return vec3(.957,.831,.243);
- if(k==3)return vec3(.941,.471,.196);
- return vec3(.929,.259,.784);
-}
-int klass(float v){
- return v>=45.?4:(v>=35.?3:(v>=30.?2:(v>=25.?1:0)));
+vec3 palette(float v){
+ vec3 b=vec3(.22,.49,.91);
+ vec3 g=vec3(.14,.74,.44);
+ vec3 y=vec3(.96,.83,.24);
+ vec3 r=vec3(.94,.47,.20);
+ vec3 m=vec3(.93,.26,.78);
+ if(v<25.)return mix(b,g,smoothstep(15.,25.,v));
+ if(v<30.)return mix(g,y,smoothstep(25.,30.,v));
+ if(v<35.)return mix(y,r,smoothstep(30.,35.,v));
+ return mix(r,m,smoothstep(35.,45.,v));
 }
 vec2 sampleAt(vec3 p){
  float km=p.y/height*10.;
  if(km<1.||km>10.||abs(p.x)>2.25||abs(p.z)>2.25)
   return vec2(0.);
- vec3 q=vec3((p.x+2.25)/4.5,(km-.5)/10.,(p.z+2.25)/4.5);
+ vec3 q=vec3((p.x+2.25)/4.5,(km-.5)/10.,
+             (p.z+2.25)/4.5);
  vec2 v=texture(data,q).rg;
- return vec2(v.r*127.5-33.,v.g>.999?1.:0.);
+ return vec2(v.r*127.5-33.,v.g);
+}
+float density(float v){
+ if(v<15.)return 0.;
+ if(v<25.)return mix(.07,.17,smoothstep(15.,25.,v));
+ if(v<30.)return mix(.17,.38,smoothstep(25.,30.,v));
+ if(v<35.)return mix(.38,.78,smoothstep(30.,35.,v));
+ if(v<45.)return mix(.78,1.55,smoothstep(35.,45.,v));
+ return mix(1.55,2.0,smoothstep(45.,60.,v));
 }
 vec3 normalAt(vec3 p){
- vec3 e=vec3(.025,.025,.025);
- vec3 n=vec3(
-  sampleAt(p+vec3(e.x,0,0)).x-sampleAt(p-vec3(e.x,0,0)).x,
-  sampleAt(p+vec3(0,e.y,0)).x-sampleAt(p-vec3(0,e.y,0)).x,
-  sampleAt(p+vec3(0,0,e.z)).x-sampleAt(p-vec3(0,0,e.z)).x
- );
- return normalize(n+vec3(.0001));
+ vec3 e=vec3(.06,0.,0.);
+ float x=sampleAt(p+e).x-sampleAt(p-e).x;
+ e=vec3(0.,.06,0.);
+ float y=sampleAt(p+e).x-sampleAt(p-e).x;
+ e=vec3(0.,0.,.06);
+ float z=sampleAt(p+e).x-sampleAt(p-e).x;
+ return normalize(vec3(x,y,z)+vec3(.0001));
 }
-
-/* Colori continui della riflettività CAPPI. */
-vec3 volumeColor(float v){
- vec3 blue=palette(0);
- vec3 green=palette(1);
- vec3 yellow=palette(2);
- vec3 orange=palette(3);
- vec3 magenta=palette(4);
- if(v<25.)return mix(blue,green,smoothstep(15.,25.,v));
- if(v<30.)return mix(green,yellow,smoothstep(25.,30.,v));
- if(v<35.)return mix(yellow,orange,smoothstep(30.,35.,v));
- return mix(orange,magenta,smoothstep(35.,45.,v));
-}
-
-/* V12.1: blu e verde più visibili;
-   nuclei intensi progressivamente più compatti. */
-float volumeDensity(float v){
- if(v<15.)return 0.;
- if(v<25.)return mix(.09,.19,smoothstep(15.,25.,v));
- if(v<30.)return mix(.19,.37,smoothstep(25.,30.,v));
- if(v<35.)return mix(.37,.75,smoothstep(30.,35.,v));
- if(v<45.)return mix(.75,1.45,smoothstep(35.,45.,v));
- return mix(1.45,1.9,smoothstep(45.,60.,v));
-}
-
-/* V12.1: riduce la nebbia nelle aree deboli,
-   preserva i nuclei ed attenua i bordi del volume. */
-float volumeStructure(vec3 p,float dbz){
- float dx=abs(sampleAt(p+vec3(.09,0.,0.)).x-
-              sampleAt(p-vec3(.09,0.,0.)).x);
- float dz=abs(sampleAt(p+vec3(0.,0.,.09)).x-
-              sampleAt(p-vec3(0.,0.,.09)).x);
- float detail=clamp(max(dx,dz)/12.,0.,1.);
- float core=smoothstep(22.,38.,dbz);
- float edge=min(2.25-abs(p.x),2.25-abs(p.z));
- float fade=smoothstep(0.,.20,edge);
- return fade*mix(.38+detail*.22,1.,core);
-}
-
 void main(){
  vec2 s=uv*2.-1.;
  s.x*=resolution.x/resolution.y;
@@ -140,7 +116,8 @@ void main(){
   if(abs(p.x)<=2.25&&abs(p.z)<=2.25){
    vec2 f=texture(floorData,(p.xz+2.25)/4.5).rg;
    float v=f.r*127.5-33.;
-   result=f.g<.5?vec3(.12):v>=15.?palette(klass(v))*.75:bg;
+   result=f.g<.5?vec3(.055,.065,.08):
+          v>=15.?palette(v)*.66:bg;
   }
  }
  vec3 inv=1./ray;
@@ -151,58 +128,65 @@ void main(){
  float end=min(hi.x,min(hi.y,hi.z));
  if(ft>start)end=min(end,ft);
  if(end>start){
-  float step=(end-start)/192.;
+  float step=(end-start)/160.;
   float trans=1.;
   vec3 sum=vec3(0.);
   vec2 prev=sampleAt(eye+ray*start);
-  for(int i=1;i<=192;i++){
+  for(int i=1;i<=160;i++){
    vec3 p=eye+ray*(start+float(i)*step);
    vec2 v=sampleAt(p);
-
-   /* V12.1: solo modalità Volume. */
-   if(mode==0&&v.y>0.&&v.x>=15.){
-    float density=volumeDensity(v.x)*volumeStructure(p,v.x);
-    float alpha=1.-exp(-density*step*3.2);
-    alpha=clamp(alpha,0.,.22);
-    vec3 c=volumeColor(v.x);
-    float light=.83+.17*clamp(
-     dot(normalAt(p),normalize(vec3(-.4,.8,.6))),
-     0.,1.
-    );
-    float contrast=mix(.94,1.12,smoothstep(27.,42.,v.x));
-    sum+=trans*alpha*c*light*contrast;
-    trans*=1.-alpha;
-   }
-
-   /* ISO: algoritmo originale invariato. */
-   if(mode==1&&v.y>0.&&prev.y>0.){
-    for(int j=0;j<5;j++){
-     int k=v.x>=prev.x?j:4-j;
-     float level=levels[k];
-     if((v.x>=level)!=(prev.x>=level)){
-      float f=clamp((level-prev.x)/(v.x-prev.x),0.,1.);
-      vec3 hit=p-ray*step*(1.-f),n=normalAt(hit);
-      float light=.55+.45*abs(dot(n,normalize(vec3(-.4,.8,.6))));
-      float alpha=k==0?.12:k==1?.18:k==2?.32:k==3?.50:.65;
-      sum+=trans*alpha*palette(k)*light;
-      trans*=1.-alpha;
+   float edge=min(2.25-abs(p.x),2.25-abs(p.z));
+   float fade=smoothstep(0.,.18,edge);
+   if(v.y>.98&&v.x>=15.){
+    vec3 c=palette(v.x);
+    float alpha=0.;
+    if(mode==0){
+     float core=smoothstep(24.,40.,v.x);
+     float d=density(v.x)*mix(.65,1.15,core);
+     alpha=1.-exp(-d*step*3.3*fade);
+     alpha=min(alpha,.23);
+     float light=.82+.18*abs(dot(
+      normalAt(p),normalize(vec3(-.4,.8,.6))));
+     c*=light;
+    }else if(mode==1){
+     float surface=0.;
+     for(int k=0;k<5;k++){
+      float level=k==0?15.:k==1?25.:
+                  k==2?30.:k==3?35.:45.;
+      if(prev.y>.98&&
+         ((prev.x<level&&v.x>=level)||
+          (prev.x>=level&&v.x<level))){
+       float strength=k==0?.13:k==1?.22:
+                      k==2?.38:k==3?.55:.72;
+       surface=max(surface,strength);
+      }
      }
+     alpha=surface*fade;
+     c*=.60+.40*abs(dot(
+      normalAt(p),normalize(vec3(-.4,.8,.6))));
+    }else{
+     float gradient=length(vec2(
+      sampleAt(p+vec3(.08,0.,0.)).x-
+      sampleAt(p-vec3(.08,0.,0.)).x,
+      sampleAt(p+vec3(0.,0.,.08)).x-
+      sampleAt(p-vec3(0.,0.,.08)).x
+     ));
+     float rim=smoothstep(2.,14.,gradient);
+     float glow=mix(.20,1.0,rim);
+     alpha=(1.-exp(-density(v.x)*step*1.9))
+           *glow*fade;
+     c=mix(c,c*vec3(.55,1.25,1.45),.36);
     }
-   }else if(mode==2&&v.y>0.&&v.x>=15.){
-    int k=klass(v.x);
-    float strength=k==0?.16:k==1?.30:k==2?.7:k==3?1.3:2.;
-    float alpha=1.-exp(-strength*step*2.);
-    sum+=trans*alpha*palette(k);
+    sum+=trans*alpha*c;
     trans*=1.-alpha;
    }
    prev=v;
-   if(trans<.02)break;
+   if(trans<.015)break;
   }
   result=sum+trans*result;
  }
  color=vec4(result,1.);
 }`;
-
 function shader(type,source){
  const s=gl.createShader(type);
  gl.shaderSource(s,source);
@@ -220,8 +204,8 @@ try{
  if(!gl.getProgramParameter(program,gl.LINK_STATUS))
   throw Error(gl.getProgramInfoLog(program));
 }catch(e){
- console.error('CAPPI V12.1 shader',e);
- opt.remove();controls.remove();panel.remove();return;
+ console.error('IRIDE V13 shader',e);
+ option.remove();controls.remove();panel.remove();return;
 }
 gl.useProgram(program);
 const buffer=gl.createBuffer();
@@ -233,18 +217,14 @@ const loc=gl.getAttribLocation(program,'a');
 gl.enableVertexAttribArray(loc);
 gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
 const uniforms={};
-for(const key of [
+for(const name of [
  'data','floorData','resolution','eye',
  'right','up','forward','height','mode'
-])uniforms[key]=gl.getUniformLocation(program,key);
+])uniforms[name]=gl.getUniformLocation(program,name);
 const volumeTexture=gl.createTexture();
 const floorTexture=gl.createTexture();
 let active=null,sequence=0,note='';
-let yaw=-.35,pitch=.34,distance=5.2,drag=null;
-const fresh=t=>{
- const age=(Date.now()-Date.parse(t))/60000;
- return age>=-5&&age<=90;
-};
+let yaw=-.35,pitch=.24,distance=6,drag=null,pinch=0;
 const norm=v=>{
  const m=Math.hypot(...v)||1;
  return v.map(x=>x/m);
@@ -254,7 +234,11 @@ const cross=(a,b)=>[
  a[2]*b[0]-a[0]*b[2],
  a[0]*b[1]-a[1]*b[0]
 ];
-
+const fresh=t=>{
+ const age=(Date.now()-Date.parse(t))/60000;
+ return age>=-5&&age<=90;
+};
+   
 function upload(value){
  const n=value.side;
  const packed=new Uint8Array(n*10*n*2);
@@ -265,14 +249,14 @@ function upload(value){
   const code=value.layers[y][z][x];
   const i=((z*10+y)*n+x)*2;
   packed[i]=code;
-  packed[i+1]=code?255:0;
+  packed[i+1]=code>=2?255:0;
  }
  for(let z=0;z<n;z++)
  for(let x=0;x<n;x++){
   const code=value.floor[z][x];
   const i=(z*n+x)*2;
   floor[i]=code;
-  floor[i+1]=code?255:0;
+  floor[i+1]=code>=2?255:0;
  }
  gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
  for(const [unit,target,tex] of [
@@ -297,48 +281,58 @@ function upload(value){
   }
  }
 }
-   
+
 function sectionDraw(){
  const ctx=section.getContext('2d');
  const w=section.width,h=section.height;
- const left=48,top=30;
- const pw=Math.max(1,w-65),ph=Math.max(1,h-75);
+ const left=48,top=32;
+ const pw=Math.max(1,w-66),ph=Math.max(1,h-78);
  const n=active.side;
- ctx.fillStyle='#020509';
- ctx.fillRect(0,0,w,h);
  const row=Number($('cap-offset').value);
  const ew=$('cap-direction').value==='ew';
- const palette=[
-  '#397ee8','#24bd70','#f4d43e','#f07832','#ed42c8'
+ const colors=[
+  '#397ee8','#24bd70','#f4d43e',
+  '#f07832','#ed42c8'
  ];
+ ctx.fillStyle='#020509';
+ ctx.fillRect(0,0,w,h);
+ ctx.fillStyle='#071421';
+ ctx.fillRect(left,top,pw,ph);
  for(let y=0;y<10;y++)
  for(let x=0;x<n;x++){
-  const v=ew?active.layers[y][row][x]:
+  const code=ew?active.layers[y][row][x]:
    active.layers[y][x][row];
-  const dbz=(v-2)/2-32;
-  ctx.fillStyle=!v?'#383e47':
-   v===1||dbz<15?'#071421':
-   palette[dbz>=45?4:dbz>=35?3:
-    dbz>=30?2:dbz>=25?1:0];
-  ctx.fillRect(left+x*pw/n,
-   top+(9-y)*ph/10,pw/n+1,ph/10+1);
+  if(code<2)continue;
+  const dbz=(code-2)/2-32;
+  if(dbz<15)continue;
+  ctx.fillStyle=colors[
+   dbz>=45?4:dbz>=35?3:
+   dbz>=30?2:dbz>=25?1:0
+  ];
+  ctx.fillRect(
+   left+x*pw/n,top+(9-y)*ph/10,
+   pw/n+0.5,ph/10+0.5
+  );
  }
  ctx.font='12px sans-serif';
  ctx.fillStyle='#c8e9f3';
- for(let y=0;y<10;y++)
-  ctx.fillText(String(y+1),15,top+(9.5-y)*ph/10+4);
+ ctx.strokeStyle='rgba(160,205,225,.22)';
+ for(let y=0;y<10;y++){
+  const yy=top+(9.5-y)*ph/10;
+  ctx.fillText(String(y+1),15,yy+4);
+ }
  ctx.fillText('km slm',5,18);
- ctx.fillText(ew?'Ovest':'Nord',left,h-20);
- ctx.fillText(ew?'Est':'Sud',w-35,h-20);
+ ctx.fillText(ew?'Ovest':'Nord',left,h-18);
+ ctx.fillText(ew?'Est':'Sud',w-35,h-18);
  ctx.fillText(
-  `${active.width_km.toFixed(0)} km · grigio: dati mancanti`,
+  `${active.width_km.toFixed(0)} km · 10 livelli CAPPI`,
   left,18
  );
 }
 
 function draw(){
  const use=active&&fresh(active.timestamp);
- original.style.display=use?'none':'';
+ old.style.display=use?'none':'';
  panel.style.display=use?'block':'none';
  controls.style.display=use?'flex':'none';
  if(!use){
@@ -346,14 +340,14 @@ function draw(){
   return;
  }
  const cut=mode.value==='3';
- ruler.style.display=cut?'none':'block';
  canvas.style.display=cut?'none':'block';
  section.style.display=cut?'block':'none';
+ ruler.style.display=cut?'none':'block';
  $('cap-cut-controls').style.display=cut?'inline':'none';
  const scale=Number($('cap-scale').value);
  $('cap-scale-value').value=scale;
  const rect=panel.getBoundingClientRect();
- const ratio=Math.min(devicePixelRatio||1,1.25);
+ const ratio=Math.min(window.devicePixelRatio||1,1.25);
  const selected=cut?section:canvas;
  selected.width=Math.max(1,Math.round(rect.width*ratio));
  selected.height=Math.max(1,Math.round(rect.height*ratio));
@@ -363,10 +357,14 @@ function draw(){
    timeZone:'Europe/Rome'
   }
  );
- const label=mode.value==='0'?'Volume V12.1':
-  mode.value==='1'?'Iso-superficie':
-  mode.value==='2'?'Olografico':'Sezione verticale';
- foot.textContent=`Radar-DPC · CC BY-SA 4.0 · CAPPI ${time} Italia · 1–10 km slm · ${label} · ${cut?'strati campionati':'interpolazione tra strati; verticale ×'+scale} · pavimento: massimo CAPPI`;
+ const label=mode.value==='0'?'Volume V13':
+  mode.value==='1'?'Iso-superficie V13':
+  mode.value==='2'?'Olografico V13':'Sezione verticale';
+ foot.textContent=
+  `Radar-DPC · CC BY-SA 4.0 · CAPPI ${time} Italia · `+
+  `1–10 km slm · ${label} · `+
+  (cut?'livelli osservati':
+   `verticale ×${scale} · pavimento: massimo CAPPI`);
  if(cut){
   sectionDraw();
   return;
@@ -393,46 +391,57 @@ function draw(){
  gl.uniform1f(uniforms.height,height);
  gl.uniform1i(uniforms.mode,Number(mode.value));
  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+
  ruler.width=canvas.width;
  ruler.height=canvas.height;
  const ctx=ruler.getContext('2d');
- ctx.font='12px sans-serif';
- ctx.fillStyle='#d8f4ff';
- ctx.strokeStyle='#8cb8cc';
- const dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0);
+ const dot=(a,b)=>a.reduce(
+  (sum,v,i)=>sum+v*b[i],0
+ );
  const project=km=>{
   const v=[
-   -2.38-eye[0],
+   2.38-eye[0],
    height*km/10-eye[1],
    2.38-eye[2]
   ];
   const depth=dot(v,forward);
+  if(depth<=0.1)return null;
   return [
    (1+dot(v,right)/(depth*.625)/
     (canvas.width/canvas.height))*canvas.width/2,
    (1-dot(v,up)/(depth*.625))*canvas.height/2
   ];
  };
- ctx.beginPath();
  const a=project(0),b=project(10);
- ctx.moveTo(...a);
- ctx.lineTo(...b);
- ctx.stroke();
- for(let km=0;km<=10;km+=2){
-  const [x,y]=project(km);
-  ctx.fillText(km+' km',x-38,y+4);
+ if(a&&b){
+  ctx.strokeStyle='#8cb8cc';
+  ctx.fillStyle='#d8f4ff';
+  ctx.font='12px sans-serif';
+  ctx.beginPath();
+  ctx.moveTo(...a);
+  ctx.lineTo(...b);
+  ctx.stroke();
+  for(let km=0;km<=10;km+=2){
+   const p=project(km);
+   if(p&&p[0]>=0&&p[0]<canvas.width-30)
+    ctx.fillText(km+' km',p[0]+5,p[1]+4);
+  }
  }
 }
 
 async function json(url){
  const controller=new AbortController();
- const timer=setTimeout(()=>controller.abort(),12000);
+ const timer=setTimeout(
+  ()=>controller.abort(),12000
+ );
  try{
-  const r=await fetch(url,{
-   cache:'no-store',signal:controller.signal
+  const response=await fetch(url,{
+   cache:'no-store',
+   signal:controller.signal
   });
-  if(!r.ok)throw Error('HTTP '+r.status);
-  return await r.json();
+  if(!response.ok)
+   throw Error('HTTP '+response.status);
+  return await response.json();
  }finally{
   clearTimeout(timer);
  }
@@ -442,59 +451,74 @@ window.addEventListener('iride:cell',async event=>{
  const token=++sequence;
  const {cell,timestamp}=event.detail;
  active=null;
- opt.disabled=true;
+ option.disabled=true;
  note='CAPPI in caricamento';
  requestAnimationFrame(draw);
  try{
-  const base=new URL('docs/data/dpc3d/',document.baseURI);
-  const m=await json(new URL('manifest.json',base));
-  if(m.status!=='ok'||m.base_timestamp!==timestamp||
-     !fresh(m.timestamp))
-   throw Error('CAPPI non sincronizzati o non disponibili');
-  const file=m.cells[cell.track_id];
+  const base=new URL(
+   'docs/data/dpc3d/',document.baseURI
+  );
+  const manifest=await json(
+   new URL('manifest.json',base)
+  );
+  if(manifest.status!=='ok'||
+     manifest.base_timestamp!==timestamp||
+     !fresh(manifest.timestamp))
+   throw Error('CAPPI non sincronizzati');
+  const file=manifest.cells[cell.track_id];
   if(!file||!/^[A-Za-z0-9_-]+\.json$/.test(file))
    throw Error('CAPPI assenti per questa cella');
-  const v=await json(new URL(file,base));
+  const value=await json(new URL(file,base));
   if(token!==sequence)return;
-  if(v.base_timestamp!==timestamp||
-     v.track_id!==cell.track_id||
-     v.timestamp!==m.timestamp||
-     !fresh(v.timestamp))
+  if(value.base_timestamp!==timestamp||
+     value.track_id!==cell.track_id||
+     value.timestamp!==manifest.timestamp||
+     !fresh(value.timestamp))
    throw Error('CAPPI incoerenti');
-  if(v.side!==32||
-     !Number.isFinite(v.width_km)||
-     v.width_km<=0||
-     v.layers.length!==10)
+  if(value.side!==32||
+     !Number.isFinite(value.width_km)||
+     value.width_km<=0||
+     !Array.isArray(value.layers)||
+     value.layers.length!==10||
+     !Array.isArray(value.floor))
    throw Error('Volume non valido');
-  for(const layer of [...v.layers,v.floor]){
+  for(const layer of [...value.layers,value.floor]){
    if(layer.length!==32||
-      layer.some(r=>r.length!==32||
-       r.some(x=>!Number.isInteger(x)||x<0||x>246)))
+      layer.some(row=>
+       !Array.isArray(row)||row.length!==32||
+       row.some(code=>
+        !Number.isInteger(code)||
+        code<0||code>246)))
     throw Error('Matrice CAPPI non valida');
   }
-  upload(v);
-  active=v;
-  opt.disabled=false;
+  upload(value);
+  active=value;
+  option.disabled=false;
   note='';
-  $('cap-scale').value=Math.max(1,Math.min(30,
-   Math.round(v.width_km/20)));
+  $('cap-scale').value=Math.max(
+   1,Math.min(30,Math.round(value.width_km/20))
+  );
   yaw=-.35;
-  pitch=.34;
-  distance=5.2;
+  pitch=.24;
+  const h=45/value.width_km*
+   Number($('cap-scale').value);
+  distance=Math.max(5.5,Math.min(12,5+h*.32));
   draw();
- }catch(e){
+ }catch(error){
   if(token===sequence){
-   note=e.message+' · riserva 2D';
+   note=error.message+' · riserva 2D';
    draw();
   }
  }
 });
 
-mode.addEventListener('change',()=>requestAnimationFrame(draw));
+mode.addEventListener('change',draw);
 $('reset').addEventListener('click',()=>{
  yaw=-.35;
- pitch=.34;
- distance=5.2;
+ pitch=.24;
+ const h=active?45/active.width_km*
+  Number($('cap-scale').value):0;
+ distance=Math.max(5.5,Math.min(12,5+h*.32));
  draw();
 });
 for(const id of [
@@ -530,11 +554,10 @@ for(const name of [
 ])canvas.addEventListener(name,()=>{drag=null;});
 canvas.addEventListener('wheel',e=>{
  e.preventDefault();
- distance=Math.max(3,Math.min(18,
+ distance=Math.max(3.5,Math.min(20,
   distance+e.deltaY*.008));
  draw();
 },{passive:false});
-let pinch=0;
 canvas.addEventListener('touchstart',e=>{
  if(e.touches.length===2){
   drag=null;
@@ -553,14 +576,16 @@ canvas.addEventListener('touchmove',e=>{
   e.touches[0].clientY-e.touches[1].clientY
  );
  if(pinch&&d)
-  distance=Math.max(3,Math.min(18,distance*pinch/d));
+  distance=Math.max(3.5,Math.min(
+   20,distance*pinch/d
+  ));
  pinch=d;
  draw();
 },{passive:false});
 setInterval(()=>{
  if(active&&!fresh(active.timestamp)){
   active=null;
-  opt.disabled=true;
+  option.disabled=true;
   if(mode.value==='3')mode.value='1';
   note='CAPPI scaduti · riserva 2D';
   draw();
@@ -568,4 +593,4 @@ setInterval(()=>{
  }
 },30000);
 })();
-    
+   
