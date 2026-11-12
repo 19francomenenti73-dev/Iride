@@ -1,3 +1,4 @@
+
 /* I.R.I.D.E. V12.1 — Volume DPC CAPPI.
    Radar-DPC, CC BY-SA 4.0.
    Volume migliorato; ISO, OLO e sezione DPC conservati.
@@ -239,7 +240,7 @@ for(const key of [
 const volumeTexture=gl.createTexture();
 const floorTexture=gl.createTexture();
 let active=null,sequence=0,note='';
-let yaw=-.35,pitch=.34,distance=8,drag=null;
+let yaw=-.35,pitch=.34,distance=5.2,drag=null;
 const fresh=t=>{
  const age=(Date.now()-Date.parse(t))/60000;
  return age>=-5&&age<=90;
@@ -253,7 +254,7 @@ const cross=(a,b)=>[
  a[2]*b[0]-a[0]*b[2],
  a[0]*b[1]-a[1]*b[0]
 ];
-   
+
 function upload(value){
  const n=value.side;
  const packed=new Uint8Array(n*10*n*2);
@@ -296,7 +297,7 @@ function upload(value){
   }
  }
 }
-
+   
 function sectionDraw(){
  const ctx=section.getContext('2d');
  const w=section.width,h=section.height;
@@ -479,7 +480,7 @@ window.addEventListener('iride:cell',async event=>{
    Math.round(v.width_km/20)));
   yaw=-.35;
   pitch=.34;
-  distance=8;
+  distance=5.2;
   draw();
  }catch(e){
   if(token===sequence){
@@ -493,7 +494,7 @@ mode.addEventListener('change',()=>requestAnimationFrame(draw));
 $('reset').addEventListener('click',()=>{
  yaw=-.35;
  pitch=.34;
- distance=8;
+ distance=5.2;
  draw();
 });
 for(const id of [
@@ -529,7 +530,7 @@ for(const name of [
 ])canvas.addEventListener(name,()=>{drag=null;});
 canvas.addEventListener('wheel',e=>{
  e.preventDefault();
- distance=Math.max(4,Math.min(18,
+ distance=Math.max(3,Math.min(18,
   distance+e.deltaY*.008));
  draw();
 },{passive:false});
@@ -552,7 +553,7 @@ canvas.addEventListener('touchmove',e=>{
   e.touches[0].clientY-e.touches[1].clientY
  );
  if(pinch&&d)
-  distance=Math.max(4,Math.min(18,distance*pinch/d));
+  distance=Math.max(3,Math.min(18,distance*pinch/d));
  pinch=d;
  draw();
 },{passive:false});
