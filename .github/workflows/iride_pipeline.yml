@@ -38,7 +38,9 @@ jobs:
 
       - name: Compile backend
         run: |
-          python -m py_compile backend/iride_pipeline.py backend/backend/radar_dpc.py
+          python -m py_compile \
+            backend/iride_pipeline.py \
+            backend/backend/radar_dpc.py
 
       - name: Install dependencies
         run: |
@@ -217,7 +219,9 @@ jobs:
               f"{count_vectors} motion vectors; "
               f"radar {len(raw)} bytes"
           )
-          PY      - name: Commit validated data or failure status
+          PY
+
+      - name: Commit validated data or failure status
         if: always() && steps.pipeline.outcome != 'skipped'
         run: |
           git config user.name "github-actions[bot]"
