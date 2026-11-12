@@ -1,3 +1,4 @@
+
 name: I.R.I.D.E. radar nowcasting
 
 on:
@@ -236,6 +237,8 @@ jobs:
       - name: Commit validated data or failure status
         if: always() && steps.pipeline.outcome != 'skipped'
         run: |
+          set -e
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -247,45 +250,96 @@ jobs:
 
           if [ "${{ steps.pipeline.outcome }}" = "success" ] && \
              [ "${{ steps.validation.outcome }}" = "success" ]; then
+
             git add \
               data/iride.json \
               data/iride_history.json \
               docs/data/iride.json \
               docs/data/iride_radar.png
+
             if [ -d docs/data/dpc3d ]; then
               git add -A docs/data/dpc3d
             fi
+
           fi
 
           if git diff --cached --quiet; then
             echo "No changes to publish."
-          else
-            git commit -m "Update I.R.I.D.E. radar state"
-            git push
+            exit 0
           fi
+
+          BASE_SHA=$(git rev-parse HEAD)
+
+          git commit -m "Update I.R.I.D.E. radar state"
+
+          echo "Checking remote main before publishing..."
+
+          git fetch origin main
+
+          REMOTE_SHA=$(git rev-parse refs/remotes/origin/main)
+
+          if [ "$REMOTE_SHA" != "$BASE_SHA" ]; then
+            echo "::warning::Remote main changed during radar processing."
+            echo "::warning::Skipping stale radar publication."
+            echo "The next scheduled run will regenerate fresh data."
+            exit 0
+          fi
+
+          echo "Publishing validated radar data..."
+
+          if git push origin HEAD:main; then
+            echo "Radar publication successful."
+            exit 0
+          fi
+
+          echo "Push rejected. Checking remote state..."
+
+          git fetch origin main
+
+          NEW_REMOTE_SHA=$(git rev-parse refs/remotes/origin/main)
+
+          if [ "$NEW_REMOTE_SHA" != "$BASE_SHA" ]; then
+            echo "::warning::Concurrent commit detected."
+            echo "::warning::Keeping newer remote main unchanged."
+            echo "Radar data will be regenerated on the next run."
+            exit 0
+          fi
+
+          echo "::error::Push failed without a remote update."
+          echo "Check GitHub permissions or connectivity."
+          exit 1
 
   deploy:
     needs: process
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
       pages: write
       id-token: write
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout published main
+        uses: actions/checkout@v4
         with:
           ref: main
+
       - name: Prepare public site
         run: |
           mkdir -p _site
           cp index.html dpc3d.js _site/
           cp -R docs _site/docs
-      - uses: actions/upload-pages-artifact@v3
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+
       - name: Deploy Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        
