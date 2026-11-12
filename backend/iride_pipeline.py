@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""I.R.I.D.E. — OPERA radar pipeline."""
+"""I.R.I.D.E. — OPERA e Radar-DPC."""
 
 from __future__ import annotations
 
@@ -23,6 +23,8 @@ import requests
 from pyproj import CRS, Transformer
 from scipy import ndimage
 from scipy.optimize import linear_sum_assignment
+
+import radar_dpc
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
@@ -289,8 +291,7 @@ def inside_region(lat, lon):
     return (
         REGION["south"] <= lat <= REGION["north"]
         and REGION["west"] <= lon <= REGION["east"]
-    )
-
+)
 
 def contextual_matrix(radar, cx, cy, component_slice):
     ys, xs = component_slice
@@ -325,7 +326,8 @@ def contextual_matrix(radar, cx, cy, component_slice):
         "rows": MATRIX_SIDE,
         "cols": MATRIX_SIDE,
         "context_pixels": size,
-        "floor_dbz": MATRIX_FLOOR,        "aggregation": "maximum_dbzh",
+        "floor_dbz": MATRIX_FLOOR,
+        "aggregation": "maximum_dbzh",
         "vertical_information": False
     }
     return np.round(output, 1).tolist(), info
@@ -583,7 +585,6 @@ def track_prediction(track, timestamp):
     except Exception:
         return None
 
-
 def track_cells(cells, timestamp, history):
     tracks = history.setdefault("tracks", {})
     active = {}
@@ -639,7 +640,8 @@ def track_cells(cells, timestamp, history):
                     prediction_error = haversine(predicted, cell)
                     if prediction_error > TRACK_MAX_PREDICTION_ERROR_KM:
                         continue
-                    cost = (                        prediction_error * 0.75
+                    cost = (
+                        prediction_error * 0.75
                         + distance * 0.25
                     )
                 else:
@@ -832,7 +834,6 @@ def restore_recent_observations(product_time, history):
                 path.unlink(missing_ok=True)
     return history
 
-
 def png_chunk(kind, data):
     body = kind + data
     return (
@@ -919,7 +920,8 @@ def generate_radar_overlay(radar, grid, origin):
     rgba = np.zeros((height, width, 4), dtype=np.uint8)
     classes = [
         (15.0, 25.0, (57, 126, 232)),
-        (25.0, 30.0, (36, 189, 112)),        (30.0, 35.0, (244, 212, 62)),
+        (25.0, 30.0, (36, 189, 112)),
+        (30.0, 35.0, (244, 212, 62)),
         (35.0, 45.0, (240, 120, 50)),
         (45.0, float("inf"), (237, 66, 200))
     ]
@@ -957,48 +959,51 @@ def main():
     started = now()
     source_path = None
     try:
-        key, size = latest()
-        key_time = parse_product_time(key)
-        if key_time is None:
-            raise RuntimeError(
-                "Timestamp prodotto OPERA non disponibile."
+        source_id = "OPERA"
+        try:
+            key, size = latest()
+            key_time = parse_product_time(key)
+            age = (now() - key_time).total_seconds() / 60
+            if not -5 <= age <= 90:
+                raise RuntimeError(f"Prodotto OPERA obsoleto: {age:.1f} minuti")
+            source_path, source_url = fetch(key, size)
+            radar, grid, inverse, origin, decoded_time = decode(source_path)
+            if decoded_time and abs((decoded_time-key_time).total_seconds()) > 120:
+                raise RuntimeError("Timestamp ODIM e archivio non coerenti")
+            product_time = decoded_time or key_time
+            source = {
+                "provider": "EUMETNET OPERA",
+                "archive": "CloudFerro openradar-24h",
+                "url": source_url,
+                "object_key": key,
+                "product": "OPERA DBZH composite",
+                "license": "CC BY 4.0",
+                "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                "attribution": "EUMETNET OPERA · CC BY 4.0 · elaborazione I.R.I.D.E."
+            }
+        except Exception as opera_error:
+            print(
+                f"OPERA non disponibile: {opera_error}; provo Radar-DPC",
+                file=sys.stderr
             )
-        age_minutes = (now() - key_time).total_seconds() / 60
-        if age_minutes < -5:
-            raise RuntimeError("Timestamp OPERA nel futuro.")
-        if age_minutes > 90:
-            raise RuntimeError(
-                f"Prodotto OPERA obsoleto: {age_minutes:.1f} minuti."
+            source_id = "DPC_VMI"
+            radar, grid, inverse, origin, product_time, source = (
+                radar_dpc.acquire(DATA / "raw")
             )
+            source["fallback_reason"] = str(opera_error)
 
-        history = restore_recent_observations(key_time, read_history())
-        source_path, source_url = fetch(key, size)
-        radar, grid, inverse, origin, decoded_time = decode(source_path)
-
-        if decoded_time is not None:
-            difference = abs(
-                (decoded_time - key_time).total_seconds()
-            )
-            if difference > 120:
-                raise RuntimeError(
-                    "Timestamp ODIM e archivio non coerenti."
-                )
-            product_time = decoded_time
-        else:
-            product_time = key_time
-
-        age_minutes = (now() - product_time).total_seconds() / 60
-        if age_minutes < -5 or age_minutes > 90:
-            raise RuntimeError(
-                f"Età prodotto non valida: {age_minutes:.1f} minuti."
-            )
+        history = read_history()
+        if history.get("source_id", "OPERA") != source_id:
+            history = {"schema_version": 2, "tracks": {}}
+        if source_id == "OPERA":
+            history = restore_recent_observations(product_time, history)
+        history["source_id"] = source_id
 
         cells = detect(radar, grid, inverse, origin)
-        if not cells:
-            raise RuntimeError(
-                "Nessuna cella rilevata. "
-                "Pubblicazione precedente conservata."
-            )
+        if source_id == "DPC_VMI":
+            for cell in cells:
+                cell["id"] = cell["id"].replace("OPERA-", "DPC-")
+                cell["matrix_semantics"]["kind"] = "observed_2d_vmi_context"
 
         radar_overlay = generate_radar_overlay(radar, grid, origin)
         radar_overlay["timestamp"] = stamp(product_time)
@@ -1020,21 +1025,7 @@ def main():
             "timestamp": stamp(product_time),
             "generated_at": stamp(now()),
             "region": REGION,
-            "source": {
-                "provider": "EUMETNET OPERA",
-                "archive": "CloudFerro openradar-24h",
-                "url": source_url,
-                "object_key": key,
-                "product": "OPERA DBZH composite",
-                "attribution": (
-                    "Dati radar EUMETNET OPERA, "
-                    "archivio CloudFerro; "
-                    "elaborazione I.R.I.D.E. "
-                    "Licenza e condizioni del prodotto "
-                    "da verificare nella documentazione "
-                    "ufficiale."
-                )
-            },
+            "source": source,
             "grid": grid,
             "radar_overlay": radar_overlay,
             "processing": {
@@ -1071,6 +1062,7 @@ def main():
         save(DATA / "status.json", {
             "status": "ok",
             "timestamp": payload["timestamp"],
+            "source": source_id,
             "cell_count": len(cells),
             "cells_3d": min(len(cells), MAX_3D_CELLS),
             "elapsed_seconds": round(
@@ -1087,7 +1079,8 @@ def main():
             "status": "error",
             "generated_at": stamp(now()),
             "message": str(error),
-            "previous_data_preserved": True
+            "previous_data_preserved": True,
+            "map_fallback": "RainViewer (frontend)"
         })
         traceback.print_exc()
         raise
