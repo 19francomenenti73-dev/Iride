@@ -1,8 +1,7 @@
-
-/* I.R.I.D.E. V12 — Volume DPC CAPPI.
-   Dati Radar-DPC, CC BY-SA 4.0.
-   ISO, OLO e sezione verticale conservati.
-   Fallback V11 originale in index.html. */
+/* I.R.I.D.E. V12.1 — Volume DPC CAPPI.
+   Radar-DPC, CC BY-SA 4.0.
+   Volume migliorato; ISO, OLO e sezione DPC conservati.
+   Fallback V11 in index.html. */
 (()=>{
 'use strict';
 const $=id=>document.getElementById(id);
@@ -90,8 +89,7 @@ vec3 normalAt(vec3 p){
  return normalize(n+vec3(.0001));
 }
 
-/* V12: colore continuo derivato dalla riflettività.
-   Le quote non vengono ricostruite artificialmente. */
+/* Colori continui della riflettività CAPPI. */
 vec3 volumeColor(float v){
  vec3 blue=palette(0);
  vec3 green=palette(1);
@@ -104,15 +102,29 @@ vec3 volumeColor(float v){
  return mix(orange,magenta,smoothstep(35.,45.,v));
 }
 
-/* Opacità per unità di distanza nel volume.
-   Debole: diffusa. Intensa: progressivamente compatta. */
+/* V12.1: blu e verde più visibili;
+   nuclei intensi progressivamente più compatti. */
 float volumeDensity(float v){
  if(v<15.)return 0.;
- if(v<25.)return mix(.025,.13,smoothstep(15.,25.,v));
- if(v<30.)return mix(.13,.27,smoothstep(25.,30.,v));
- if(v<35.)return mix(.27,.48,smoothstep(30.,35.,v));
- if(v<45.)return mix(.48,.85,smoothstep(35.,45.,v));
- return mix(.85,1.15,smoothstep(45.,60.,v));
+ if(v<25.)return mix(.09,.19,smoothstep(15.,25.,v));
+ if(v<30.)return mix(.19,.37,smoothstep(25.,30.,v));
+ if(v<35.)return mix(.37,.75,smoothstep(30.,35.,v));
+ if(v<45.)return mix(.75,1.45,smoothstep(35.,45.,v));
+ return mix(1.45,1.9,smoothstep(45.,60.,v));
+}
+
+/* V12.1: riduce la nebbia nelle aree deboli,
+   preserva i nuclei ed attenua i bordi del volume. */
+float volumeStructure(vec3 p,float dbz){
+ float dx=abs(sampleAt(p+vec3(.09,0.,0.)).x-
+              sampleAt(p-vec3(.09,0.,0.)).x);
+ float dz=abs(sampleAt(p+vec3(0.,0.,.09)).x-
+              sampleAt(p-vec3(0.,0.,.09)).x);
+ float detail=clamp(max(dx,dz)/12.,0.,1.);
+ float core=smoothstep(22.,38.,dbz);
+ float edge=min(2.25-abs(p.x),2.25-abs(p.z));
+ float fade=smoothstep(0.,.20,edge);
+ return fade*mix(.38+detail*.22,1.,core);
 }
 
 void main(){
@@ -146,8 +158,9 @@ void main(){
    vec3 p=eye+ray*(start+float(i)*step);
    vec2 v=sampleAt(p);
 
+   /* V12.1: solo modalità Volume. */
    if(mode==0&&v.y>0.&&v.x>=15.){
-    float density=volumeDensity(v.x);
+    float density=volumeDensity(v.x)*volumeStructure(p,v.x);
     float alpha=1.-exp(-density*step*3.2);
     alpha=clamp(alpha,0.,.22);
     vec3 c=volumeColor(v.x);
@@ -155,11 +168,12 @@ void main(){
      dot(normalAt(p),normalize(vec3(-.4,.8,.6))),
      0.,1.
     );
-    sum+=trans*alpha*c*light;
+    float contrast=mix(.94,1.12,smoothstep(27.,42.,v.x));
+    sum+=trans*alpha*c*light*contrast;
     trans*=1.-alpha;
    }
 
-   /* ISO originale: algoritmo conservato. */
+   /* ISO: algoritmo originale invariato. */
    if(mode==1&&v.y>0.&&prev.y>0.){
     for(int j=0;j<5;j++){
      int k=v.x>=prev.x?j:4-j;
@@ -205,7 +219,7 @@ try{
  if(!gl.getProgramParameter(program,gl.LINK_STATUS))
   throw Error(gl.getProgramInfoLog(program));
 }catch(e){
- console.error('CAPPI V12 shader',e);
+ console.error('CAPPI V12.1 shader',e);
  opt.remove();controls.remove();panel.remove();return;
 }
 gl.useProgram(program);
@@ -239,7 +253,7 @@ const cross=(a,b)=>[
  a[2]*b[0]-a[0]*b[2],
  a[0]*b[1]-a[1]*b[0]
 ];
- 
+   
 function upload(value){
  const n=value.side;
  const packed=new Uint8Array(n*10*n*2);
@@ -348,7 +362,7 @@ function draw(){
    timeZone:'Europe/Rome'
   }
  );
- const label=mode.value==='0'?'Volume V12':
+ const label=mode.value==='0'?'Volume V12.1':
   mode.value==='1'?'Iso-superficie':
   mode.value==='2'?'Olografico':'Sezione verticale';
  foot.textContent=`Radar-DPC · CC BY-SA 4.0 · CAPPI ${time} Italia · 1–10 km slm · ${label} · ${cut?'strati campionati':'interpolazione tra strati; verticale ×'+scale} · pavimento: massimo CAPPI`;
@@ -553,3 +567,4 @@ setInterval(()=>{
  }
 },30000);
 })();
+    
