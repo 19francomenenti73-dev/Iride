@@ -5,13 +5,17 @@
 # Dati Radar-DPC — CC BY-SA 4.0
 # https://radar.protezionecivile.it/
 # https://dpc-radar.readthedocs.io/
+# https://creativecommons.org/licenses/by-sa/4.0/
 #
-# Conservare attribuzione, licenza e timestamp.
+# Elaborazione: I.R.I.D.E. / Nowcasting Italia
+# I dati sono ricampionati sulle celle radar.
 # Non altera CAPPI, radar 2D o renderer 3D.
 
+import ipaddress
 import json
 import math
 import re
+import socket
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -40,8 +44,6 @@ LICENSE_URL = (
     "https://creativecommons.org/licenses/by-sa/4.0/"
 )
 
-# Le unità vengono accettate solo se dichiarate
-# esplicitamente e riconosciute nei metadati.
 UNITS = {
     "VIL": {
         "kg/m2": "kg/m²",
@@ -113,6 +115,46 @@ def last_product(name):
     return max(times)
 
 
+def safe_download_url(url):
+    parsed = urlparse(url)
+
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port not in (None, 443)
+        or parsed.fragment
+    ):
+        raise ValueError("URL download non sicuro")
+
+    host = parsed.hostname.lower().rstrip(".")
+
+    # Solo endpoint HTTPS Amazon S3.
+    # Non sono consentiti URL generici.
+    allowed = (
+        host == "s3.amazonaws.com"
+        or host.startswith("s3.")
+        and host.endswith(".amazonaws.com")
+        or host.endswith(".s3.amazonaws.com")
+        or ".s3." in host
+        and host.endswith(".amazonaws.com")
+    )
+    if not allowed:
+        raise ValueError("Host download non autorizzato")
+
+    # Difesa contro indirizzi IP locali o privati.
+    addresses = socket.getaddrinfo(
+        host, 443, type=socket.SOCK_STREAM
+    )
+    for address in addresses:
+        ip = ipaddress.ip_address(address[4][0])
+        if not ip.is_global:
+            raise ValueError("Indirizzo non pubblico")
+
+    return url
+
+
 def get_tiff(name, timestamp):
     response = requests.post(
         API + "downloadProduct",
@@ -124,28 +166,24 @@ def get_tiff(name, timestamp):
         timeout=(10, 25),
     )
     response.raise_for_status()
-    info = response.json()
-    url = info.get("url", "")
-    parsed = urlparse(url)
 
-    # Accettiamo esclusivamente il bucket DPC.
-    if (
-        parsed.scheme != "https"
-        or parsed.hostname !=
-        "dpc-radar.s3.eu-south-1.amazonaws.com"
-        or not parsed.path.startswith("/" + name + "/")
-    ):
-        raise ValueError("URL download non riconosciuto")
+    info = response.json()
+    url = safe_download_url(info.get("url", ""))
 
     chunks = []
     size = 0
 
+    # Nessun redirect automatico verso host diversi.
     with requests.get(
         url,
         stream=True,
         timeout=(10, 45),
+        allow_redirects=False,
     ) as download:
+        if 300 <= download.status_code < 400:
+            raise ValueError("Redirect S3 non consentito")
         download.raise_for_status()
+
         for chunk in download.iter_content(1024 * 1024):
             if not chunk:
                 continue
@@ -154,7 +192,17 @@ def get_tiff(name, timestamp):
                 raise ValueError("GeoTIFF troppo grande")
             chunks.append(chunk)
 
-    return b"".join(chunks)
+    content = b"".join(chunks)
+
+    if len(content) < 8 or content[:4] not in (
+        b"II*\x00",
+        b"MM\x00*",
+        b"II+\x00",
+        b"MM\x00+",
+    ):
+        raise ValueError("Il download non è un TIFF")
+
+    return content
 
 
 def normalize_unit(value):
@@ -165,7 +213,6 @@ def normalize_unit(value):
 
 
 def identify_unit(name, tags, band_tags):
-    # Nessuna deduzione arbitraria dal prodotto.
     for metadata in (band_tags, tags):
         for key, value in metadata.items():
             if key.lower() in (
@@ -215,8 +262,6 @@ def read_product(name, timestamp):
             )
             valid &= np.isfinite(values)
 
-            # Trasformazione geografica per il
-            # campionamento delle celle.
             transform = Transformer.from_crs(
                 "EPSG:4326",
                 dataset.crs,
@@ -244,8 +289,7 @@ def read_product(name, timestamp):
                     for k, v in tags.items()
                 },
             }
-
-
+            
 def sample_cell(product, cell):
     lon = float(cell["lon"])
     lat = float(cell["lat"])
@@ -274,8 +318,6 @@ def sample_cell(product, cell):
 
 
 def plausible(name, value, unit):
-    # Controlli fisici conservativi, non
-    # sostituiscono la documentazione del prodotto.
     if name == "POH":
         return unit == "%" and 0 <= value <= 100
     if name == "VIL":
@@ -328,8 +370,6 @@ def main():
             try:
                 latest = last_product(name)
 
-                # Non associamo prodotti troppo distanti
-                # temporalmente dal radar principale.
                 if abs(latest - radar_time) > 600000:
                     raise ValueError(
                         "Prodotto non sincronizzato"
@@ -399,4 +439,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-      
