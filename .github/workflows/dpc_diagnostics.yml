@@ -16,15 +16,17 @@ concurrency:
 jobs:
   diagnostics:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: main
+          fetch-depth: 0
           persist-credentials: true
 
-      - name: Python 3.12
+      - name: Setup Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -32,13 +34,14 @@ jobs:
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
       - name: Run DPC diagnostics
         run: |
           python backend/dpc_diagnostics.py
 
-      - name: Validate diagnostics output
+      - name: Validate diagnostic JSON
         run: |
           python - <<'PY'
           import json
@@ -48,70 +51,84 @@ jobs:
               "docs/data/dpc3d/diagnostics.json"
           )
 
-          assert path.is_file(), (
-              "Missing diagnostics JSON"
-          )
+          if not path.is_file():
+              raise SystemExit(
+                  "ERRORE: diagnostics.json assente"
+              )
 
           data = json.loads(
               path.read_text(encoding="utf-8")
           )
 
-          assert data.get("source") == "Radar-DPC"
-          assert data.get("license") == "CC BY-SA 4.0"
+          assert data["source"] == "Radar-DPC"
+          assert data["license"] == "CC BY-SA 4.0"
 
           products = data.get("products", {})
           assert isinstance(products, dict)
 
           for name in ("VIL", "ETM", "POH", "VMI"):
-              assert name in products, (
-                  f"Missing product: {name}"
-              )
+              assert name in products, name
 
-          print("DPC diagnostics JSON validated")
-          print("Status:", data.get("status"))
+          print("Diagnostica JSON valida")
+          print("Stato:", data.get("status"))
+          print("Radar:", data.get("radar_status"))
+          print("Celle:", len(data.get("cells", {})))
 
-          for name, item in products.items():
+          for name in ("VIL", "ETM", "POH", "VMI"):
+              item = products[name]
               print(
                   name,
-                  item.get("status"),
-                  item.get("timestamp", ""),
-                  item.get("reason", "")
+                  "status=", item.get("status"),
+                  "unit=", item.get("unit"),
+                  "sync=", item.get("cell_synchronized"),
+                  "reason=", item.get("reason")
               )
           PY
 
-      - name: Publish diagnostics
+      - name: Publish diagnostic JSON
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add docs/data/dpc3d/diagnostics.json
 
           if git diff --cached --quiet; then
-            echo "Diagnostics unchanged."
+            echo "Nessuna modifica da pubblicare."
             exit 0
           fi
-
-          BASE_SHA=$(git rev-parse HEAD)
 
           git commit -m "Update IRIDE DPC diagnostics"
 
-          git fetch origin main
+          for attempt in 1 2 3 4 5; do
+            echo "Pubblicazione tentativo ${attempt}/5"
 
-          REMOTE_SHA=$(git rev-parse refs/remotes/origin/main)
+            git fetch origin main
 
-          if [ "$REMOTE_SHA" != "$BASE_SHA" ]; then
-            echo "::error::Concurrent update detected."
-            echo "::error::Diagnostics NOT published."
-            exit 1
-          fi
+            if ! git rebase origin/main; then
+              git rebase --abort || true
+              echo "::error::Conflitto durante il rebase."
+              exit 1
+            fi
 
-          if git push origin HEAD:main; then
-            echo "DPC diagnostics published."
-            exit 0
-          fi
+            if git push origin HEAD:main; then
+              echo "Diagnostica DPC pubblicata."
+              exit 0
+            fi
 
-          echo "::error::DPC publication failed."
+            echo "Repository aggiornato durante il push."
+            sleep 5
+          done
+
+          echo "::error::Pubblicazione non riuscita."
           exit 1
+
+      - name: Final status
+        if: always()
+        run: |
+          echo "DPC diagnostics execution completed."
+          echo "See previous steps for product status."
           
