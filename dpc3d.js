@@ -1,9 +1,11 @@
 
-/* IRIDE V13.3 - Radar-DPC CAPPI 3D
+/* IRIDE V13.2 - Radar-DPC CAPPI 3D
+   Ripristino da commit 679181b.
    Volume V11, ISO, Olografico, sezione.
-   Scala altimetrica prospettica 1-10 km slm.
-   Diagnostica VIL, ETM, POH, VMI.
-   Fonte Radar-DPC - CC BY-SA 4.0. */
+   Scala CAPPI fissa 1-10 km slm.
+   Nessuna diagnostica VIL/ETM/POH/VMI.
+   Fonte Radar-DPC, CC BY-SA 4.0.
+*/
 (()=>{
 'use strict';
 const $=id=>document.getElementById(id);
@@ -28,9 +30,6 @@ const controls=document.createElement('div');
 controls.style.cssText='display:none;gap:8px;flex-wrap:wrap;align-items:center;padding:6px 10px;background:#17283a;font-size:11px';
 controls.innerHTML='<label>Verticale ×<output id="cap-scale-value"></output> <input id="cap-scale" type="range" min="1" max="30" value="8"></label><label id="cap-cut-controls">Taglio <select id="cap-direction"><option value="ew">Ovest → Est</option><option value="ns">Nord → Sud</option></select> <input id="cap-offset" type="range" min="0" max="31" value="16"></label><span>15 blu · 25 verde · 30 giallo · 35 arancio · 45 magenta dBZ</span>';
 panel.before(controls);
-const metrics=document.createElement('div');
-metrics.style.cssText='display:none;flex-wrap:wrap;gap:8px;padding:8px 10px;background:#0c1a29;border-top:1px solid #31506a;color:#d7eaf5;font:12px sans-serif';
-controls.after(metrics);
 let option=[...mode.options].find(o=>o.value==='3');
 if(!option){
  option=new Option('Sezione verticale DPC','3');
@@ -42,7 +41,6 @@ const gl=canvas.getContext('webgl2',{
 });
 if(!gl){
  controls.remove();
- metrics.remove();
  panel.remove();
  return;
 }
@@ -66,10 +64,8 @@ uniform float height;
 uniform int mode;
 const vec3 bg=vec3(.008,.018,.031);
 vec3 palette(float v){
- vec3 b=vec3(.22,.49,.91);
- vec3 g=vec3(.14,.74,.44);
- vec3 y=vec3(.96,.83,.24);
- vec3 r=vec3(.94,.47,.20);
+ vec3 b=vec3(.22,.49,.91),g=vec3(.14,.74,.44);
+ vec3 y=vec3(.96,.83,.24),r=vec3(.94,.47,.20);
  vec3 m=vec3(.93,.26,.78);
  if(v<25.)return mix(b,g,smoothstep(15.,25.,v));
  if(v<30.)return mix(g,y,smoothstep(25.,30.,v));
@@ -78,8 +74,7 @@ vec3 palette(float v){
 }
 vec2 sampleAt(vec3 p){
  float km=p.y/height*10.;
- if(km<1.||km>10.||
-    abs(p.x)>2.25||abs(p.z)>2.25)
+ if(km<1.||km>10.||abs(p.x)>2.25||abs(p.z)>2.25)
   return vec2(0.);
  vec3 q=vec3(
   (p.x+2.25)/4.5,
@@ -91,19 +86,14 @@ vec2 sampleAt(vec3 p){
 }
 float density(float v){
  if(v<15.)return 0.;
- if(v<25.)return mix(.12,.28,
-  smoothstep(15.,25.,v));
- if(v<30.)return mix(.28,.60,
-  smoothstep(25.,30.,v));
- if(v<35.)return mix(.60,1.15,
-  smoothstep(30.,35.,v));
- if(v<45.)return mix(1.15,2.1,
-  smoothstep(35.,45.,v));
+ if(v<25.)return mix(.12,.28,smoothstep(15.,25.,v));
+ if(v<30.)return mix(.28,.60,smoothstep(25.,30.,v));
+ if(v<35.)return mix(.60,1.15,smoothstep(30.,35.,v));
+ if(v<45.)return mix(1.15,2.1,smoothstep(35.,45.,v));
  return 2.1;
 }
 vec3 normalAt(vec3 p){
- vec3 a=vec3(.06,0.,0.);
- vec3 b=vec3(0.,.06,0.);
+ vec3 a=vec3(.06,0.,0.),b=vec3(0.,.06,0.);
  vec3 c=vec3(0.,0.,.06);
  return normalize(vec3(
   sampleAt(p+a).x-sampleAt(p-a).x,
@@ -150,15 +140,19 @@ void main(){
   float step=(end-start)/176.;
   float trans=1.;
   vec3 sum=vec3(0.);
-  vec2 prev=sampleAt(eye+ray*start);
+  vec2 prev=sampleAt(
+   eye+ray*start
+  );
   for(int i=1;i<=176;i++){
    vec3 p=eye+ray*(
     start+float(i)*step
    );
    vec2 v=sampleAt(p);
    float fade=smoothstep(
-    0.,.15,
-    min(2.25-abs(p.x),2.25-abs(p.z))
+    0.,.15,min(
+     2.25-abs(p.x),
+     2.25-abs(p.z)
+    )
    );
    if(v.y>.98&&v.x>=15.){
     vec3 c=palette(v.x);
@@ -175,16 +169,21 @@ void main(){
     }else if(mode==1){
      float surface=0.;
      for(int k=0;k<5;k++){
-      float level=k==0?15.:
-       k==1?25.:k==2?30.:
+      float level=
+       k==0?15.:
+       k==1?25.:
+       k==2?30.:
        k==3?35.:45.;
-      if(prev.y>.98&&
-       ((prev.x<level&&v.x>=level)||
-        (prev.x>=level&&v.x<level)))
+      if(prev.y>.98&&(
+       (prev.x<level&&v.x>=level)||
+       (prev.x>=level&&v.x<level)
+      ))
        surface=max(
         surface,
-        k==0?.18:k==1?.30:
-        k==2?.50:k==3?.67:.82
+        k==0?.18:
+        k==1?.30:
+        k==2?.50:
+        k==3?.67:.82
        );
      }
      alpha=surface*fade;
@@ -206,7 +205,9 @@ void main(){
       2.,13.,length(vec3(gx,gy,gz))
      );
      alpha=(
-      1.-exp(-density(v.x)*step*3.4)
+      1.-exp(
+       -density(v.x)*step*3.4
+      )
      )*mix(.35,1.4,rim)*fade;
      c=mix(
       c,c*vec3(.70,1.30,1.55),.45
@@ -247,9 +248,8 @@ try{
   program,gl.LINK_STATUS
  ))throw Error(gl.getProgramInfoLog(program));
 }catch(e){
- console.error('IRIDE V13.3',e);
+ console.error('IRIDE V13.2',e);
  controls.remove();
- metrics.remove();
  panel.remove();
  return;
 }
@@ -280,7 +280,7 @@ const volumeTexture=gl.createTexture();
 const floorTexture=gl.createTexture();
 let active=null,sequence=0,note='',bounds=null;
 let yaw=-.35,pitch=.16,distance=5,zoom=1;
-let drag=null,pinch=0,diagnostics=null;
+let drag=null,pinch=0;
 const norm=v=>{
  const m=Math.hypot(...v)||1;
  return v.map(x=>x/m);
@@ -290,8 +290,6 @@ const cross=(a,b)=>[
  a[2]*b[0]-a[0]*b[2],
  a[0]*b[1]-a[1]*b[0]
 ];
-const dot=(a,b)=>
- a.reduce((s,v,i)=>s+v*b[i],0);
 const fresh=t=>{
  const age=(
   Date.now()-Date.parse(t)
@@ -469,111 +467,61 @@ function resetCamera(){
   3.4,fit.horizontal*1.25
  );
 }
-function drawAltitude(ctx,w,h,height,eye,
- right,up,forward){
- const aspect=w/h;
- const project=p=>{
-  const v=p.map((x,i)=>x-eye[i]);
-  const depth=dot(v,forward);
-  if(depth<=.01)return null;
-  const sx=dot(v,right)/depth/.625;
-  const sy=dot(v,up)/depth/.625;
-  return [
-   (sx/aspect+1)*w/2,
-   (1-sy)*h/2
-  ];
- };
- // Asse a lato del volume, in coordinate 3D.
- // Le quote sono reali, la posizione usa
- // la stessa trasformazione del volume.
- const anchor=[-2.45,0,-2.45];
- const a=project([
-  anchor[0],height*.1,anchor[2]
- ]);
- const b=project([
-  anchor[0],height,anchor[2]
- ]);
- if(!a||!b)return;
+// Scala fissa: legenda dei livelli CAPPI.
+// Non viene proiettata in prospettiva.
+// Non pretende di misurare le dimensioni
+// apparenti della nube sullo schermo.
+function drawAltitudeScale(ctx,w,h,ratio){
+ const x=18*ratio;
+ const top=58*ratio;
+ const bottom=Math.min(
+  h-44*ratio,top+220*ratio
+ );
+ if(bottom-top<90*ratio)return;
+ const axis=x+13*ratio;
+ const step=(bottom-top)/9;
  ctx.save();
- ctx.lineWidth=1.4;
- ctx.strokeStyle='#8cdaf4';
- ctx.fillStyle='#d5f5ff';
- ctx.font='bold 12px sans-serif';
- ctx.shadowColor='#00111e';
- ctx.shadowBlur=3;
+ ctx.fillStyle='rgba(3,14,24,.82)';
+ ctx.fillRect(
+  5*ratio,34*ratio,
+  91*ratio,bottom-top+45*ratio
+ );
+ ctx.fillStyle='#c8ecfa';
+ ctx.strokeStyle='#8bdaf2';
+ ctx.lineWidth=1.5*ratio;
+ ctx.font=`${11*ratio}px sans-serif`;
+ ctx.fillText(
+  'CAPPI · km slm',10*ratio,49*ratio
+ );
  ctx.beginPath();
- ctx.moveTo(...a);
- ctx.lineTo(...b);
+ ctx.moveTo(axis,top);
+ ctx.lineTo(axis,bottom);
  ctx.stroke();
  for(let km=1;km<=10;km++){
-  const p=project([
-   anchor[0],height*km/10,
-   anchor[2]
-  ]);
-  if(!p)continue;
+  const y=bottom-(km-1)*step;
   ctx.beginPath();
-  ctx.moveTo(p[0]-5,p[1]);
-  ctx.lineTo(p[0]+5,p[1]);
+  ctx.moveTo(axis-4*ratio,y);
+  ctx.lineTo(axis+5*ratio,y);
   ctx.stroke();
-  if(
-   p[0]>=-30&&p[0]<w+30&&
-   p[1]>=-15&&p[1]<h+15
-  )ctx.fillText(
-   `${km} km`,p[0]+9,p[1]+4
+  ctx.fillText(
+   `${km} km`,
+   axis+10*ratio,y+4*ratio
   );
  }
+ ctx.fillStyle='#91aec1';
+ ctx.font=`${10*ratio}px sans-serif`;
+ ctx.fillText(
+  'Quote osservate',10*ratio,
+  bottom+19*ratio
+ );
  ctx.restore();
-}
-function metricCard(label,item){
- const box=document.createElement('span');
- box.style.cssText='display:inline-flex;gap:6px;align-items:center;padding:5px 8px;border:1px solid #36546b;border-radius:6px;background:#11263a';
- const name=document.createElement('strong');
- name.textContent=label;
- const value=document.createElement('span');
- value.textContent=item?
-  `${item.value} ${item.unit}`:'N/D';
- box.append(name,value);
- return box;
-}
-function showMetrics(){
- metrics.replaceChildren();
- if(!active)return;
- const row=diagnostics?.cells?.[
-  active.track_id
- ]||{};
- for(const [key,label] of [
-  ['VIL','VIL'],
-  ['ETM','Echo Top'],
-  ['POH','Grandine POH'],
-  ['VMI','VMI']
- ]){
-  const item=row[key];
-  const product=diagnostics?.products?.[key];
-  const valid=item&&product&&
-   product.status==='ok'&&
-   product.cell_synchronized===true&&
-   item.timestamp===product.timestamp&&
-   fresh(item.timestamp)&&
-   Number.isFinite(item.value)&&
-   typeof item.unit==='string'&&
-   item.unit===product.unit;
-  metrics.append(
-   metricCard(label,valid?item:null)
-  );
- }
- const credit=document.createElement('span');
- credit.style.cssText='opacity:.75;align-self:center';
- credit.textContent=
-  'Radar-DPC · CC BY-SA 4.0 · N/D = dato non validato o assente';
- metrics.append(credit);
-     }
+                   }
    
 function draw(){
  const use=active&&fresh(active.timestamp);
  old.style.display=use?'none':'';
  panel.style.display=use?'block':'none';
  controls.style.display=use?'flex':'none';
- metrics.style.display=use?'flex':'none';
  if(!use){
   foot.textContent=oldFoot+
    (note?' · '+note:'');
@@ -608,9 +556,9 @@ function draw(){
   timeZone:'Europe/Rome'
  });
  const labels=[
-  'Volume V13.3',
-  'Iso-superficie V13.3',
-  'Olografico V13.3',
+  'Volume V13.2',
+  'Iso-superficie V13.2',
+  'Olografico V13.2',
   'Sezione verticale'
  ];
  const label=labels[
@@ -621,7 +569,7 @@ function draw(){
   `CAPPI ${time} Italia · `+
   `1–10 km slm · ${label} · `+
   (cut?'livelli osservati':
-   'scala altimetrica 3D · massimo CAPPI al pavimento');
+   `verticale ×${scale} · massimo CAPPI al pavimento`);
  if(cut){
   sectionDraw();
   return;
@@ -676,9 +624,8 @@ function draw(){
  ruler.width=canvas.width;
  ruler.height=canvas.height;
  const ctx=ruler.getContext('2d');
- drawAltitude(
-  ctx,ruler.width,ruler.height,
-  height,eye,right,up,forward
+ drawAltitudeScale(
+  ctx,ruler.width,ruler.height,ratio
  );
 }
 async function json(url){
@@ -699,39 +646,11 @@ async function json(url){
   clearTimeout(timer);
  }
 }
-async function loadDiagnostics(
- base,track,timestamp,token
-){
- try{
-  const d=await json(
-   new URL('diagnostics.json',base)
-  );
-  if(token!==sequence)return;
-  if(
-   d.source!=='Radar-DPC'||
-   d.license!=='CC BY-SA 4.0'||
-   d.base_timestamp!==timestamp||
-   !d.cells||
-   typeof d.cells!=='object'
-  )return;
-  diagnostics=d;
-  if(active?.track_id===track)
-   showMetrics();
- }catch(e){
-  // Il 3D resta disponibile anche quando
-  // la diagnostica non e' pubblicata.
-  if(token===sequence){
-   diagnostics=null;
-   showMetrics();
-  }
- }
-}
 window.addEventListener(
  'iride:cell',async event=>{
  const token=++sequence;
  const {cell,timestamp}=event.detail||{};
  active=null;
- diagnostics=null;
  option.disabled=true;
  note='CAPPI in caricamento';
  requestAnimationFrame(draw);
@@ -800,14 +719,7 @@ window.addEventListener(
   note='';
   $('cap-scale').value=8;
   resetCamera();
-  showMetrics();
   draw();
-  // La diagnostica e' indipendente
-  // dal rendering e non lo blocca.
-  loadDiagnostics(
-   base,cell.track_id,
-   timestamp,token
-  );
  }catch(e){
   if(token===sequence){
    note=e.message+' · riserva 2D';
@@ -837,7 +749,6 @@ new MutationObserver(()=>{
  if(!viewer.classList.contains('open')){
   sequence++;
   active=null;
-  diagnostics=null;
   note='';
   draw();
  }
@@ -926,7 +837,6 @@ setInterval(()=>{
   active&&!fresh(active.timestamp)
  ){
   active=null;
-  diagnostics=null;
   option.disabled=true;
   if(mode.value==='3')
    mode.value='1';
@@ -938,4 +848,4 @@ setInterval(()=>{
  }
 },30000);
 })();
-      
+    
