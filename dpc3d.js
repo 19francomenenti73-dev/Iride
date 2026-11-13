@@ -1,10 +1,10 @@
 
 /*
- I.R.I.D.E. CAPPI 3D
+ I.R.I.D.E. CAPPI 3D - V14
  Volume V11 / ISO / Olografico / Sezione
- Radar-DPC - CC BY-SA 4.0
- Scala prospettica - Verticale x8
- Nessun VIL, Echo Top, BE.
+ Radar-DPC CC BY-SA 4.0
+ Scala prospettica, verticale x8
+ Nessun VIL, Echo Top o BE
 */
 (()=>{
 "use strict";
@@ -50,9 +50,7 @@ const gl=canvas.getContext("webgl2",{
  alpha:false,antialias:false
 });
 if(!gl){
- controls.remove();
- panel.remove();
- return;
+ controls.remove();panel.remove();return;
 }
 const vertex=`#version 300 es
 in vec2 a;
@@ -86,7 +84,8 @@ vec3 palette(float v){
 }
 vec2 sampleAt(vec3 p){
  float km=p.y/height*10.;
- if(km<1.||km>10.||abs(p.x)>2.25||abs(p.z)>2.25)
+ if(km<1.||km>10.||
+    abs(p.x)>2.25||abs(p.z)>2.25)
   return vec2(0.);
  vec3 q=vec3(
   (p.x+2.25)/4.5,
@@ -98,20 +97,24 @@ vec2 sampleAt(vec3 p){
 }
 float density(float v){
  if(v<15.)return 0.;
- if(v<25.)return mix(.12,.28,smoothstep(15.,25.,v));
- if(v<30.)return mix(.28,.60,smoothstep(25.,30.,v));
+ if(v<25.)return mix(.10,.26,smoothstep(15.,25.,v));
+ if(v<30.)return mix(.26,.60,smoothstep(25.,30.,v));
  if(v<35.)return mix(.60,1.15,smoothstep(30.,35.,v));
  if(v<45.)return mix(1.15,2.1,smoothstep(35.,45.,v));
  return 2.1;
 }
+float maskAt(vec3 p){
+ vec2 s=sampleAt(p);
+ return s.y>.98?s.x:-33.;
+}
 vec3 normalAt(vec3 p){
- vec3 a=vec3(.06,0.,0.);
- vec3 b=vec3(0.,.06,0.);
- vec3 c=vec3(0.,0.,.06);
+ vec3 dx=vec3(.055,0.,0.);
+ vec3 dy=vec3(0.,max(height*.012,.02),0.);
+ vec3 dz=vec3(0.,0.,.055);
  return normalize(vec3(
-  sampleAt(p+a).x-sampleAt(p-a).x,
-  sampleAt(p+b).x-sampleAt(p-b).x,
-  sampleAt(p+c).x-sampleAt(p-c).x
+  maskAt(p+dx)-maskAt(p-dx),
+  (maskAt(p+dy)-maskAt(p-dy))*.35,
+  maskAt(p+dz)-maskAt(p-dz)
  )+vec3(.0001));
 }
 void main(){
@@ -130,11 +133,14 @@ void main(){
     floorData,(p.xz+2.25)/4.5
    ).rg;
    float v=f.r*127.5-33.;
-   result=f.g<.5?bg:
-    v>=15.?palette(v)*.40:bg;
+   float valid=smoothstep(.08,.85,f.g);
+   float strength=smoothstep(13.,19.,v);
+   result=mix(bg,palette(max(v,15.))*.52,
+    valid*strength);
   }
  }
- vec3 inv=1./ray;
+ vec3 safeRay=sign(ray)*max(abs(ray),vec3(.00001));
+ vec3 inv=1./safeRay;
  vec3 a=(
   vec3(-2.25,height*.1,-2.25)-eye
  )*inv;
@@ -142,92 +148,70 @@ void main(){
   vec3(2.25,height,2.25)-eye
  )*inv;
  vec3 lo=min(a,b),hi=max(a,b);
- float start=max(
-  0.,max(lo.x,max(lo.y,lo.z))
- );
- float end=min(
-  hi.x,min(hi.y,hi.z)
- );
+ float start=max(0.,max(lo.x,max(lo.y,lo.z)));
+ float end=min(hi.x,min(hi.y,hi.z));
  if(ft>start)end=min(end,ft);
  if(end>start){
-  float step=(end-start)/176.;
+  float step=(end-start)/192.;
   float trans=1.;
   vec3 sum=vec3(0.);
-  vec2 prev=sampleAt(eye+ray*start);
-  for(int i=1;i<=176;i++){
-   vec3 p=eye+ray*(
-    start+float(i)*step
-   );
+  vec3 prevP=eye+ray*start;
+  vec2 prev=sampleAt(prevP);
+  for(int i=1;i<=192;i++){
+   vec3 p=eye+ray*(start+float(i)*step);
    vec2 v=sampleAt(p);
-   float fade=smoothstep(
-    0.,.15,min(
-     2.25-abs(p.x),
-     2.25-abs(p.z)
-    )
+   float edge=smoothstep(
+    0.,.16,min(2.25-abs(p.x),2.25-abs(p.z))
    );
-   if(v.y>.98&&v.x>=15.){
-    vec3 c=palette(v.x);
-    float alpha=0.;
-    if(mode==0){
-     float core=smoothstep(
-      26.,40.,v.x
-     );
-     alpha=1.-exp(
-      -density(v.x)*step*5.0*fade
-     );
-     alpha=min(alpha,.30);
-     c*=mix(.83,1.13,core);
-    }else if(mode==1){
-     float surface=0.;
-     for(int k=0;k<5;k++){
-      float level=
-       k==0?15.:
-       k==1?25.:
-       k==2?30.:
-       k==3?35.:45.;
-      if(prev.y>.98&&(
-       (prev.x<level&&v.x>=level)||
-       (prev.x>=level&&v.x<level)
-      ))
-       surface=max(
-        surface,
-        k==0?.18:
-        k==1?.30:
-        k==2?.50:
-        k==3?.67:.82
-       );
-     }
-     alpha=surface*fade;
-     c*=.68+.32*abs(dot(
-      normalAt(p),
-      normalize(vec3(-.4,.8,.6))
-     ));
-    }else{
-     float gx=
-      sampleAt(p+vec3(.08,0.,0.)).x-
-      sampleAt(p-vec3(.08,0.,0.)).x;
-     float gy=
-      sampleAt(p+vec3(0.,.08,0.)).x-
-      sampleAt(p-vec3(0.,.08,0.)).x;
-     float gz=
-      sampleAt(p+vec3(0.,0.,.08)).x-
-      sampleAt(p-vec3(0.,0.,.08)).x;
-     float rim=smoothstep(
-      2.,13.,length(vec3(gx,gy,gz))
-     );
-     alpha=(
-      1.-exp(
-       -density(v.x)*step*3.4
-      )
-     )*mix(.35,1.4,rim)*fade;
-     c=mix(
-      c,c*vec3(.70,1.30,1.55),.45
-     );
+   float valid=smoothstep(.65,.99,v.y);
+   float alpha=0.;
+   vec3 c=palette(max(v.x,15.));
+   if(mode==0){
+    if(v.x>=15.){
+     alpha=1.-exp(-density(v.x)*step*5.0);
+     alpha=min(alpha,.28);
+     float core=smoothstep(26.,40.,v.x);
+     c*=mix(.85,1.12,core);
     }
-    alpha=clamp(alpha,0.,.9);
-    sum+=trans*alpha*c;
-    trans*=1.-alpha;
+   }else if(mode==1){
+    float surface=0.;
+    float level=15.;
+    if(v.x>=45.)level=45.;
+    else if(v.x>=35.)level=35.;
+    else if(v.x>=30.)level=30.;
+    else if(v.x>=25.)level=25.;
+    float previous=prev.x;
+    if(v.x>=15.&&prev.y>.7){
+     if(previous<level&&v.x>=level){
+      surface=level>=45.?.78:
+       level>=35.?.64:level>=30.?.50:
+       level>=25.?.35:.24;
+     }
+    }
+    alpha=surface;
+    if(alpha>0.){
+     vec3 n=normalAt(p);
+     float light=.72+.28*abs(dot(
+      n,normalize(vec3(-.4,.8,.6))
+     ));
+     c*=light;
+    }
+   }else{
+    if(v.x>=15.){
+     vec3 n=normalAt(p);
+     float facing=abs(dot(n,ray));
+     float rim=pow(1.-facing,1.6);
+     float shell=smoothstep(15.,22.,v.x);
+     float core=smoothstep(30.,45.,v.x);
+     alpha=(1.-exp(-density(v.x)*step*2.2))*
+      mix(.45,2.3,rim)*shell;
+     alpha+=core*step*.025;
+     c=mix(c,c*vec3(.65,1.28,1.55),.55);
+    }
    }
+   alpha=clamp(alpha*edge*valid,0.,.85);
+   sum+=trans*alpha*c;
+   trans*=1.-alpha;
    prev=v;
    if(trans<.015)break;
   }
@@ -239,9 +223,8 @@ function shader(type,source){
  const s=gl.createShader(type);
  gl.shaderSource(s,source);
  gl.compileShader(s);
- if(!gl.getShaderParameter(
-  s,gl.COMPILE_STATUS
- ))throw Error(gl.getShaderInfoLog(s));
+ if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))
+  throw Error(gl.getShaderInfoLog(s));
  return s;
 }
 let program;
@@ -254,38 +237,26 @@ try{
   program,shader(gl.FRAGMENT_SHADER,fragment)
  );
  gl.linkProgram(program);
- if(!gl.getProgramParameter(
-  program,gl.LINK_STATUS
- ))throw Error(gl.getProgramInfoLog(program));
+ if(!gl.getProgramParameter(program,gl.LINK_STATUS))
+  throw Error(gl.getProgramInfoLog(program));
 }catch(e){
- console.error("IRIDE CAPPI",e);
- controls.remove();
- panel.remove();
- return;
+ console.error("IRIDE CAPPI V14",e);
+ controls.remove();panel.remove();return;
 }
 gl.useProgram(program);
 const buffer=gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
-gl.bufferData(
- gl.ARRAY_BUFFER,
- new Float32Array([
-  -1,-1,1,-1,-1,1,1,1
- ]),
- gl.STATIC_DRAW
-);
+gl.bufferData(gl.ARRAY_BUFFER,
+ new Float32Array([-1,-1,1,-1,-1,1,1,1]),
+ gl.STATIC_DRAW);
 const loc=gl.getAttribLocation(program,"a");
 gl.enableVertexAttribArray(loc);
-gl.vertexAttribPointer(
- loc,2,gl.FLOAT,false,0,0
-);
+gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
 const uniforms={};
 for(const n of [
- "data","floorData","resolution",
- "eye","right","up","forward",
- "height","mode"
-])uniforms[n]=gl.getUniformLocation(
- program,n
-);
+ "data","floorData","resolution","eye",
+ "right","up","forward","height","mode"
+])uniforms[n]=gl.getUniformLocation(program,n);
 const volumeTexture=gl.createTexture();
 const floorTexture=gl.createTexture();
 let active=null,sequence=0,note="",bounds=null;
@@ -302,16 +273,14 @@ const cross=(a,b)=>[
 ];
 const fresh=t=>{
  const age=(Date.now()-Date.parse(t))/60000;
- return Number.isFinite(age)&&
-  age>=-5&&age<=90;
+ return Number.isFinite(age)&&age>=-5&&age<=90;
 };
-   
+ 
 function upload(v){
  const n=v.side;
  const packed=new Uint8Array(n*10*n*2);
  const floor=new Uint8Array(n*n*2);
- let xmin=n,xmax=-1,zmin=n,zmax=-1;
- let ymin=10,ymax=-1;
+ let xmin=n,xmax=-1,zmin=n,zmax=-1,ymin=10,ymax=-1;
  for(let z=0;z<n;z++)
  for(let y=0;y<10;y++)
  for(let x=0;x<n;x++){
@@ -320,24 +289,17 @@ function upload(v){
   packed[i]=code;
   packed[i+1]=code>=2?255:0;
   if(code>=96){
-   xmin=Math.min(xmin,x);
-   xmax=Math.max(xmax,x);
-   zmin=Math.min(zmin,z);
-   zmax=Math.max(zmax,z);
-   ymin=Math.min(ymin,y);
-   ymax=Math.max(ymax,y);
+   xmin=Math.min(xmin,x);xmax=Math.max(xmax,x);
+   zmin=Math.min(zmin,z);zmax=Math.max(zmax,z);
+   ymin=Math.min(ymin,y);ymax=Math.max(ymax,y);
   }
  }
  for(let z=0;z<n;z++)
  for(let x=0;x<n;x++){
-  const code=v.floor[z][x];
-  const i=(z*n+x)*2;
-  floor[i]=code;
-  floor[i+1]=code>=2?255:0;
+  const code=v.floor[z][x],i=(z*n+x)*2;
+  floor[i]=code;floor[i+1]=code>=2?255:0;
  }
- bounds=xmax<0?null:{
-  xmin,xmax,zmin,zmax,ymin,ymax
- };
+ bounds=xmax<0?null:{xmin,xmax,zmin,zmax,ymin,ymax};
  gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
  for(const [unit,target,tex] of [
   [0,gl.TEXTURE_3D,volumeTexture],
@@ -345,105 +307,57 @@ function upload(v){
  ]){
   gl.activeTexture(gl.TEXTURE0+unit);
   gl.bindTexture(target,tex);
-  gl.texParameteri(
-   target,gl.TEXTURE_MIN_FILTER,
-   unit?gl.NEAREST:gl.LINEAR
-  );
-  gl.texParameteri(
-   target,gl.TEXTURE_MAG_FILTER,
-   unit?gl.NEAREST:gl.LINEAR
-  );
-  gl.texParameteri(
-   target,gl.TEXTURE_WRAP_S,
-   gl.CLAMP_TO_EDGE
-  );
-  gl.texParameteri(
-   target,gl.TEXTURE_WRAP_T,
-   gl.CLAMP_TO_EDGE
-  );
+  gl.texParameteri(target,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(target,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(target,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(target,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   if(!unit){
-   gl.texParameteri(
-    target,gl.TEXTURE_WRAP_R,
-    gl.CLAMP_TO_EDGE
-   );
-   gl.texImage3D(
-    target,0,gl.RG8,n,10,n,0,
-    gl.RG,gl.UNSIGNED_BYTE,packed
-   );
+   gl.texParameteri(target,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
+   gl.texImage3D(target,0,gl.RG8,n,10,n,0,
+    gl.RG,gl.UNSIGNED_BYTE,packed);
   }else{
-   gl.texImage2D(
-    target,0,gl.RG8,n,n,0,
-    gl.RG,gl.UNSIGNED_BYTE,floor
-   );
+   gl.texImage2D(target,0,gl.RG8,n,n,0,
+    gl.RG,gl.UNSIGNED_BYTE,floor);
   }
  }
 }
 function sectionDraw(){
  const ctx=section.getContext("2d");
  const w=section.width,h=section.height;
- const left=48,top=32;
- const pw=Math.max(1,w-66);
- const ph=Math.max(1,h-78);
- const n=active.side;
- const row=Number(
-  $("cap-offset").value
- );
+ const left=48,top=32,pw=Math.max(1,w-66);
+ const ph=Math.max(1,h-78),n=active.side;
+ const row=Number($("cap-offset").value);
  const ew=$("cap-direction").value==="ew";
- const colors=[
-  "#397ee8","#24bd70",
-  "#f4d43e","#f07832","#ed42c8"
- ];
- ctx.fillStyle="#020509";
- ctx.fillRect(0,0,w,h);
- ctx.fillStyle="#071421";
- ctx.fillRect(left,top,pw,ph);
+ const colors=["#397ee8","#24bd70",
+  "#f4d43e","#f07832","#ed42c8"];
+ ctx.fillStyle="#020509";ctx.fillRect(0,0,w,h);
+ ctx.fillStyle="#071421";ctx.fillRect(left,top,pw,ph);
  for(let y=0;y<10;y++)
  for(let x=0;x<n;x++){
-  const code=ew?
-   active.layers[y][row][x]:
+  const code=ew?active.layers[y][row][x]:
    active.layers[y][x][row];
   if(code<2)continue;
   const dbz=(code-2)/2-32;
   if(dbz<15)continue;
   ctx.fillStyle=colors[
-   dbz>=45?4:dbz>=35?3:
-   dbz>=30?2:dbz>=25?1:0
+   dbz>=45?4:dbz>=35?3:dbz>=30?2:dbz>=25?1:0
   ];
-  ctx.fillRect(
-   left+x*pw/n,
-   top+(9-y)*ph/10,
-   pw/n+.5,ph/10+.5
-  );
+  ctx.fillRect(left+x*pw/n,top+(9-y)*ph/10,
+   pw/n+.5,ph/10+.5);
  }
- ctx.font="12px sans-serif";
- ctx.fillStyle="#c8e9f3";
+ ctx.font="12px sans-serif";ctx.fillStyle="#c8e9f3";
  for(let y=0;y<10;y++)
-  ctx.fillText(
-   String(y+1),15,
-   top+(9.5-y)*ph/10+4
-  );
+  ctx.fillText(String(y+1),15,top+(9.5-y)*ph/10+4);
  ctx.fillText("km s.l.m.",5,18);
- ctx.fillText(
-  ew?"Ovest":"Nord",left,h-18
- );
- ctx.fillText(
-  ew?"Est":"Sud",w-35,h-18
- );
- ctx.fillText(
-  `${active.width_km.toFixed(0)} km · 10 livelli CAPPI`,
-  left,18
- );
+ ctx.fillText(ew?"Ovest":"Nord",left,h-18);
+ ctx.fillText(ew?"Est":"Sud",w-35,h-18);
+ ctx.fillText(`${active.width_km.toFixed(0)} km · 10 livelli CAPPI`,
+  left,18);
 }
 function cameraFit(){
- const scale=Number(
-  $("cap-scale").value
- );
- const height=
-  45/active.width_km*scale;
- if(!bounds)return {
-  target:[0,height*.35,0],
-  horizontal:3,height
- };
+ const scale=Number($("cap-scale").value);
+ const height=45/active.width_km*scale;
+ if(!bounds)return{target:[0,height*.35,0],horizontal:3,height};
  const b=bounds,n=active.side;
  const x0=-2.25+4.5*b.xmin/n;
  const x1=-2.25+4.5*(b.xmax+1)/n;
@@ -451,92 +365,85 @@ function cameraFit(){
  const z1=-2.25+4.5*(b.zmax+1)/n;
  const y0=height*(b.ymin+1)/10;
  const y1=height*(b.ymax+1)/10;
- return {
-  target:[
-   (x0+x1)/2,
-   (y0+y1)/2,
-   (z0+z1)/2
-  ],
-  horizontal:Math.max(
-   1.5,Math.hypot(x1-x0,z1-z0)
-  ),
+ return{
+  target:[(x0+x1)/2,(y0+y1)/2,(z0+z1)/2],
+  horizontal:Math.max(1.5,Math.hypot(x1-x0,z1-z0)),
   height
  };
 }
 function resetCamera(){
- yaw=-.35;
- pitch=.16;
- if(!active){
-  distance=5;
-  return;
- }
+ yaw=-.35;pitch=.16;
+ if(!active){distance=5;return;}
  const fit=cameraFit();
- distance=Math.max(
-  3.4,fit.horizontal*1.25
- );
+ distance=Math.max(3.4,fit.horizontal*1.25);
 }
-/*
- Scala prospettica.
- Utilizza esattamente la camera WebGL.
- Quote CAPPI reali da 1 a 10 km.
- L'esagerazione x8 resta grafica.
-*/
-function drawAltitudeScale(
- ctx,w,h,ratio,eye,right,up,forward,height
-){
- const dot=(a,b)=>
-  a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+function drawAltitudeScale(ctx,w,h,ratio,eye,right,up,forward,height){
+ const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
  const project=p=>{
   const d=p.map((v,i)=>v-eye[i]);
   const depth=dot(d,forward);
   if(depth<=.01)return null;
   const sx=dot(d,right)/depth/.625;
   const sy=dot(d,up)/depth/.625;
-  const aspect=w/h;
-  return [
-   (sx/aspect+1)*w*.5,
-   (1-sy)*h*.5
-  ];
+  return[(sx/(w/h)+1)*w*.5,(1-sy)*h*.5];
  };
- const ax=eye[0]>=0?2.38:-2.38;
- const az=eye[2]>=0?2.38:-2.38;
- const pos=km=>project([
-  ax,height*km/10,az
- ]);
+ if(!bounds)return;
+ const n=active.side;
+ const bx=(bounds.xmin+bounds.xmax+1)*.5;
+ const bz=(bounds.zmin+bounds.zmax+1)*.5;
+ const cx=-2.25+4.5*bx/n;
+ const cz=-2.25+4.5*bz/n;
+ const width=Math.max(
+  4.5*(bounds.xmax-bounds.xmin+1)/n,
+  4.5*(bounds.zmax-bounds.zmin+1)/n
+ );
+ const candidates=[];
+ for(const sx of [-1,1])
+ for(const sz of [-1,1]){
+  const x=Math.max(-2.2,Math.min(2.2,cx+sx*(width*.58+.13)));
+  const z=Math.max(-2.2,Math.min(2.2,cz+sz*(width*.58+.13)));
+  const p1=project([x,height*.1,z]);
+  const p2=project([x,height,z]);
+  if(!p1||!p2)continue;
+  const inside=[p1,p2].every(p=>
+   p[0]>22*ratio&&p[0]<w-22*ratio&&
+   p[1]>28*ratio&&p[1]<h-24*ratio);
+  const score=Math.abs(p1[0]-w*.5)+
+   Math.abs(p2[0]-w*.5);
+  candidates.push({x,z,inside,score});
+ }
+ candidates.sort((a,b)=>
+  Number(b.inside)-Number(a.inside)||a.score-b.score);
+ if(!candidates.length)return;
+ const {x,z}=candidates[0];
+ const pos=km=>project([x,height*km/10,z]);
  const bottom=pos(1),top=pos(10);
  if(!bottom||!top)return;
  ctx.save();
- ctx.lineWidth=Math.max(1,1.25*ratio);
- ctx.strokeStyle="rgba(147,216,242,.85)";
+ ctx.lineWidth=Math.max(1,1.2*ratio);
+ ctx.strokeStyle="rgba(147,216,242,.82)";
  ctx.fillStyle="#c5e9f7";
  ctx.font=`${10*ratio}px system-ui,sans-serif`;
  ctx.textBaseline="middle";
  ctx.beginPath();
- ctx.moveTo(...bottom);
- ctx.lineTo(...top);
- ctx.stroke();
+ ctx.moveTo(...bottom);ctx.lineTo(...top);ctx.stroke();
  for(const km of [1,2,4,6,8,10]){
   const p=pos(km);
   if(!p)continue;
-  const x=p[0],y=p[1];
-  if(x<0||x>w||y<0||y>h)continue;
-  const dir=x>w*.5?-1:1;
+  const [px,py]=p;
+  if(px<15*ratio||px>w-15*ratio||
+   py<22*ratio||py>h-15*ratio)continue;
+  const dir=px>w*.5?-1:1;
   ctx.beginPath();
-  ctx.moveTo(x-4*ratio,y);
-  ctx.lineTo(x+4*ratio,y);
-  ctx.stroke();
+  ctx.moveTo(px-4*ratio,py);
+  ctx.lineTo(px+4*ratio,py);ctx.stroke();
   ctx.textAlign=dir>0?"left":"right";
-  ctx.fillText(
-   `${km} km`,x+dir*9*ratio,y
-  );
+  ctx.fillText(`${km} km`,px+dir*9*ratio,py);
  }
  ctx.textAlign="left";
- ctx.fillStyle="rgba(181,210,225,.85)";
+ ctx.fillStyle="#9bbacb";
  ctx.font=`${9*ratio}px system-ui,sans-serif`;
- ctx.fillText(
-  "CAPPI · km s.l.m.",
-  10*ratio,18*ratio
- );
+ ctx.fillText("CAPPI · km s.l.m.",10*ratio,18*ratio);
  ctx.restore();
 }
 function draw(){
@@ -545,331 +452,171 @@ function draw(){
  panel.style.display=use?"block":"none";
  controls.style.display=use?"flex":"none";
  if(!use){
-  foot.textContent=oldFoot+
-   (note?" · "+note:"");
+  foot.textContent=oldFoot+(note?" · "+note:"");
   return;
  }
  const cut=mode.value==="3";
  canvas.style.display=cut?"none":"block";
  section.style.display=cut?"block":"none";
  ruler.style.display=cut?"none":"block";
- $("cap-cut-controls").style.display=
-  cut?"inline":"none";
- const scale=Number(
-  $("cap-scale").value
- );
+ $("cap-cut-controls").style.display=cut?"inline":"none";
+ const scale=Number($("cap-scale").value);
  $("cap-scale-value").value=scale;
  const rect=panel.getBoundingClientRect();
- const ratio=Math.min(
-  window.devicePixelRatio||1,1.25
- );
+ const ratio=Math.min(window.devicePixelRatio||1,1.25);
  const selected=cut?section:canvas;
- selected.width=Math.max(
-  1,Math.round(rect.width*ratio)
- );
- selected.height=Math.max(
-  1,Math.round(rect.height*ratio)
- );
- const time=new Date(
-  active.timestamp
- ).toLocaleTimeString("it-IT",{
-  hour:"2-digit",
-  minute:"2-digit",
-  timeZone:"Europe/Rome"
- });
- const labels=[
-  "Volume V11",
-  "Iso-superficie",
-  "Olografico",
-  "Sezione verticale"
- ];
- const label=labels[
-  Number(mode.value)
- ]||"CAPPI";
- foot.textContent=
-  "Radar-DPC · CC BY-SA 4.0 · "+
-  `CAPPI ${time} Italia · `+
-  `1–10 km s.l.m. · ${label} · `+
-  (cut?"livelli osservati":
-   `verticale ×${scale}`);
- if(cut){
-  sectionDraw();
-  return;
- }
- const fit=cameraFit();
- const height=fit.height;
- const target=fit.target;
+ selected.width=Math.max(1,Math.round(rect.width*ratio));
+ selected.height=Math.max(1,Math.round(rect.height*ratio));
+ const time=new Date(active.timestamp).toLocaleTimeString(
+  "it-IT",{hour:"2-digit",minute:"2-digit",timeZone:"Europe/Rome"});
+ const labels=["Volume V11","Iso-superficie",
+  "Olografico","Sezione verticale"];
+ foot.textContent=`Radar-DPC · CC BY-SA 4.0 · CAPPI ${time} · `+
+  `1–10 km s.l.m. · ${labels[Number(mode.value)]||"CAPPI"} · `+
+  (cut?"livelli osservati":`verticale ×${scale}`);
+ if(cut){sectionDraw();return;}
+ const fit=cameraFit(),height=fit.height,target=fit.target;
  const eye=[
-  target[0]+distance*
-   Math.cos(pitch)*Math.sin(yaw),
+  target[0]+distance*Math.cos(pitch)*Math.sin(yaw),
   target[1]+distance*Math.sin(pitch),
-  target[2]+distance*
-   Math.cos(pitch)*Math.cos(yaw)
+  target[2]+distance*Math.cos(pitch)*Math.cos(yaw)
  ];
- const forward=norm(
-  target.map((x,i)=>x-eye[i])
- );
- const right=norm(
-  cross(forward,[0,1,0])
- );
+ const forward=norm(target.map((x,i)=>x-eye[i]));
+ const right=norm(cross(forward,[0,1,0]));
  const up=cross(right,forward);
  gl.useProgram(program);
- gl.viewport(
-  0,0,canvas.width,canvas.height
- );
+ gl.viewport(0,0,canvas.width,canvas.height);
  gl.activeTexture(gl.TEXTURE0);
- gl.bindTexture(
-  gl.TEXTURE_3D,volumeTexture
- );
+ gl.bindTexture(gl.TEXTURE_3D,volumeTexture);
  gl.activeTexture(gl.TEXTURE1);
- gl.bindTexture(
-  gl.TEXTURE_2D,floorTexture
- );
+ gl.bindTexture(gl.TEXTURE_2D,floorTexture);
  gl.uniform1i(uniforms.data,0);
  gl.uniform1i(uniforms.floorData,1);
- gl.uniform2f(
-  uniforms.resolution,
-  canvas.width,canvas.height
- );
- for(const [name,v] of Object.entries({
-  eye,right,up,forward
- }))gl.uniform3fv(uniforms[name],v);
- gl.uniform1f(
-  uniforms.height,height
- );
- gl.uniform1i(
-  uniforms.mode,Number(mode.value)
- );
- gl.drawArrays(
-  gl.TRIANGLE_STRIP,0,4
- );
- ruler.width=canvas.width;
- ruler.height=canvas.height;
- drawAltitudeScale(
-  ruler.getContext("2d"),
-  ruler.width,ruler.height,ratio,
-  eye,right,up,forward,height
- );
-   }
-   
+ gl.uniform2f(uniforms.resolution,canvas.width,canvas.height);
+ for(const [name,v] of Object.entries({eye,right,up,forward}))
+  gl.uniform3fv(uniforms[name],v);
+ gl.uniform1f(uniforms.height,height);
+ gl.uniform1i(uniforms.mode,Number(mode.value));
+ gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+ ruler.width=canvas.width;ruler.height=canvas.height;
+ drawAltitudeScale(ruler.getContext("2d"),
+  ruler.width,ruler.height,ratio,eye,right,up,forward,height);
+}
 async function json(url){
  const controller=new AbortController();
- const timer=setTimeout(
-  ()=>controller.abort(),12000
- );
+ const timer=setTimeout(()=>controller.abort(),12000);
  try{
-  const r=await fetch(url,{
-   cache:"no-store",
-   signal:controller.signal
-  });
-  if(!r.ok)throw Error(
-   "HTTP "+r.status
-  );
+  const r=await fetch(url,{cache:"no-store",
+   signal:controller.signal});
+  if(!r.ok)throw Error("HTTP "+r.status);
   return await r.json();
- }finally{
-  clearTimeout(timer);
- }
+ }finally{clearTimeout(timer);}
 }
-window.addEventListener(
- "iride:cell",async event=>{
+window.addEventListener("iride:cell",async event=>{
  const token=++sequence;
  const {cell,timestamp}=event.detail||{};
- active=null;
- option.disabled=true;
+ active=null;option.disabled=true;
  note="CAPPI in caricamento";
  requestAnimationFrame(draw);
  try{
   if(!cell?.track_id||!timestamp)
    throw Error("Cella non valida");
-  const base=new URL(
-   "docs/data/dpc3d/",
-   document.baseURI
-  );
-  const m=await json(
-   new URL("manifest.json",base)
-  );
-  if(
-   m.status!=="ok"||
-   m.base_timestamp!==timestamp||
-   !fresh(m.timestamp)
-  )throw Error(
-   "CAPPI non sincronizzati"
-  );
-  const file=m.cells?.[
-   cell.track_id
-  ];
-  if(
-   !file||
-   !/^[A-Za-z0-9_-]+\.json$/.test(file)
-  )throw Error("CAPPI assenti");
-  const v=await json(
-   new URL(file,base)
-  );
+  const base=new URL("docs/data/dpc3d/",document.baseURI);
+  const m=await json(new URL("manifest.json",base));
+  if(m.status!=="ok"||m.base_timestamp!==timestamp||
+   !fresh(m.timestamp))
+   throw Error("CAPPI non sincronizzati");
+  const file=m.cells?.[cell.track_id];
+  if(!file||!/^[A-Za-z0-9_-]+\.json$/.test(file))
+   throw Error("CAPPI assenti");
+  const v=await json(new URL(file,base));
   if(token!==sequence)return;
-  if(
-   v.base_timestamp!==timestamp||
+  if(v.base_timestamp!==timestamp||
    v.track_id!==cell.track_id||
-   v.timestamp!==m.timestamp||
-   !fresh(v.timestamp)
-  )throw Error("CAPPI incoerenti");
-  if(
-   v.side!==32||
-   !Number.isFinite(v.width_km)||
-   v.width_km<=0||
-   !Array.isArray(v.layers)||
-   v.layers.length!==10||
-   !Array.isArray(v.floor)
-  )throw Error("Volume non valido");
-  for(const layer of [
-   ...v.layers,v.floor
-  ]){
-   if(
-    layer.length!==32||
-    layer.some(row=>
-     !Array.isArray(row)||
-     row.length!==32||
-     row.some(code=>
-      !Number.isInteger(code)||
-      code<0||code>246
-     )
-    )
-   )throw Error(
-    "Matrice CAPPI non valida"
-   );
+   v.timestamp!==m.timestamp||!fresh(v.timestamp))
+   throw Error("CAPPI incoerenti");
+  if(v.side!==32||!Number.isFinite(v.width_km)||
+   v.width_km<=0||!Array.isArray(v.layers)||
+   v.layers.length!==10||!Array.isArray(v.floor))
+   throw Error("Volume non valido");
+  for(const layer of [...v.layers,v.floor]){
+   if(layer.length!==32||layer.some(row=>
+    !Array.isArray(row)||row.length!==32||
+    row.some(code=>!Number.isInteger(code)||
+     code<0||code>246)))
+    throw Error("Matrice CAPPI non valida");
   }
-  upload(v);
-  active=v;
-  option.disabled=false;
-  note="";
-  $("cap-scale").value=8;
-  resetCamera();
-  draw();
+  upload(v);active=v;option.disabled=false;
+  note="";$("cap-scale").value=8;
+  resetCamera();draw();
  }catch(e){
   if(token===sequence){
-   note=e.message+" · riserva 2D";
-   draw();
+   note=e.message+" · riserva 2D";draw();
   }
  }
 });
 mode.addEventListener("change",draw);
-$("reset").addEventListener(
- "click",()=>{
-  resetCamera();
-  draw();
- }
-);
-$("cap-scale").addEventListener(
- "input",draw
-);
-for(const id of [
- "cap-direction","cap-offset"
-])$(id).addEventListener(
- "input",draw
-);
+$("reset").addEventListener("click",()=>{
+ resetCamera();draw();
+});
+$("cap-scale").addEventListener("input",draw);
+for(const id of ["cap-direction","cap-offset"])
+ $(id).addEventListener("input",draw);
 new ResizeObserver(()=>{
  if(active)draw();
 }).observe(panel);
 new MutationObserver(()=>{
  if(!viewer.classList.contains("open")){
-  sequence++;
-  active=null;
-  note="";
-  draw();
+  sequence++;active=null;note="";draw();
  }
 }).observe(viewer,{
- attributes:true,
- attributeFilter:["class"]
+ attributes:true,attributeFilter:["class"]
 });
-canvas.addEventListener(
- "pointerdown",e=>{
-  drag=[e.clientX,e.clientY];
-  canvas.setPointerCapture(
-   e.pointerId
-  );
- }
-);
-canvas.addEventListener(
- "pointermove",e=>{
-  if(!drag)return;
-  yaw-=(
-   e.clientX-drag[0]
-  )*.006;
-  pitch=Math.max(
-   .05,Math.min(
-    1.3,
-    pitch+(e.clientY-drag[1])*.004
-   )
-  );
-  drag=[e.clientX,e.clientY];
-  draw();
- }
-);
+canvas.addEventListener("pointerdown",e=>{
+ drag=[e.clientX,e.clientY];
+ canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove",e=>{
+ if(!drag)return;
+ yaw-=(e.clientX-drag[0])*.006;
+ pitch=Math.max(.05,Math.min(1.3,
+  pitch+(e.clientY-drag[1])*.004));
+ drag=[e.clientX,e.clientY];draw();
+});
 for(const name of [
- "pointerup",
- "pointercancel",
- "lostpointercapture"
-])canvas.addEventListener(
- name,()=>{drag=null;}
-);
-canvas.addEventListener(
- "wheel",e=>{
-  e.preventDefault();
-  distance=Math.max(
-   1.2,Math.min(
-    30,distance+e.deltaY*.008
-   )
-  );
-  draw();
- },{passive:false}
-);
-canvas.addEventListener(
- "touchstart",e=>{
-  if(e.touches.length===2){
-   drag=null;
-   pinch=Math.hypot(
-    e.touches[0].clientX-
-     e.touches[1].clientX,
-    e.touches[0].clientY-
-     e.touches[1].clientY
-   );
-  }
- },{passive:true}
-);
-canvas.addEventListener(
- "touchmove",e=>{
-  if(e.touches.length!==2)return;
-  e.preventDefault();
+ "pointerup","pointercancel","lostpointercapture"
+])canvas.addEventListener(name,()=>{drag=null;});
+canvas.addEventListener("wheel",e=>{
+ e.preventDefault();
+ distance=Math.max(1.2,Math.min(30,
+  distance+e.deltaY*.008));
+ draw();
+},{passive:false});
+canvas.addEventListener("touchstart",e=>{
+ if(e.touches.length===2){
   drag=null;
-  const d=Math.hypot(
-   e.touches[0].clientX-
-    e.touches[1].clientX,
-   e.touches[0].clientY-
-    e.touches[1].clientY
-  );
-  if(pinch&&d)
-   distance=Math.max(
-    1.2,Math.min(
-     30,distance*pinch/d
-    )
-   );
-  pinch=d;
-  draw();
- },{passive:false}
-);
+  pinch=Math.hypot(
+   e.touches[0].clientX-e.touches[1].clientX,
+   e.touches[0].clientY-e.touches[1].clientY);
+ }
+},{passive:true});
+canvas.addEventListener("touchmove",e=>{
+ if(e.touches.length!==2)return;
+ e.preventDefault();drag=null;
+ const d=Math.hypot(
+  e.touches[0].clientX-e.touches[1].clientX,
+  e.touches[0].clientY-e.touches[1].clientY);
+ if(pinch&&d)
+  distance=Math.max(1.2,Math.min(30,distance*pinch/d));
+ pinch=d;draw();
+},{passive:false});
 setInterval(()=>{
- if(
-  active&&!fresh(active.timestamp)
- ){
-  active=null;
-  option.disabled=true;
-  if(mode.value==="3")
-   mode.value="1";
+ if(active&&!fresh(active.timestamp)){
+  active=null;option.disabled=true;
+  if(mode.value==="3")mode.value="1";
   note="CAPPI scaduti · riserva 2D";
-  draw();
-  mode.dispatchEvent(
-   new Event("change")
-  );
+  draw();mode.dispatchEvent(new Event("change"));
  }
 },30000);
 })();
-     
+                                      
