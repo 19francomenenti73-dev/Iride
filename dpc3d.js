@@ -1,7 +1,7 @@
 
 /*
- I.R.I.D.E. V17 - CAPPI 3D
- Volume / ISO / Olografico pulsante / Sezione
+ I.R.I.D.E. V17.1 - CAPPI 3D
+ Volume / ISO / Olografico / Sezione
  Radar-DPC CC BY-SA 4.0
 */
 (()=>{
@@ -66,8 +66,7 @@ uniform sampler3D data;
 uniform sampler2D floorData;
 uniform vec2 resolution;
 uniform vec3 eye,right,up,forward;
-uniform float height;
-uniform float pulse;
+uniform float height,pulse;
 uniform int mode;
 const vec3 bg=vec3(.008,.018,.031);
 vec3 palette(float v){
@@ -169,14 +168,12 @@ void main(){
    float alpha=0.;
    vec3 c=palette(max(v.x,15.));
    if(mode==0){
-    // Volume V16 invariato.
     float d=density(v.x);
     alpha=1.-exp(-d*rayStep*4.4);
     alpha=min(alpha,.23);
     float core=smoothstep(29.,43.,v.x);
     c*=mix(.83,1.20,core);
    }else if(mode==1){
-    // ISO: attraversamento delle soglie.
     float surface=0.;
     for(int k=0;k<5;k++){
      float level=k==0?15.:
@@ -200,38 +197,48 @@ void main(){
      c*=light;
     }
    }else{
-    // V17: blu e verde pulsanti, nuclei stabili.
+    // V17.1: modifica solo olografico.
     float d=density(v.x);
     vec3 g=gradientAt(p);
+    float grad=length(g);
     vec3 n=normalize(g+vec3(.0001));
     float rim=pow(
-     1.-abs(dot(n,ray)),1.7
+     1.-abs(dot(n,ray)),1.45
     );
-    float boundary=smoothstep(
-     2.,15.,length(g)
-    );
+    float boundary=smoothstep(3.,16.,grad);
+    float glow=mix(.75,1.35,pulse);
     if(v.x<25.){
-     // Involucro blu-verde, pulsazione luminosa.
+     // Blu e verde: involucro pulsante.
      float shell=max(
-      rim*boundary,
-      .35*boundary
+      rim*boundary,.40*boundary
      );
-     float glow=mix(.68,1.32,pulse);
-     alpha=(1.-exp(-d*rayStep*.30))*.18;
-     alpha+=shell*rayStep*.50*glow;
-     alpha=clamp(alpha,0.,.19);
-     c=mix(c,vec3(.27,.88,1.),.35);
-     c*=.85+.75*glow;
+     // Contorni meno filamentosi.
+     float soft=smoothstep(14.,19.,v.x);
+     float green=smoothstep(20.,25.,v.x);
+     float envelope=mix(.40,.65,green);
+     alpha=1.-exp(
+      -d*rayStep*(envelope+.40*shell)*glow
+     );
+     alpha*=mix(.48,.75,soft);
+     alpha=min(alpha,.18);
+     vec3 blue=vec3(.18,.53,1.);
+     vec3 greenColor=vec3(.10,.91,.58);
+     c=mix(blue,greenColor,green);
+     c*=.75+.65*glow;
     }else{
-     // Nuclei progressivamente più compatti.
+     // Nuclei stabili, distinti per intensità.
      float opacity=v.x<30.?.35:
-      v.x<35.?.55:
+      v.x<35.?.43:
       v.x<45.?.55:.75;
-     float strength=opacity*1.8;
+     float strength=opacity*2.5;
      alpha=1.-exp(-d*rayStep*strength);
-     alpha=min(alpha,opacity*.35);
-     float core=smoothstep(30.,45.,v.x);
-     c*=1.05+.25*core;
+     alpha=min(alpha,opacity*.40);
+     if(v.x>=45.){
+      c=mix(c,vec3(1.,.16,.84),.38);
+     }else if(v.x>=35.){
+      c=mix(c,vec3(1.,.30,.19),.30);
+     }
+     c*=1.02+.16*smoothstep(30.,45.,v.x);
     }
    }
    alpha=clamp(alpha*edge*valid,0.,.85);
@@ -252,6 +259,7 @@ function shader(type,source){
   throw Error(gl.getShaderInfoLog(sh));
  return sh;
 }
+ 
 let program;
 try{
  program=gl.createProgram();
@@ -263,7 +271,7 @@ try{
  if(!gl.getProgramParameter(program,gl.LINK_STATUS))
   throw Error(gl.getProgramInfoLog(program));
 }catch(e){
- console.error("IRIDE V17 shader",e);
+ console.error("IRIDE V17.1 shader",e);
  controls.remove();panel.remove();return;
 }
 gl.useProgram(program);
@@ -354,7 +362,6 @@ function upload(v){
   }
  }
 }
- 
 function sectionDraw(){
  const ctx=section.getContext("2d");
  const w=section.width,h=section.height;
@@ -483,7 +490,6 @@ function animate(now){
     mode.value!=="2"||
     !viewer.classList.contains("open")||
     document.hidden)return;
- // Circa 20 fps: evita rendering inutili su smartphone.
  if(now-lastFrame>=48){
   lastFrame=now;
   draw();
@@ -500,6 +506,7 @@ function syncAnimation(){
   animation=requestAnimationFrame(animate);
  }
 }
+ 
 function draw(){
  const use=active&&fresh(active.timestamp);
  old.style.display=use?"none":"";
@@ -532,7 +539,7 @@ function draw(){
  );
  const labels=[
   "Volume 3D","ISO-superficie",
-  "Olografico V17","Sezione verticale"
+  "Olografico V17.1","Sezione verticale"
  ];
  foot.textContent=
   `Radar-DPC · CC BY-SA 4.0 · CAPPI ${time} · `+
@@ -569,7 +576,6 @@ function draw(){
  }))gl.uniform3fv(uniforms[name],v);
  gl.uniform1f(uniforms.height,height);
  gl.uniform1i(uniforms.mode,Number(mode.value));
- // Pulsazione di 3 secondi, solo luminosità.
  const phase=performance.now()*Math.PI*2/3000;
  gl.uniform1f(uniforms.pulse,
   .5+.5*Math.sin(phase));
@@ -749,4 +755,4 @@ setInterval(()=>{
  }
 },30000);
 })();
-  
+     
