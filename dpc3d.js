@@ -1,10 +1,9 @@
 
 /*
- I.R.I.D.E. CAPPI 3D - V15
- Volume V11 / ISO / Olografico / Sezione
+ I.R.I.D.E. V16 - CAPPI 3D
+ Volume / ISO / Olografico / Sezione
  Radar-DPC CC BY-SA 4.0
- Profilo altimetrico laterale fisso
- Verticale x8 - nessun VIL, Echo Top o BE
+ Scala laterale - verticale iniziale x8
 */
 (()=>{
 "use strict";
@@ -86,7 +85,7 @@ vec2 sampleAt(vec3 p){
  float km=p.y/height*10.;
  if(km<1.||km>10.||
     abs(p.x)>2.25||abs(p.z)>2.25)
-  return vec2(0.);
+  return vec2(-33.,0.);
  vec3 q=vec3(
   (p.x+2.25)/4.5,
   (km-.5)/10.,
@@ -97,25 +96,28 @@ vec2 sampleAt(vec3 p){
 }
 float density(float v){
  if(v<15.)return 0.;
- if(v<25.)return mix(.10,.26,smoothstep(15.,25.,v));
- if(v<30.)return mix(.26,.60,smoothstep(25.,30.,v));
- if(v<35.)return mix(.60,1.15,smoothstep(30.,35.,v));
- if(v<45.)return mix(1.15,2.1,smoothstep(35.,45.,v));
- return 2.1;
+ if(v<25.)return mix(.12,.28,smoothstep(15.,25.,v));
+ if(v<30.)return mix(.28,.65,smoothstep(25.,30.,v));
+ if(v<35.)return mix(.65,1.25,smoothstep(30.,35.,v));
+ if(v<45.)return mix(1.25,2.2,smoothstep(35.,45.,v));
+ return 2.2;
 }
-float maskAt(vec3 p){
+float field(vec3 p){
  vec2 s=sampleAt(p);
- return s.y>.98?s.x:-33.;
+ return s.y>.5?s.x:-33.;
+}
+vec3 gradientAt(vec3 p){
+ vec3 dx=vec3(.065,0.,0.);
+ vec3 dy=vec3(0.,max(height*.012,.025),0.);
+ vec3 dz=vec3(0.,0.,.065);
+ return vec3(
+  field(p+dx)-field(p-dx),
+  (field(p+dy)-field(p-dy))*.40,
+  field(p+dz)-field(p-dz)
+ );
 }
 vec3 normalAt(vec3 p){
- vec3 dx=vec3(.055,0.,0.);
- vec3 dy=vec3(0.,max(height*.012,.02),0.);
- vec3 dz=vec3(0.,0.,.055);
- return normalize(vec3(
-  maskAt(p+dx)-maskAt(p-dx),
-  (maskAt(p+dy)-maskAt(p-dy))*.35,
-  maskAt(p+dz)-maskAt(p-dz)
- )+vec3(.0001));
+ return normalize(gradientAt(p)+vec3(.0001));
 }
 void main(){
  vec2 s=uv*2.-1.;
@@ -139,7 +141,11 @@ void main(){
     valid*strength);
   }
  }
- vec3 safeRay=sign(ray)*max(abs(ray),vec3(.00001));
+ vec3 safeRay=vec3(
+  abs(ray.x)<.00001?(ray.x<0.?-.00001:.00001):ray.x,
+  abs(ray.y)<.00001?(ray.y<0.?-.00001:.00001):ray.y,
+  abs(ray.z)<.00001?(ray.z<0.?-.00001:.00001):ray.z
+ );
  vec3 inv=1./safeRay;
  vec3 a=(
   vec3(-2.25,height*.1,-2.25)-eye
@@ -149,65 +155,79 @@ void main(){
  )*inv;
  vec3 lo=min(a,b),hi=max(a,b);
  float start=max(0.,max(lo.x,max(lo.y,lo.z)));
- float end=min(hi.x,min(hi.y,hi.z));
- if(ft>start)end=min(end,ft);
- if(end>start){
-  float step=(end-start)/192.;
+ float finish=min(hi.x,min(hi.y,hi.z));
+ if(ft>start)finish=min(finish,ft);
+ if(finish>start){
+  float rayStep=(finish-start)/160.;
   float trans=1.;
   vec3 sum=vec3(0.);
-  vec3 prevP=eye+ray*start;
-  vec2 prev=sampleAt(prevP);
-  for(int i=1;i<=192;i++){
-   vec3 p=eye+ray*(start+float(i)*step);
+  vec2 prev=sampleAt(eye+ray*start);
+  for(int i=1;i<=160;i++){
+   vec3 p=eye+ray*(start+float(i)*rayStep);
    vec2 v=sampleAt(p);
    float edge=smoothstep(
-    0.,.16,min(2.25-abs(p.x),2.25-abs(p.z))
+    0.,.12,min(2.25-abs(p.x),2.25-abs(p.z))
    );
    float valid=smoothstep(.65,.99,v.y);
    float alpha=0.;
    vec3 c=palette(max(v.x,15.));
    if(mode==0){
-    if(v.x>=15.){
-     alpha=1.-exp(-density(v.x)*step*5.0);
-     alpha=min(alpha,.28);
-     float core=smoothstep(26.,40.,v.x);
-     c*=mix(.85,1.12,core);
-    }
+    // Volume: assorbimento volumetrico.
+    float d=density(v.x);
+    alpha=1.-exp(-d*rayStep*4.4);
+    alpha=min(alpha,.23);
+    float core=smoothstep(29.,43.,v.x);
+    c*=mix(.83,1.20,core);
    }else if(mode==1){
+    // ISO: attraversamento delle soglie dBZ.
     float surface=0.;
-    float level=15.;
-    if(v.x>=45.)level=45.;
-    else if(v.x>=35.)level=35.;
-    else if(v.x>=30.)level=30.;
-    else if(v.x>=25.)level=25.;
-    float previous=prev.x;
-    if(v.x>=15.&&prev.y>.7){
-     if(previous<level&&v.x>=level){
-      surface=level>=45.?.78:
-       level>=35.?.64:level>=30.?.50:
-       level>=25.?.35:.24;
+    for(int k=0;k<5;k++){
+     float level=k==0?15.:
+      k==1?25.:k==2?30.:k==3?35.:45.;
+     bool enter=prev.x<level&&v.x>=level;
+     bool leave=prev.x>=level&&v.x<level;
+     if(prev.y>.7&&(enter||leave)){
+      float opacity=k==0?.25:k==1?.40:
+       k==2?.54:k==3?.66:.79;
+      surface=max(surface,opacity);
      }
     }
     alpha=surface;
     if(alpha>0.){
      vec3 n=normalAt(p);
-     float light=.72+.28*abs(dot(
+     float light=.65+.35*abs(dot(
       n,normalize(vec3(-.4,.8,.6))
      ));
      c*=light;
     }
    }else{
-    if(v.x>=15.){
-     vec3 n=normalAt(p);
-     float facing=abs(dot(n,ray));
-     float rim=pow(1.-facing,1.6);
-     float shell=smoothstep(15.,22.,v.x);
-     float core=smoothstep(30.,45.,v.x);
-     alpha=(1.-exp(-density(v.x)*step*2.2))*
-      mix(.45,2.3,rim)*shell;
-     alpha+=core*step*.025;
-     c=mix(c,c*vec3(.65,1.28,1.55),.55);
+    // Olografico: contorni e gusci luminosi.
+    float d=density(v.x);
+    vec3 g=gradientAt(p);
+    float edgeStrength=smoothstep(
+     2.,16.,length(g)
+    );
+    vec3 n=normalize(g+vec3(.0001));
+    float rim=pow(
+     1.-abs(dot(n,ray)),1.6
+    );
+    float threshold=0.;
+    for(int j=0;j<5;j++){
+     float level=j==0?15.:
+      j==1?25.:j==2?30.:j==3?35.:45.;
+     float proximity=1.-smoothstep(
+      0.,2.4,abs(v.x-level)
+     );
+     threshold=max(threshold,proximity);
     }
+    float shell=max(
+     rim*edgeStrength,threshold*.65
+    );
+    alpha=(1.-exp(-d*rayStep*.30))*.22;
+    alpha+=shell*rayStep*.27;
+    alpha=clamp(alpha,0.,.20);
+    c=mix(c,vec3(.32,.90,1.),.38+.22*rim);
+    c*=1.15+rim*.75;
    }
    alpha=clamp(alpha*edge*valid,0.,.85);
    sum+=trans*alpha*c;
@@ -220,27 +240,25 @@ void main(){
  color=vec4(result,1.);
 }`;
 function shader(type,source){
- const s=gl.createShader(type);
- gl.shaderSource(s,source);
- gl.compileShader(s);
- if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))
-  throw Error(gl.getShaderInfoLog(s));
- return s;
+ const sh=gl.createShader(type);
+ gl.shaderSource(sh,source);
+ gl.compileShader(sh);
+ if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))
+  throw Error(gl.getShaderInfoLog(sh));
+ return sh;
 }
 let program;
 try{
  program=gl.createProgram();
- gl.attachShader(
-  program,shader(gl.VERTEX_SHADER,vertex)
- );
- gl.attachShader(
-  program,shader(gl.FRAGMENT_SHADER,fragment)
- );
+ gl.attachShader(program,
+  shader(gl.VERTEX_SHADER,vertex));
+ gl.attachShader(program,
+  shader(gl.FRAGMENT_SHADER,fragment));
  gl.linkProgram(program);
  if(!gl.getProgramParameter(program,gl.LINK_STATUS))
   throw Error(gl.getProgramInfoLog(program));
 }catch(e){
- console.error("IRIDE CAPPI V15",e);
+ console.error("IRIDE V16 shader",e);
  controls.remove();panel.remove();return;
 }
 gl.useProgram(program);
@@ -293,7 +311,8 @@ function upload(v){
    const dbz=(code-2)/2-32;
    const cls=dbz>=45?4:dbz>=35?3:
     dbz>=30?2:dbz>=25?1:dbz>=15?0:-1;
-   if(cls>=0)colorTops[cls]=Math.max(colorTops[cls],y+1);
+   if(cls>=0)
+    colorTops[cls]=Math.max(colorTops[cls],y+1);
   }
   if(code>=96){
    xmin=Math.min(xmin,x);xmax=Math.max(xmax,x);
@@ -319,7 +338,8 @@ function upload(v){
   gl.texParameteri(target,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
   gl.texParameteri(target,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   if(!unit){
-   gl.texParameteri(target,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
+   gl.texParameteri(target,gl.TEXTURE_WRAP_R,
+    gl.CLAMP_TO_EDGE);
    gl.texImage3D(target,0,gl.RG8,n,10,n,0,
     gl.RG,gl.UNSIGNED_BYTE,packed);
   }else{
@@ -338,8 +358,10 @@ function sectionDraw(){
  const ew=$("cap-direction").value==="ew";
  const colors=["#397ee8","#24bd70",
   "#f4d43e","#f07832","#ed42c8"];
- ctx.fillStyle="#020509";ctx.fillRect(0,0,w,h);
- ctx.fillStyle="#071421";ctx.fillRect(left,top,pw,ph);
+ ctx.fillStyle="#020509";
+ ctx.fillRect(0,0,w,h);
+ ctx.fillStyle="#071421";
+ ctx.fillRect(left,top,pw,ph);
  for(let y=0;y<10;y++)
  for(let x=0;x<n;x++){
   const code=ew?active.layers[y][row][x]:
@@ -356,7 +378,8 @@ function sectionDraw(){
  ctx.font="12px sans-serif";
  ctx.fillStyle="#c8e9f3";
  for(let y=0;y<10;y++)
-  ctx.fillText(String(y+1),15,top+(9.5-y)*ph/10+4);
+  ctx.fillText(String(y+1),15,
+   top+(9.5-y)*ph/10+4);
  ctx.fillText("km s.l.m.",5,18);
  ctx.fillText(ew?"Ovest":"Nord",left,h-18);
  ctx.fillText(ew?"Est":"Sud",w-35,h-18);
@@ -391,15 +414,10 @@ function resetCamera(){
  pitch=.16;
  if(!active){distance=5;return;}
  const fit=cameraFit();
- distance=Math.max(3.4,fit.horizontal*1.25);
+ distance=Math.max(
+  3.4,fit.horizontal*1.35,fit.height*.95
+ );
 }
-/*
- Profilo CAPPI laterale:
- 42 pixel CSS di larghezza.
- Altezza adattiva al pannello.
- Quote massime osservate per classe dBZ.
- Non segue camera, rotazione o zoom.
-*/
 function drawAltitudeScale(ctx,w,h,ratio){
  const unit=ratio;
  const stripW=42*unit;
@@ -435,18 +453,16 @@ function drawAltitudeScale(ctx,w,h,ratio){
   ctx.stroke();
   ctx.fillText(String(km),axis-5*unit,y);
  }
- // Cinque indicatori orizzontali, separati di 3 px.
- // Non rappresentano un profilo continuo inventato.
  for(let i=0;i<5;i++){
   const km=colorTops[i];
   if(km<1)continue;
   const y=yKm(km);
   const x=axis+6*unit+i*3.2*unit;
   ctx.strokeStyle=colors[i];
-  ctx.lineWidth=2*unit;
+  ctx.lineWidth=2.5*unit;
   ctx.beginPath();
-  ctx.moveTo(x-1.5*unit,y);
-  ctx.lineTo(x+3*unit,y);
+  ctx.moveTo(x-2*unit,y);
+  ctx.lineTo(x+4*unit,y);
   ctx.stroke();
  }
  ctx.restore();
@@ -485,7 +501,7 @@ function draw(){
   }
  );
  const labels=[
-  "Volume V11","Iso-superficie",
+  "Volume 3D","ISO-superficie",
   "Olografico","Sezione verticale"
  ];
  foot.textContent=
@@ -498,16 +514,13 @@ function draw(){
   return;
  }
  const fit=cameraFit();
- const height=fit.height;
- const target=fit.target;
+ const height=fit.height,target=fit.target;
  const eye=[
   target[0]+distance*Math.cos(pitch)*Math.sin(yaw),
   target[1]+distance*Math.sin(pitch),
   target[2]+distance*Math.cos(pitch)*Math.cos(yaw)
  ];
- const forward=norm(
-  target.map((x,i)=>x-eye[i])
- );
+ const forward=norm(target.map((x,i)=>x-eye[i]));
  const right=norm(cross(forward,[0,1,0]));
  const up=cross(right,forward);
  gl.useProgram(program);
@@ -536,9 +549,7 @@ function draw(){
 }
 async function json(url){
  const controller=new AbortController();
- const timer=setTimeout(
-  ()=>controller.abort(),12000
- );
+ const timer=setTimeout(()=>controller.abort(),12000);
  try{
   const r=await fetch(url,{
    cache:"no-store",
@@ -649,9 +660,7 @@ canvas.addEventListener("pointermove",e=>{
 });
 for(const name of [
  "pointerup","pointercancel","lostpointercapture"
-])canvas.addEventListener(name,()=>{
- drag=null;
-});
+])canvas.addEventListener(name,()=>{drag=null;});
 canvas.addEventListener("wheel",e=>{
  e.preventDefault();
  distance=Math.max(1.2,Math.min(
@@ -694,4 +703,4 @@ setInterval(()=>{
  }
 },30000);
 })();
- 
+  
