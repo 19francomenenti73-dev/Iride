@@ -1,9 +1,8 @@
 
 /*
- I.R.I.D.E. V16 - CAPPI 3D
- Volume / ISO / Olografico / Sezione
+ I.R.I.D.E. V17 - CAPPI 3D
+ Volume / ISO / Olografico pulsante / Sezione
  Radar-DPC CC BY-SA 4.0
- Scala laterale - verticale iniziale x8
 */
 (()=>{
 "use strict";
@@ -68,6 +67,7 @@ uniform sampler2D floorData;
 uniform vec2 resolution;
 uniform vec3 eye,right,up,forward;
 uniform float height;
+uniform float pulse;
 uniform int mode;
 const vec3 bg=vec3(.008,.018,.031);
 vec3 palette(float v){
@@ -115,9 +115,6 @@ vec3 gradientAt(vec3 p){
   (field(p+dy)-field(p-dy))*.40,
   field(p+dz)-field(p-dz)
  );
-}
-vec3 normalAt(vec3 p){
- return normalize(gradientAt(p)+vec3(.0001));
 }
 void main(){
  vec2 s=uv*2.-1.;
@@ -172,14 +169,14 @@ void main(){
    float alpha=0.;
    vec3 c=palette(max(v.x,15.));
    if(mode==0){
-    // Volume: assorbimento volumetrico.
+    // Volume V16 invariato.
     float d=density(v.x);
     alpha=1.-exp(-d*rayStep*4.4);
     alpha=min(alpha,.23);
     float core=smoothstep(29.,43.,v.x);
     c*=mix(.83,1.20,core);
    }else if(mode==1){
-    // ISO: attraversamento delle soglie dBZ.
+    // ISO: attraversamento delle soglie.
     float surface=0.;
     for(int k=0;k<5;k++){
      float level=k==0?15.:
@@ -194,40 +191,48 @@ void main(){
     }
     alpha=surface;
     if(alpha>0.){
-     vec3 n=normalAt(p);
+     vec3 n=normalize(
+      gradientAt(p)+vec3(.0001)
+     );
      float light=.65+.35*abs(dot(
       n,normalize(vec3(-.4,.8,.6))
      ));
      c*=light;
     }
    }else{
-    // Olografico: contorni e gusci luminosi.
+    // V17: blu e verde pulsanti, nuclei stabili.
     float d=density(v.x);
     vec3 g=gradientAt(p);
-    float edgeStrength=smoothstep(
-     2.,16.,length(g)
-    );
     vec3 n=normalize(g+vec3(.0001));
     float rim=pow(
-     1.-abs(dot(n,ray)),1.6
+     1.-abs(dot(n,ray)),1.7
     );
-    float threshold=0.;
-    for(int j=0;j<5;j++){
-     float level=j==0?15.:
-      j==1?25.:j==2?30.:j==3?35.:45.;
-     float proximity=1.-smoothstep(
-      0.,2.4,abs(v.x-level)
+    float boundary=smoothstep(
+     2.,15.,length(g)
+    );
+    if(v.x<25.){
+     // Involucro blu-verde, pulsazione luminosa.
+     float shell=max(
+      rim*boundary,
+      .35*boundary
      );
-     threshold=max(threshold,proximity);
+     float glow=mix(.68,1.32,pulse);
+     alpha=(1.-exp(-d*rayStep*.30))*.18;
+     alpha+=shell*rayStep*.50*glow;
+     alpha=clamp(alpha,0.,.19);
+     c=mix(c,vec3(.27,.88,1.),.35);
+     c*=.85+.75*glow;
+    }else{
+     // Nuclei progressivamente più compatti.
+     float opacity=v.x<30.?.35:
+      v.x<35.?.55:
+      v.x<45.?.55:.75;
+     float strength=opacity*1.8;
+     alpha=1.-exp(-d*rayStep*strength);
+     alpha=min(alpha,opacity*.35);
+     float core=smoothstep(30.,45.,v.x);
+     c*=1.05+.25*core;
     }
-    float shell=max(
-     rim*edgeStrength,threshold*.65
-    );
-    alpha=(1.-exp(-d*rayStep*.30))*.22;
-    alpha+=shell*rayStep*.27;
-    alpha=clamp(alpha,0.,.20);
-    c=mix(c,vec3(.32,.90,1.),.38+.22*rim);
-    c*=1.15+rim*.75;
    }
    alpha=clamp(alpha*edge*valid,0.,.85);
    sum+=trans*alpha*c;
@@ -258,7 +263,7 @@ try{
  if(!gl.getProgramParameter(program,gl.LINK_STATUS))
   throw Error(gl.getProgramInfoLog(program));
 }catch(e){
- console.error("IRIDE V16 shader",e);
+ console.error("IRIDE V17 shader",e);
  controls.remove();panel.remove();return;
 }
 gl.useProgram(program);
@@ -273,7 +278,7 @@ gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
 const uniforms={};
 for(const n of [
  "data","floorData","resolution","eye",
- "right","up","forward","height","mode"
+ "right","up","forward","height","mode","pulse"
 ])uniforms[n]=gl.getUniformLocation(program,n);
 const volumeTexture=gl.createTexture();
 const floorTexture=gl.createTexture();
@@ -281,6 +286,7 @@ let active=null,sequence=0,note="",bounds=null;
 let yaw=-.35,pitch=.16,distance=5;
 let drag=null,pinch=0;
 let colorTops=[0,0,0,0,0];
+let animation=0,lastFrame=0;
 const norm=v=>{
  const m=Math.hypot(...v)||1;
  return v.map(x=>x/m);
@@ -358,10 +364,8 @@ function sectionDraw(){
  const ew=$("cap-direction").value==="ew";
  const colors=["#397ee8","#24bd70",
   "#f4d43e","#f07832","#ed42c8"];
- ctx.fillStyle="#020509";
- ctx.fillRect(0,0,w,h);
- ctx.fillStyle="#071421";
- ctx.fillRect(left,top,pw,ph);
+ ctx.fillStyle="#020509";ctx.fillRect(0,0,w,h);
+ ctx.fillStyle="#071421";ctx.fillRect(left,top,pw,ph);
  for(let y=0;y<10;y++)
  for(let x=0;x<n;x++){
   const code=ew?active.layers[y][row][x]:
@@ -467,6 +471,35 @@ function drawAltitudeScale(ctx,w,h,ratio){
  }
  ctx.restore();
 }
+function stopAnimation(){
+ if(animation){
+  cancelAnimationFrame(animation);
+  animation=0;
+ }
+}
+function animate(now){
+ animation=0;
+ if(!active||!fresh(active.timestamp)||
+    mode.value!=="2"||
+    !viewer.classList.contains("open")||
+    document.hidden)return;
+ // Circa 20 fps: evita rendering inutili su smartphone.
+ if(now-lastFrame>=48){
+  lastFrame=now;
+  draw();
+ }
+ animation=requestAnimationFrame(animate);
+}
+function syncAnimation(){
+ stopAnimation();
+ if(active&&fresh(active.timestamp)&&
+    mode.value==="2"&&
+    viewer.classList.contains("open")&&
+    !document.hidden){
+  lastFrame=0;
+  animation=requestAnimationFrame(animate);
+ }
+}
 function draw(){
  const use=active&&fresh(active.timestamp);
  old.style.display=use?"none":"";
@@ -487,22 +520,19 @@ function draw(){
  const rect=panel.getBoundingClientRect();
  const ratio=Math.min(window.devicePixelRatio||1,1.25);
  const selected=cut?section:canvas;
- selected.width=Math.max(
-  1,Math.round(rect.width*ratio)
- );
- selected.height=Math.max(
-  1,Math.round(rect.height*ratio)
- );
+ const width=Math.max(1,Math.round(rect.width*ratio));
+ const heightPx=Math.max(1,Math.round(rect.height*ratio));
+ if(selected.width!==width)selected.width=width;
+ if(selected.height!==heightPx)selected.height=heightPx;
  const time=new Date(active.timestamp).toLocaleTimeString(
   "it-IT",{
-   hour:"2-digit",
-   minute:"2-digit",
+   hour:"2-digit",minute:"2-digit",
    timeZone:"Europe/Rome"
   }
  );
  const labels=[
   "Volume 3D","ISO-superficie",
-  "Olografico","Sezione verticale"
+  "Olografico V17","Sezione verticale"
  ];
  foot.textContent=
   `Radar-DPC · CC BY-SA 4.0 · CAPPI ${time} · `+
@@ -539,9 +569,15 @@ function draw(){
  }))gl.uniform3fv(uniforms[name],v);
  gl.uniform1f(uniforms.height,height);
  gl.uniform1i(uniforms.mode,Number(mode.value));
+ // Pulsazione di 3 secondi, solo luminosità.
+ const phase=performance.now()*Math.PI*2/3000;
+ gl.uniform1f(uniforms.pulse,
+  .5+.5*Math.sin(phase));
  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
- ruler.width=canvas.width;
- ruler.height=canvas.height;
+ if(ruler.width!==canvas.width)
+  ruler.width=canvas.width;
+ if(ruler.height!==canvas.height)
+  ruler.height=canvas.height;
  drawAltitudeScale(
   ruler.getContext("2d"),
   ruler.width,ruler.height,ratio
@@ -563,6 +599,7 @@ async function json(url){
 }
 window.addEventListener("iride:cell",async event=>{
  const token=++sequence;
+ stopAnimation();
  const {cell,timestamp}=event.detail||{};
  active=null;
  option.disabled=true;
@@ -616,6 +653,7 @@ window.addEventListener("iride:cell",async event=>{
   $("cap-scale").value=8;
   resetCamera();
   draw();
+  syncAnimation();
  }catch(e){
   if(token===sequence){
    note=e.message+" · riserva 2D";
@@ -623,7 +661,10 @@ window.addEventListener("iride:cell",async event=>{
   }
  }
 });
-mode.addEventListener("change",draw);
+mode.addEventListener("change",()=>{
+ draw();
+ syncAnimation();
+});
 $("reset").addEventListener("click",()=>{
  resetCamera();
  draw();
@@ -639,12 +680,16 @@ new MutationObserver(()=>{
   sequence++;
   active=null;
   note="";
+  stopAnimation();
   draw();
+ }else{
+  syncAnimation();
  }
 }).observe(viewer,{
  attributes:true,
  attributeFilter:["class"]
 });
+document.addEventListener("visibilitychange",syncAnimation);
 canvas.addEventListener("pointerdown",e=>{
  drag=[e.clientX,e.clientY];
  canvas.setPointerCapture(e.pointerId);
@@ -696,6 +741,7 @@ setInterval(()=>{
  if(active&&!fresh(active.timestamp)){
   active=null;
   option.disabled=true;
+  stopAnimation();
   if(mode.value==="3")mode.value="1";
   note="CAPPI scaduti · riserva 2D";
   draw();
