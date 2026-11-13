@@ -1,42 +1,52 @@
 
-/* IRIDE V13.2 - Radar-DPC CAPPI 3D
-   Ripristino da commit 679181b.
-   Volume V11, ISO, Olografico, sezione.
-   Scala CAPPI fissa 1-10 km slm.
-   Nessuna diagnostica VIL/ETM/POH/VMI.
-   Fonte Radar-DPC, CC BY-SA 4.0.
+/*
+ I.R.I.D.E. CAPPI 3D
+ Volume V11 / ISO / Olografico / Sezione
+ Radar-DPC - CC BY-SA 4.0
+ Scala prospettica - Verticale x8
+ Nessun VIL, Echo Top, BE.
 */
 (()=>{
-'use strict';
+"use strict";
 const $=id=>document.getElementById(id);
-const viewer=$('viewer'),mode=$('mode'),old=$('scene');
+const viewer=$("viewer"),mode=$("mode"),old=$("scene");
 if(!viewer||!mode||!old)return;
-const foot=viewer.querySelector('.vfoot');
+const foot=viewer.querySelector(".vfoot");
 if(!foot)return;
 const oldFoot=foot.textContent;
-const panel=document.createElement('div');
-panel.style.cssText='display:none;flex:1;min-height:0;position:relative;background:#020509';
+const panel=document.createElement("div");
+panel.style.cssText=
+ "display:none;flex:1;min-height:0;position:relative;background:#020509";
 old.after(panel);
-const canvas=document.createElement('canvas');
-const section=document.createElement('canvas');
+const canvas=document.createElement("canvas");
+const section=document.createElement("canvas");
+const ruler=document.createElement("canvas");
 for(const c of [canvas,section]){
- c.style.cssText='width:100%;height:100%;display:block;touch-action:none';
+ c.style.cssText=
+  "width:100%;height:100%;display:block;touch-action:none";
  panel.append(c);
 }
-const ruler=document.createElement('canvas');
-ruler.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
+ruler.style.cssText=
+ "position:absolute;inset:0;width:100%;height:100%;pointer-events:none";
 panel.append(ruler);
-const controls=document.createElement('div');
-controls.style.cssText='display:none;gap:8px;flex-wrap:wrap;align-items:center;padding:6px 10px;background:#17283a;font-size:11px';
-controls.innerHTML='<label>Verticale ×<output id="cap-scale-value"></output> <input id="cap-scale" type="range" min="1" max="30" value="8"></label><label id="cap-cut-controls">Taglio <select id="cap-direction"><option value="ew">Ovest → Est</option><option value="ns">Nord → Sud</option></select> <input id="cap-offset" type="range" min="0" max="31" value="16"></label><span>15 blu · 25 verde · 30 giallo · 35 arancio · 45 magenta dBZ</span>';
+const controls=document.createElement("div");
+controls.style.cssText=
+ "display:none;gap:8px;flex-wrap:wrap;align-items:center;padding:6px 10px;background:#17283a;font-size:11px";
+controls.innerHTML=
+ '<label>Verticale ×<output id="cap-scale-value">8</output> '+
+ '<input id="cap-scale" type="range" min="1" max="30" value="8"></label>'+
+ '<label id="cap-cut-controls">Taglio '+
+ '<select id="cap-direction"><option value="ew">Ovest → Est</option>'+
+ '<option value="ns">Nord → Sud</option></select> '+
+ '<input id="cap-offset" type="range" min="0" max="31" value="16"></label>';
 panel.before(controls);
-let option=[...mode.options].find(o=>o.value==='3');
+let option=[...mode.options].find(o=>o.value==="3");
 if(!option){
- option=new Option('Sezione verticale DPC','3');
+ option=new Option("Sezione verticale DPC","3");
  mode.add(option);
 }
 option.disabled=true;
-const gl=canvas.getContext('webgl2',{
+const gl=canvas.getContext("webgl2",{
  alpha:false,antialias:false
 });
 if(!gl){
@@ -64,8 +74,10 @@ uniform float height;
 uniform int mode;
 const vec3 bg=vec3(.008,.018,.031);
 vec3 palette(float v){
- vec3 b=vec3(.22,.49,.91),g=vec3(.14,.74,.44);
- vec3 y=vec3(.96,.83,.24),r=vec3(.94,.47,.20);
+ vec3 b=vec3(.22,.49,.91);
+ vec3 g=vec3(.14,.74,.44);
+ vec3 y=vec3(.96,.83,.24);
+ vec3 r=vec3(.94,.47,.20);
  vec3 m=vec3(.93,.26,.78);
  if(v<25.)return mix(b,g,smoothstep(15.,25.,v));
  if(v<30.)return mix(g,y,smoothstep(25.,30.,v));
@@ -93,7 +105,8 @@ float density(float v){
  return 2.1;
 }
 vec3 normalAt(vec3 p){
- vec3 a=vec3(.06,0.,0.),b=vec3(0.,.06,0.);
+ vec3 a=vec3(.06,0.,0.);
+ vec3 b=vec3(0.,.06,0.);
  vec3 c=vec3(0.,0.,.06);
  return normalize(vec3(
   sampleAt(p+a).x-sampleAt(p-a).x,
@@ -140,9 +153,7 @@ void main(){
   float step=(end-start)/176.;
   float trans=1.;
   vec3 sum=vec3(0.);
-  vec2 prev=sampleAt(
-   eye+ray*start
-  );
+  vec2 prev=sampleAt(eye+ray*start);
   for(int i=1;i<=176;i++){
    vec3 p=eye+ray*(
     start+float(i)*step
@@ -224,7 +235,6 @@ void main(){
  }
  color=vec4(result,1.);
 }`;
-   
 function shader(type,source){
  const s=gl.createShader(type);
  gl.shaderSource(s,source);
@@ -248,7 +258,7 @@ try{
   program,gl.LINK_STATUS
  ))throw Error(gl.getProgramInfoLog(program));
 }catch(e){
- console.error('IRIDE V13.2',e);
+ console.error("IRIDE CAPPI",e);
  controls.remove();
  panel.remove();
  return;
@@ -263,23 +273,23 @@ gl.bufferData(
  ]),
  gl.STATIC_DRAW
 );
-const loc=gl.getAttribLocation(program,'a');
+const loc=gl.getAttribLocation(program,"a");
 gl.enableVertexAttribArray(loc);
 gl.vertexAttribPointer(
  loc,2,gl.FLOAT,false,0,0
 );
 const uniforms={};
 for(const n of [
- 'data','floorData','resolution',
- 'eye','right','up','forward',
- 'height','mode'
+ "data","floorData","resolution",
+ "eye","right","up","forward",
+ "height","mode"
 ])uniforms[n]=gl.getUniformLocation(
  program,n
 );
 const volumeTexture=gl.createTexture();
 const floorTexture=gl.createTexture();
-let active=null,sequence=0,note='',bounds=null;
-let yaw=-.35,pitch=.16,distance=5,zoom=1;
+let active=null,sequence=0,note="",bounds=null;
+let yaw=-.35,pitch=.16,distance=5;
 let drag=null,pinch=0;
 const norm=v=>{
  const m=Math.hypot(...v)||1;
@@ -291,12 +301,11 @@ const cross=(a,b)=>[
  a[0]*b[1]-a[1]*b[0]
 ];
 const fresh=t=>{
- const age=(
-  Date.now()-Date.parse(t)
- )/60000;
+ const age=(Date.now()-Date.parse(t))/60000;
  return Number.isFinite(age)&&
   age>=-5&&age<=90;
 };
+   
 function upload(v){
  const n=v.side;
  const packed=new Uint8Array(n*10*n*2);
@@ -370,23 +379,23 @@ function upload(v){
  }
 }
 function sectionDraw(){
- const ctx=section.getContext('2d');
+ const ctx=section.getContext("2d");
  const w=section.width,h=section.height;
  const left=48,top=32;
  const pw=Math.max(1,w-66);
  const ph=Math.max(1,h-78);
  const n=active.side;
  const row=Number(
-  $('cap-offset').value
+  $("cap-offset").value
  );
- const ew=$('cap-direction').value==='ew';
+ const ew=$("cap-direction").value==="ew";
  const colors=[
-  '#397ee8','#24bd70',
-  '#f4d43e','#f07832','#ed42c8'
+  "#397ee8","#24bd70",
+  "#f4d43e","#f07832","#ed42c8"
  ];
- ctx.fillStyle='#020509';
+ ctx.fillStyle="#020509";
  ctx.fillRect(0,0,w,h);
- ctx.fillStyle='#071421';
+ ctx.fillStyle="#071421";
  ctx.fillRect(left,top,pw,ph);
  for(let y=0;y<10;y++)
  for(let x=0;x<n;x++){
@@ -406,19 +415,19 @@ function sectionDraw(){
    pw/n+.5,ph/10+.5
   );
  }
- ctx.font='12px sans-serif';
- ctx.fillStyle='#c8e9f3';
+ ctx.font="12px sans-serif";
+ ctx.fillStyle="#c8e9f3";
  for(let y=0;y<10;y++)
   ctx.fillText(
    String(y+1),15,
    top+(9.5-y)*ph/10+4
   );
- ctx.fillText('km slm',5,18);
+ ctx.fillText("km s.l.m.",5,18);
  ctx.fillText(
-  ew?'Ovest':'Nord',left,h-18
+  ew?"Ovest":"Nord",left,h-18
  );
  ctx.fillText(
-  ew?'Est':'Sud',w-35,h-18
+  ew?"Est":"Sud",w-35,h-18
  );
  ctx.fillText(
   `${active.width_km.toFixed(0)} km · 10 livelli CAPPI`,
@@ -427,7 +436,7 @@ function sectionDraw(){
 }
 function cameraFit(){
  const scale=Number(
-  $('cap-scale').value
+  $("cap-scale").value
  );
  const height=
   45/active.width_km*scale;
@@ -457,7 +466,6 @@ function cameraFit(){
 function resetCamera(){
  yaw=-.35;
  pitch=.16;
- zoom=1;
  if(!active){
   distance=5;
   return;
@@ -467,76 +475,90 @@ function resetCamera(){
   3.4,fit.horizontal*1.25
  );
 }
-// Scala fissa: legenda dei livelli CAPPI.
-// Non viene proiettata in prospettiva.
-// Non pretende di misurare le dimensioni
-// apparenti della nube sullo schermo.
-function drawAltitudeScale(ctx,w,h,ratio){
- const x=18*ratio;
- const top=58*ratio;
- const bottom=Math.min(
-  h-44*ratio,top+220*ratio
- );
- if(bottom-top<90*ratio)return;
- const axis=x+13*ratio;
- const step=(bottom-top)/9;
+/*
+ Scala prospettica.
+ Utilizza esattamente la camera WebGL.
+ Quote CAPPI reali da 1 a 10 km.
+ L'esagerazione x8 resta grafica.
+*/
+function drawAltitudeScale(
+ ctx,w,h,ratio,eye,right,up,forward,height
+){
+ const dot=(a,b)=>
+  a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+ const project=p=>{
+  const d=p.map((v,i)=>v-eye[i]);
+  const depth=dot(d,forward);
+  if(depth<=.01)return null;
+  const sx=dot(d,right)/depth/.625;
+  const sy=dot(d,up)/depth/.625;
+  const aspect=w/h;
+  return [
+   (sx/aspect+1)*w*.5,
+   (1-sy)*h*.5
+  ];
+ };
+ const ax=eye[0]>=0?2.38:-2.38;
+ const az=eye[2]>=0?2.38:-2.38;
+ const pos=km=>project([
+  ax,height*km/10,az
+ ]);
+ const bottom=pos(1),top=pos(10);
+ if(!bottom||!top)return;
  ctx.save();
- ctx.fillStyle='rgba(3,14,24,.82)';
- ctx.fillRect(
-  5*ratio,34*ratio,
-  91*ratio,bottom-top+45*ratio
- );
- ctx.fillStyle='#c8ecfa';
- ctx.strokeStyle='#8bdaf2';
- ctx.lineWidth=1.5*ratio;
- ctx.font=`${11*ratio}px sans-serif`;
- ctx.fillText(
-  'CAPPI · km slm',10*ratio,49*ratio
- );
+ ctx.lineWidth=Math.max(1,1.25*ratio);
+ ctx.strokeStyle="rgba(147,216,242,.85)";
+ ctx.fillStyle="#c5e9f7";
+ ctx.font=`${10*ratio}px system-ui,sans-serif`;
+ ctx.textBaseline="middle";
  ctx.beginPath();
- ctx.moveTo(axis,top);
- ctx.lineTo(axis,bottom);
+ ctx.moveTo(...bottom);
+ ctx.lineTo(...top);
  ctx.stroke();
- for(let km=1;km<=10;km++){
-  const y=bottom-(km-1)*step;
+ for(const km of [1,2,4,6,8,10]){
+  const p=pos(km);
+  if(!p)continue;
+  const x=p[0],y=p[1];
+  if(x<0||x>w||y<0||y>h)continue;
+  const dir=x>w*.5?-1:1;
   ctx.beginPath();
-  ctx.moveTo(axis-4*ratio,y);
-  ctx.lineTo(axis+5*ratio,y);
+  ctx.moveTo(x-4*ratio,y);
+  ctx.lineTo(x+4*ratio,y);
   ctx.stroke();
+  ctx.textAlign=dir>0?"left":"right";
   ctx.fillText(
-   `${km} km`,
-   axis+10*ratio,y+4*ratio
+   `${km} km`,x+dir*9*ratio,y
   );
  }
- ctx.fillStyle='#91aec1';
- ctx.font=`${10*ratio}px sans-serif`;
+ ctx.textAlign="left";
+ ctx.fillStyle="rgba(181,210,225,.85)";
+ ctx.font=`${9*ratio}px system-ui,sans-serif`;
  ctx.fillText(
-  'Quote osservate',10*ratio,
-  bottom+19*ratio
+  "CAPPI · km s.l.m.",
+  10*ratio,18*ratio
  );
  ctx.restore();
-                   }
-   
+}
 function draw(){
  const use=active&&fresh(active.timestamp);
- old.style.display=use?'none':'';
- panel.style.display=use?'block':'none';
- controls.style.display=use?'flex':'none';
+ old.style.display=use?"none":"";
+ panel.style.display=use?"block":"none";
+ controls.style.display=use?"flex":"none";
  if(!use){
   foot.textContent=oldFoot+
-   (note?' · '+note:'');
+   (note?" · "+note:"");
   return;
  }
- const cut=mode.value==='3';
- canvas.style.display=cut?'none':'block';
- section.style.display=cut?'block':'none';
- ruler.style.display=cut?'none':'block';
- $('cap-cut-controls').style.display=
-  cut?'inline':'none';
+ const cut=mode.value==="3";
+ canvas.style.display=cut?"none":"block";
+ section.style.display=cut?"block":"none";
+ ruler.style.display=cut?"none":"block";
+ $("cap-cut-controls").style.display=
+  cut?"inline":"none";
  const scale=Number(
-  $('cap-scale').value
+  $("cap-scale").value
  );
- $('cap-scale-value').value=scale;
+ $("cap-scale-value").value=scale;
  const rect=panel.getBoundingClientRect();
  const ratio=Math.min(
   window.devicePixelRatio||1,1.25
@@ -550,26 +572,26 @@ function draw(){
  );
  const time=new Date(
   active.timestamp
- ).toLocaleTimeString('it-IT',{
-  hour:'2-digit',
-  minute:'2-digit',
-  timeZone:'Europe/Rome'
+ ).toLocaleTimeString("it-IT",{
+  hour:"2-digit",
+  minute:"2-digit",
+  timeZone:"Europe/Rome"
  });
  const labels=[
-  'Volume V13.2',
-  'Iso-superficie V13.2',
-  'Olografico V13.2',
-  'Sezione verticale'
+  "Volume V11",
+  "Iso-superficie",
+  "Olografico",
+  "Sezione verticale"
  ];
  const label=labels[
   Number(mode.value)
- ]||'CAPPI';
+ ]||"CAPPI";
  foot.textContent=
-  `Radar-DPC · CC BY-SA 4.0 · `+
+  "Radar-DPC · CC BY-SA 4.0 · "+
   `CAPPI ${time} Italia · `+
-  `1–10 km slm · ${label} · `+
-  (cut?'livelli osservati':
-   `verticale ×${scale} · massimo CAPPI al pavimento`);
+  `1–10 km s.l.m. · ${label} · `+
+  (cut?"livelli osservati":
+   `verticale ×${scale}`);
  if(cut){
   sectionDraw();
   return;
@@ -623,11 +645,13 @@ function draw(){
  );
  ruler.width=canvas.width;
  ruler.height=canvas.height;
- const ctx=ruler.getContext('2d');
  drawAltitudeScale(
-  ctx,ruler.width,ruler.height,ratio
+  ruler.getContext("2d"),
+  ruler.width,ruler.height,ratio,
+  eye,right,up,forward,height
  );
-}
+   }
+   
 async function json(url){
  const controller=new AbortController();
  const timer=setTimeout(
@@ -635,11 +659,11 @@ async function json(url){
  );
  try{
   const r=await fetch(url,{
-   cache:'no-store',
+   cache:"no-store",
    signal:controller.signal
   });
   if(!r.ok)throw Error(
-   'HTTP '+r.status
+   "HTTP "+r.status
   );
   return await r.json();
  }finally{
@@ -647,29 +671,29 @@ async function json(url){
  }
 }
 window.addEventListener(
- 'iride:cell',async event=>{
+ "iride:cell",async event=>{
  const token=++sequence;
  const {cell,timestamp}=event.detail||{};
  active=null;
  option.disabled=true;
- note='CAPPI in caricamento';
+ note="CAPPI in caricamento";
  requestAnimationFrame(draw);
  try{
   if(!cell?.track_id||!timestamp)
-   throw Error('Cella non valida');
+   throw Error("Cella non valida");
   const base=new URL(
-   'docs/data/dpc3d/',
+   "docs/data/dpc3d/",
    document.baseURI
   );
   const m=await json(
-   new URL('manifest.json',base)
+   new URL("manifest.json",base)
   );
   if(
-   m.status!=='ok'||
+   m.status!=="ok"||
    m.base_timestamp!==timestamp||
    !fresh(m.timestamp)
   )throw Error(
-   'CAPPI non sincronizzati'
+   "CAPPI non sincronizzati"
   );
   const file=m.cells?.[
    cell.track_id
@@ -677,7 +701,7 @@ window.addEventListener(
   if(
    !file||
    !/^[A-Za-z0-9_-]+\.json$/.test(file)
-  )throw Error('CAPPI assenti');
+  )throw Error("CAPPI assenti");
   const v=await json(
    new URL(file,base)
   );
@@ -687,7 +711,7 @@ window.addEventListener(
    v.track_id!==cell.track_id||
    v.timestamp!==m.timestamp||
    !fresh(v.timestamp)
-  )throw Error('CAPPI incoerenti');
+  )throw Error("CAPPI incoerenti");
   if(
    v.side!==32||
    !Number.isFinite(v.width_km)||
@@ -695,7 +719,7 @@ window.addEventListener(
    !Array.isArray(v.layers)||
    v.layers.length!==10||
    !Array.isArray(v.floor)
-  )throw Error('Volume non valido');
+  )throw Error("Volume non valido");
   for(const layer of [
    ...v.layers,v.floor
   ]){
@@ -710,54 +734,54 @@ window.addEventListener(
      )
     )
    )throw Error(
-    'Matrice CAPPI non valida'
+    "Matrice CAPPI non valida"
    );
   }
   upload(v);
   active=v;
   option.disabled=false;
-  note='';
-  $('cap-scale').value=8;
+  note="";
+  $("cap-scale").value=8;
   resetCamera();
   draw();
  }catch(e){
   if(token===sequence){
-   note=e.message+' · riserva 2D';
+   note=e.message+" · riserva 2D";
    draw();
   }
  }
 });
-mode.addEventListener('change',draw);
-$('reset').addEventListener(
- 'click',()=>{
+mode.addEventListener("change",draw);
+$("reset").addEventListener(
+ "click",()=>{
   resetCamera();
   draw();
  }
 );
-$('cap-scale').addEventListener(
- 'input',draw
+$("cap-scale").addEventListener(
+ "input",draw
 );
 for(const id of [
- 'cap-direction','cap-offset'
+ "cap-direction","cap-offset"
 ])$(id).addEventListener(
- 'input',draw
+ "input",draw
 );
 new ResizeObserver(()=>{
  if(active)draw();
 }).observe(panel);
 new MutationObserver(()=>{
- if(!viewer.classList.contains('open')){
+ if(!viewer.classList.contains("open")){
   sequence++;
   active=null;
-  note='';
+  note="";
   draw();
  }
 }).observe(viewer,{
  attributes:true,
- attributeFilter:['class']
+ attributeFilter:["class"]
 });
 canvas.addEventListener(
- 'pointerdown',e=>{
+ "pointerdown",e=>{
   drag=[e.clientX,e.clientY];
   canvas.setPointerCapture(
    e.pointerId
@@ -765,7 +789,7 @@ canvas.addEventListener(
  }
 );
 canvas.addEventListener(
- 'pointermove',e=>{
+ "pointermove",e=>{
   if(!drag)return;
   yaw-=(
    e.clientX-drag[0]
@@ -781,14 +805,14 @@ canvas.addEventListener(
  }
 );
 for(const name of [
- 'pointerup',
- 'pointercancel',
- 'lostpointercapture'
+ "pointerup",
+ "pointercancel",
+ "lostpointercapture"
 ])canvas.addEventListener(
  name,()=>{drag=null;}
 );
 canvas.addEventListener(
- 'wheel',e=>{
+ "wheel",e=>{
   e.preventDefault();
   distance=Math.max(
    1.2,Math.min(
@@ -799,7 +823,7 @@ canvas.addEventListener(
  },{passive:false}
 );
 canvas.addEventListener(
- 'touchstart',e=>{
+ "touchstart",e=>{
   if(e.touches.length===2){
    drag=null;
    pinch=Math.hypot(
@@ -812,7 +836,7 @@ canvas.addEventListener(
  },{passive:true}
 );
 canvas.addEventListener(
- 'touchmove',e=>{
+ "touchmove",e=>{
   if(e.touches.length!==2)return;
   e.preventDefault();
   drag=null;
@@ -838,14 +862,14 @@ setInterval(()=>{
  ){
   active=null;
   option.disabled=true;
-  if(mode.value==='3')
-   mode.value='1';
-  note='CAPPI scaduti · riserva 2D';
+  if(mode.value==="3")
+   mode.value="1";
+  note="CAPPI scaduti · riserva 2D";
   draw();
   mode.dispatchEvent(
-   new Event('change')
+   new Event("change")
   );
  }
 },30000);
 })();
-    
+     
