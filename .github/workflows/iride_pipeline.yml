@@ -4,7 +4,7 @@ name: I.R.I.D.E. radar nowcasting
 on:
   workflow_dispatch:
   schedule:
-    - cron: "7,27,47 * * * *"
+    - cron: "13,33,53 * * * *"
   push:
     branches: [main]
     paths:
@@ -230,6 +230,7 @@ jobs:
         run: python backend/dpc_volume.py
 
       - name: Publish validated products
+        id: publish
         if: always() && steps.pipeline.outcome != 'skipped'
         shell: bash
         run: |
