@@ -1376,6 +1376,7 @@ function open3D(cell){
  }
  try{
   activeCell=cell;
+  window.dispatchEvent(new CustomEvent('iride:cell',{detail:{cell,timestamp:currentData?.timestamp}}));
   uploadRadarMatrix(cell);
   uploadContinuousVolume(cell.grid_matrix);
   $('vtitle').textContent=
@@ -1469,5 +1470,6 @@ canvas.addEventListener('touchend',()=>{
 },{passive:true});
 })();
 </script>
+<script src="dpc3d.js?v=1"></script>
 </body>
 </html>
