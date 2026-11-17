@@ -1,1 +1,1 @@
-{"schema_version":2,"tracks":{"IRIDE-20261116T2320-000":{"observations":[{"timestamp":"2026-11-16T23:20:00Z","lat":43.3491,"lon":10.932,"max_dbz":26.5}]}},"source_id":"DPC_VMI"}
+{"schema_version":2,"tracks":{"IRIDE-20261116T2320-000":{"observations":[{"timestamp":"2026-11-16T23:20:00Z","lat":43.3491,"lon":10.932,"max_dbz":26.5},{"timestamp":"2026-11-17T00:20:00Z","lat":43.4391,"lon":10.4022,"max_dbz":28.5}]}},"source_id":"DPC_VMI"}
