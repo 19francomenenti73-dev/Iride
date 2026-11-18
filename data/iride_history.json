@@ -1,1 +1,1 @@
-{"schema_version":2,"tracks":{"IRIDE-20261118T1650-000":{"observations":[{"timestamp":"2026-11-18T16:50:00Z","lat":43.042,"lon":12.1866,"max_dbz":28.5}]},"IRIDE-20261118T1650-001":{"observations":[{"timestamp":"2026-11-18T16:50:00Z","lat":43.02,"lon":12.3277,"max_dbz":25.5}]}},"source_id":"DPC_VMI"}
+{"schema_version":2,"tracks":{},"source_id":"DPC_VMI"}
