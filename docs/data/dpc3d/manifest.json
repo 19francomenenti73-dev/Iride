@@ -1,1 +1,1 @@
-{"status":"ok","cells":{},"base_timestamp":"2026-11-18T18:10:00Z","timestamp":"2026-11-18T18:05:00+00:00","license":"CC-BY-SA-4.0","source":"Radar-DPC","temporal_offset_seconds":300}
+{"status":"unavailable","cells":{},"reason":"HTTPSConnectionPool(host='radar-api.protezionecivile.it', port=443): Read timed out. (read timeout=25)"}
