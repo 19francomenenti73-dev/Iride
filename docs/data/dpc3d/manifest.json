@@ -1,1 +1,1 @@
-{"status":"ok","cells":{"IRIDE-20261121T0820-000":"1795252800000_IRIDE-20261121T0820-000.json"},"base_timestamp":"2026-11-21T09:20:00Z","timestamp":"2026-11-21T09:20:00+00:00","license":"CC-BY-SA-4.0","source":"Radar-DPC","temporal_offset_seconds":0}
+{"status":"ok","cells":{"IRIDE-20261121T0820-000":"1795255500000_IRIDE-20261121T0820-000.json","IRIDE-20261121T1010-001":"1795255500000_IRIDE-20261121T1010-001.json"},"base_timestamp":"2026-11-21T10:10:00Z","timestamp":"2026-11-21T10:05:00+00:00","license":"CC-BY-SA-4.0","source":"Radar-DPC","temporal_offset_seconds":300}
