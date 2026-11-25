@@ -187,31 +187,23 @@ jobs:
               real = vectors["real"]
               future = vectors["predictive_180m"]
 
-              if real is not None or future is not None:
+              if real is not None:
                   count_vectors += 1
+                  assert len(cell["track"]["observations"]) >= 2
+                  assert len(real) == 2
+                  for point in real:
+                      assert len(point) == 2
+                      assert all(math.isfinite(float(v)) for v in point)
+
+              if future is not None:
                   assert real is not None
-                  assert future is not None
-                  assert len(
-                      cell["track"]["observations"]
-                  ) >= 3
-
-                  for name in (
-                      "real",
-                      "predictive_30m",
-                      "predictive_60m",
-                      "predictive_180m",
-                  ):
+                  assert len(cell["track"]["observations"]) >= 3
+                  for name in ("predictive_30m", "predictive_60m", "predictive_180m"):
                       vector = vectors[name]
-                      assert vector is not None
-                      assert len(vector) == 2
-
+                      assert vector is not None and len(vector) == 2
                       for point in vector:
                           assert len(point) == 2
-                          assert all(
-                              math.isfinite(float(v))
-                              for v in point
-                          )
-
+                          assert all(math.isfinite(float(v)) for v in point)
                   assert real[1] == future[0]
 
           assert count_3d == min(len(cells), 30)
@@ -316,13 +308,18 @@ jobs:
           mkdir -p _site
           cp index.html dpc3d.js _site/
           cp -R docs _site/docs
+          mkdir -p _site/data
+          cp docs/data/iride.json _site/data/iride.json
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+          name: github-pages
 
       - name: Deploy Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages
         
