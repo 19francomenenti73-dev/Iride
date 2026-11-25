@@ -703,6 +703,20 @@ def track_cells(cells, timestamp, history):
             "motion_quality": "insufficient_history"
         }
 
+        # Observed motion is independent of forecast eligibility.
+        if len(observations) >= 2:
+            p1, p2 = observations[-2:]
+            minutes = (parse_time(p2["timestamp"]) - parse_time(p1["timestamp"])).total_seconds() / 60.0
+            if 5.0 <= minutes <= 45.0:
+                speed = haversine(p1, p2) * 60.0 / minutes
+                if 0.0 <= speed <= TRACK_MAX_SPEED_KMH:
+                    track_data.update({
+                        "real_vector": [[p1["lat"], p1["lon"]], [p2["lat"], p2["lon"]]],
+                        "speed_kmh": round(speed, 1),
+                        "observed_interval_minutes": round(minutes, 1),
+                        "motion_quality": "two_scan_observed_displacement"
+                    })
+
         if len(observations) >= 3:
             p0, p1, p2 = observations[-3:]
             try:
