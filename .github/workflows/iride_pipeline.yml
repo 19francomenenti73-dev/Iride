@@ -290,6 +290,7 @@ jobs:
 
     permissions:
       contents: read
+      actions: read
       pages: write
       id-token: write
 
@@ -316,6 +317,23 @@ jobs:
         with:
           path: _site
           name: github-pages
+
+      - name: Wait for Pages artifact visibility
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for delay in 0 5 10 20 30 45; do
+            sleep "$delay"
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=github-pages" --jq '.artifacts[] | select(.expired == false) | .id' | grep -q '[0-9]'; then
+              echo "Pages artifact visible."
+              exit 0
+            fi
+          done
+          echo "::error::Pages artifact not visible after retries."
+          exit 1
 
       - name: Deploy Pages
         id: deployment
